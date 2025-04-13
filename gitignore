@@ -12,11 +12,6 @@ outputs/*
 checkpoints/*.pt
 *.pt
 media/
-sam2/*so
-sam2/__pycache__/
-sam2/configs/
-sam2/modeling/
-sam2/utils/
 MedSAM2.egg-info/
 
 
