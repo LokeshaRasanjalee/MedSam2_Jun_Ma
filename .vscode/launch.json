@@ -1,0 +1,20 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+
+
+        
+        
+        {
+            "name": "Video Inference",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": "--base_video_dir ./media/image/ --input_mask_dir ./media/mask/ -o ./media/Inference --save_palette_png"
+        }
+    ]
+}

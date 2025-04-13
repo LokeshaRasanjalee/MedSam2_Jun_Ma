@@ -9,6 +9,7 @@ import os
 from collections import defaultdict
 
 import numpy as np
+import matplotlib.pyplot as plt
 import torch
 from PIL import Image
 from sam2.build_sam import build_sam2_video_predictor
@@ -36,8 +37,24 @@ def save_ann_png(path, mask, palette):
 
 def get_per_obj_mask(mask):
     """Split a mask into per-object masks."""
-    object_ids = np.unique(mask)
+    
+    if mask.ndim == 3:
+    # RGB mask → binary mask
+        mask = np.any(mask != 0, axis=-1)
+    elif mask.ndim == 2:
+        # Already 2D, just ensure it's boolean
+        mask = mask != 0
+    else:
+        raise ValueError(f"Unexpected mask shape: {mask.shape}")  
+    object_ids = np.unique(mask).astype(int)
     object_ids = object_ids[object_ids > 0].tolist()
+    
+    pixel_counts = {}
+    for obj_id in object_ids:
+        pixel_counts[obj_id] = np.sum(mask == obj_id)
+    
+    print(pixel_counts)
+    
     per_obj_mask = {object_id: (mask == object_id) for object_id in object_ids}
     return per_obj_mask
 
@@ -51,6 +68,18 @@ def put_per_obj_mask(per_obj_mask, height, width):
         object_mask = object_mask.reshape(height, width)
         mask[object_mask] = object_id
     return mask
+
+
+def show_mask(mask, ax, obj_id=None, random_color=False):
+    if random_color:
+        color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
+    else:
+        cmap = plt.get_cmap("tab10")
+        cmap_idx = 0 if obj_id is None else obj_id
+        color = np.array([*cmap(cmap_idx)[:3], 0.6])
+    h, w = mask.shape[-2:]
+    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+    ax.imshow(mask_image)
 
 
 def load_masks_from_dir(
@@ -130,6 +159,9 @@ def save_masks_to_dir(
         )
         assert output_mask.dtype == np.uint8
         assert output_mask.ndim == 2
+        
+        # Convert to binary mask (0 or 255) for better visibility
+        output_mask = (output_mask > 0).astype(np.uint8) * 255
         output_mask = Image.fromarray(output_mask)
         output_mask.save(output_mask_path)
     else:
@@ -145,6 +177,9 @@ def save_masks_to_dir(
             )
             assert output_mask.dtype == np.uint8
             assert output_mask.ndim == 2
+            
+            # Convert to binary mask (0 or 255) for better visibility
+            output_mask = (output_mask > 0).astype(np.uint8) * 255
             output_mask = Image.fromarray(output_mask)
             output_mask.save(output_mask_path)
 
@@ -209,6 +244,7 @@ def vos_inference(
         input_frame_inds = sorted(set(input_frame_inds))
 
     # add those input masks to SAM 2 inference state before propagation
+    os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
     object_ids_set = None
     for input_frame_idx in input_frame_inds:
         try:
@@ -239,12 +275,23 @@ def vos_inference(
                     "for VOS datasets that don't have all objects to track appearing "
                     "in the first frame (such as LVOS or YouTube-VOS)."
                 )
-            predictor.add_new_mask(
+            _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
                 inference_state=inference_state,
                 frame_idx=input_frame_idx,
                 obj_id=object_id,
                 mask=object_mask,
             )
+            
+            plt.figure(figsize=(9, 6))
+            plt.title(f"frame {input_frame_idx}")
+            plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+            show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+            print(out_mask_logits.shape)
+            
+            # Save the visualization image
+            vis_path = os.path.join(output_mask_dir, video_name, f"vis_{frame_names[input_frame_idx]}.png")
+            plt.savefig(vis_path)
+            plt.close()  # Close the figure to free memory
 
     # check and make sure we have at least one object to track
     if object_ids_set is None or len(object_ids_set) == 0:
@@ -256,7 +303,6 @@ def vos_inference(
         )
     
     # run propagation throughout the video and collect the results in a dict
-    os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
     output_palette = input_palette or DAVIS_PALETTE
     video_segments = {}  # video_segments contains the per-frame segmentation results
 
@@ -502,7 +548,13 @@ def main():
         help="whether to use vos optimized video predictor with all modules compiled",
     )
     args = parser.parse_args()
-
+    
+    # Print all arguments
+    print("\nArguments:")
+    for arg in vars(args):
+        print(f"{arg}: {getattr(args, arg)}")
+    print("\n")
+    
     # if we use per-object PNG files, they could possibly overlap in inputs and outputs
     hydra_overrides_extra = [
         "++model.non_overlap_masks=" + ("false" if args.per_obj_png_file else "true")
