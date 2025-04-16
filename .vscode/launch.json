@@ -14,7 +14,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./media/image/ --input_mask_dir ./media/mask/ -o ./media/Inference --save_palette_png"
+            "args": "--base_video_dir ./media/image/ --input_mask_dir ./media/mask/ -o ./media/Inference"
         }
     ]
 }

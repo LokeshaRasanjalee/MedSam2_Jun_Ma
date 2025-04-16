@@ -27,7 +27,7 @@ def load_ann_png(path):
 
 
 def save_ann_png(path, mask, palette):
-    """Save a mask as a PNG file with the given palette."""
+    """Save a mask as a PNG file with the given palette and confidence value."""
     assert mask.dtype == np.uint8
     assert mask.ndim == 2
     output_mask = Image.fromarray(mask)
@@ -118,6 +118,7 @@ def save_palette_masks_to_dir(
     width,
     per_obj_png_file,
     output_palette,
+    confidence_scores,
 ):
     """Save masks to a directory as PNG files."""
     os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
@@ -149,6 +150,7 @@ def save_masks_to_dir(
     height,
     width,
     per_obj_png_file,
+    confidence_scores,
 ):
     """Save masks to a directory as greyscale PNG files."""
     os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
@@ -235,6 +237,8 @@ def vos_inference(
                     os.path.join(input_mask_dir, video_name, object_name, f"{name}.png")
                 )
             ]
+        #---LR update here to get custome frames
+        
         # check and make sure we got at least one input frame
         if len(input_frame_inds) == 0:
             raise RuntimeError(
@@ -305,8 +309,9 @@ def vos_inference(
     # run propagation throughout the video and collect the results in a dict
     output_palette = input_palette or DAVIS_PALETTE
     video_segments = {}  # video_segments contains the per-frame segmentation results
+    confidence_scores = {}
 
-    for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
+    for out_frame_idx, out_obj_ids, out_mask_logits, object_score_logits in predictor.propagate_in_video(
         inference_state
     ):
         per_obj_output_mask = {
@@ -314,6 +319,7 @@ def vos_inference(
             for i, out_obj_id in enumerate(out_obj_ids)
         }
         video_segments[out_frame_idx] = per_obj_output_mask
+        confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
 
     # write the output masks as palette PNG files to output_mask_dir
     for out_frame_idx, per_obj_output_mask in video_segments.items():
@@ -328,6 +334,7 @@ def vos_inference(
                 width=width,
                 per_obj_png_file=per_obj_png_file,
                 output_palette=output_palette,
+                confidence_scores=confidence_scores[out_frame_idx][0],
             )
         else:
             # save raw prediction results
@@ -339,7 +346,11 @@ def vos_inference(
                 height=height,
                 width=width,
                 per_obj_png_file=per_obj_png_file,
+                confidence_scores=confidence_scores[out_frame_idx][0],
             )
+        
+        print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
+    
 
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
