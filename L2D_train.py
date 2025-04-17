@@ -15,6 +15,12 @@ from PIL import Image
 from sam2.build_sam import build_sam2_video_predictor
 import csv
 
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+import pandas as pd
+from sklearn.preprocessing import StandardScaler
+
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
 
@@ -211,6 +217,44 @@ def get_mask_img_list_with_obj(args, frame_names, video_name):
 
     return mask_img_list_with_obj
 
+def dice_score(pred_mask, true_mask, eps=1e-5):
+    print ("dice_score")
+    pred = pred_mask.flatten()
+    true = true_mask.flatten()
+    intersection = (pred * true).sum()
+    return (2. * intersection) / (pred.sum() + true.sum() + eps)
+
+
+def compute_frame_features(curr_mask, prev_mask, logit):
+    print ("compute_frame_features")
+    dice = dice_score(curr_mask, prev_mask)
+    conf_mean = logit.mean().item()
+    conf_std = logit.std().item()
+    area = curr_mask.sum().item()
+    #edge_sharpness = compute_edge_sharpness(curr_mask)
+    
+    return [dice, conf_mean, conf_std, area]
+
+def compute_iou(mask1, mask2, eps=1e-5):
+    print ("compute_iou")
+    intersection = ((mask1 > 0) & (mask2 > 0)).sum()
+    union = ((mask1 > 0) | (mask2 > 0)).sum()
+    return intersection / (union + eps)
+
+
+def train_deferral_model(X, y):
+    print ("train_deferral_model")
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    clf = LogisticRegression()
+    clf.fit(X_train_scaled, y_train)
+    y_pred = clf.predict(X_test_scaled)
+    print(f"Model accuracy: {accuracy_score(y_test, y_pred)}")
+    return clf
+    
+
 
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
@@ -315,6 +359,7 @@ def vos_inference(
     output_palette = input_palette or DAVIS_PALETTE
     video_segments = {}  # video_segments contains the per-frame segmentation results
     confidence_scores = {}
+    video_segments_logits = {}
 
     for out_frame_idx, out_obj_ids, out_mask_logits, object_score_logits in predictor.propagate_in_video(
         inference_state
@@ -323,6 +368,13 @@ def vos_inference(
             out_obj_id: (out_mask_logits[i] > score_thresh).cpu().numpy()
             for i, out_obj_id in enumerate(out_obj_ids)
         }
+        
+        per_obj_output_mask_logits = {
+            out_obj_id: (out_mask_logits[i]).cpu().numpy()
+            for i, out_obj_id in enumerate(out_obj_ids)
+        }
+        
+        video_segments_logits[out_frame_idx] = per_obj_output_mask_logits
         video_segments[out_frame_idx] = per_obj_output_mask
         confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
         
@@ -357,7 +409,7 @@ def vos_inference(
             )
         
         print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
-    return video_segments, confidence_scores
+    return video_segments_logits, confidence_scores
     
 
 @torch.inference_mode()
@@ -611,7 +663,9 @@ def main():
     
     #--------------------------Loop though vidoes----------------------------------
     
-    
+    X = []  # features per frame
+    y = []  # labels per frame
+    iou_threshold = 0.75
 
     for n_video, video_name in enumerate(video_names):
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
@@ -620,17 +674,14 @@ def main():
         combined_scores = {}      # frame_index → {folder_name: confidence}
         frame_indices = set()
         
-        
-        # Create a CSV file and write the header
-        #csv_file_path = os.path.join(args.output_mask_dir, video_name, 'confidence_scores.csv')
-        frame_names = get_frame_names(os.path.join(args.base_video_dir, video_name))
-        
-            
+        frame_names = get_frame_names(os.path.join(args.base_video_dir, video_name))    
         mask_img_list_with_obj = get_mask_img_list_with_obj(args, frame_names, video_name)
         if mask_img_list_with_obj[0] != 0:
             exit()
         else:
             mask_img_list_with_obj.pop(0)
+            
+        # -------------------- Prompt on First frame ------------------------------
 
         folder_name = "0"
         folder_name_list.append(folder_name)
@@ -654,41 +705,75 @@ def main():
                 combined_scores[idx] = {}
             combined_scores[idx][folder_name] = score
             frame_indices.add(idx)
-        
-        for second_prompt in mask_img_list_with_obj:
-            print ("second_prompt: ",second_prompt)
             
-            if second_prompt==5:
-                break
-            input_frame_inds = [0, second_prompt]
-            
-            folder_name = "_".join(map(str, input_frame_inds))
-            folder_name_list.append(folder_name)
-            output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
-            
-            video_segments_cor, confidence_scores_cor = vos_inference(
-                predictor=predictor,
-                base_video_dir=args.base_video_dir,
+        # Note: Considering only single object
+        for t in range(1, len(frame_names)):
+            curr_mask = (video_segments_0[t][1] > args.score_thresh).astype(float)
+            prev_mask = (video_segments_0[t-1][1] > args.score_thresh).astype(float)
+            logit = video_segments_0[t][1]
+
+            per_obj_input_mask, input_palette = load_masks_from_dir(
                 input_mask_dir=args.input_mask_dir,
-                output_mask_dir=output_mask_dir,
                 video_name=video_name,
-                input_frame_inds = input_frame_inds,
-                score_thresh=args.score_thresh,
-                use_all_masks=args.use_all_masks,
-                per_obj_png_file=args.per_obj_png_file,
-                save_palette_png=args.save_palette_png,
-                )
+                frame_name=frame_names[t],
+                per_obj_png_file=args. per_obj_png_file)  
             
-            for idx, value in confidence_scores_cor.items():
-                score = float(value[0][0])  # Extract float from array([[value]])
-                if idx not in combined_scores:
-                    combined_scores[idx] = {}
-                combined_scores[idx][folder_name] = score
-                frame_indices.add(idx)
+            #gt = per_obj_input_mask[1]   # I have hard coded this since i know there is only one object ant it's id is 1
+            input_mask_path = os.path.join(args.input_mask_dir, video_name, f"{frame_names[t]}.png")
+            if os.path.exists(input_mask_path):
+                input_mask, _ = load_ann_png(input_mask_path)
+                gt = np.any(input_mask != 0, axis=-1)
+                gt = np.expand_dims(gt, axis=0) 
+                
+            
+            
+            features = compute_frame_features(curr_mask, prev_mask, logit)
+            iou = compute_iou(curr_mask, gt)
+            label = 1 if iou < iou_threshold else 0
+            
+            X.append(features)
+            y.append(label)
+            
+        
+        
+        # -------------------Correction Prompts -------------------------------------
+        
+        # for second_prompt in mask_img_list_with_obj:
+        #     print ("second_prompt: ",second_prompt)
+            
+        #     if second_prompt==5:
+        #         break
+        #     input_frame_inds = [0, second_prompt]
+            
+        #     folder_name = "_".join(map(str, input_frame_inds))
+        #     folder_name_list.append(folder_name)
+        #     output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
+            
+        #     video_segments_cor, confidence_scores_cor = vos_inference(
+        #         predictor=predictor,
+        #         base_video_dir=args.base_video_dir,
+        #         input_mask_dir=args.input_mask_dir,
+        #         output_mask_dir=output_mask_dir,
+        #         video_name=video_name,
+        #         input_frame_inds = input_frame_inds,
+        #         score_thresh=args.score_thresh,
+        #         use_all_masks=args.use_all_masks,
+        #         per_obj_png_file=args.per_obj_png_file,
+        #         save_palette_png=args.save_palette_png,
+        #         )
+            
+        #     for idx, value in confidence_scores_cor.items():
+        #         score = float(value[0][0])  # Extract float from array([[value]])
+        #         if idx not in combined_scores:
+        #             combined_scores[idx] = {}
+        #         combined_scores[idx][folder_name] = score
+        #         frame_indices.add(idx)
                 
         frame_indices = sorted(frame_indices)
         
         
+        
+        # Write confidence to a CSV file
         with open(os.path.join(args.output_mask_dir, video_name, "combined_confidence_scores.csv"), "w", newline="") as f:
             print ("Saving confidence csv")
             writer = csv.writer(f)
@@ -700,6 +785,11 @@ def main():
                 for folder_name in folder_name_list:
                     row.append(combined_scores[idx].get(folder_name, ""))  # blank if missing
                 writer.writerow(row)
+    
+
+
+    clf = train_deferral_model(X, y)
+    
 
             
     
