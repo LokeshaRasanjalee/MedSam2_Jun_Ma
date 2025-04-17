@@ -42,11 +42,18 @@ def convert_images_to_png(input_dir, output_dir):
         output_subdir = os.path.join(output_dir, rel_path)
         os.makedirs(output_subdir, exist_ok=True)
         
+        # Set the number of digits for padding to 5
+        max_digits = 5  # Fixed padding length
+        
         # Process each file
-        for file in files:
+        for index, file in enumerate(files):
             if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff')):
                 input_path = os.path.join(root, file)
-                output_path = os.path.join(output_subdir, os.path.splitext(file)[0] + '.png')
+                file_new = int(file[:-4])
+                print (file_new)
+                # Format the output filename with leading zeros
+                output_filename = f"{file_new:0{max_digits}}.png"
+                output_path = os.path.join(output_subdir, output_filename)
                 
                 # Read and convert image
                 img = cv2.imread(input_path)
