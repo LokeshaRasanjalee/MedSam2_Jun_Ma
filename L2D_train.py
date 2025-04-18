@@ -225,7 +225,7 @@ def dice_score(pred_mask, true_mask, eps=1e-5):
     return (2. * intersection) / (pred.sum() + true.sum() + eps)
 
 
-def compute_frame_features(curr_mask, prev_mask, logit):
+def compute_frame_features(curr_mask, prev_mask, logit, confidence_score):
     print ("compute_frame_features")
     dice = dice_score(curr_mask, prev_mask)
     conf_mean = logit.mean().item()
@@ -233,7 +233,7 @@ def compute_frame_features(curr_mask, prev_mask, logit):
     area = curr_mask.sum().item()
     #edge_sharpness = compute_edge_sharpness(curr_mask)
     
-    return [dice, conf_mean, conf_std, area]
+    return [dice, conf_mean, conf_std, area, confidence_score]
 
 def compute_iou(mask1, mask2, eps=1e-5):
     print ("compute_iou")
@@ -251,7 +251,7 @@ def train_deferral_model(X, y):
     clf = LogisticRegression()
     clf.fit(X_train_scaled, y_train)
     y_pred = clf.predict(X_test_scaled)
-    print(f"Model accuracy: {accuracy_score(y_test, y_pred)}")
+    print(f"Model accuracy: {accuracy_score(y_test, y_pred):.3f}")
     return clf
     
 
@@ -727,7 +727,7 @@ def main():
                 
             
             
-            features = compute_frame_features(curr_mask, prev_mask, logit)
+            features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_0[t][0][0])
             iou = compute_iou(curr_mask, gt)
             label = 1 if iou < iou_threshold else 0
             
