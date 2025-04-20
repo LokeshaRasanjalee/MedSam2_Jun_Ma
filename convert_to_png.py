@@ -52,7 +52,7 @@ def convert_images_to_png(input_dir, output_dir):
                 file_new = int(file[:-4])
                 print (file_new)
                 # Format the output filename with leading zeros
-                output_filename = f"{file_new:0{max_digits}}.png"
+                output_filename = f"{file_new:0{max_digits}}.jpg"
                 output_path = os.path.join(output_subdir, output_filename)
                 
                 # Read and convert image
@@ -71,6 +71,6 @@ def convert_images_to_png(input_dir, output_dir):
                     print(f"Failed to read: {input_path}")
 
 if __name__ == "__main__":
-    input_dir = "media/mask"
-    output_dir = "media/mask_png"
+    input_dir = "./media/polypgen_seq/Train_new/Images/"
+    output_dir = "./media/polypgen_seq/Train_new/Images_jpg"
     convert_images_to_png(input_dir, output_dir) 

@@ -240,7 +240,7 @@ def compute_iou(mask1, mask2, eps=1e-5):
     #print ("compute_iou")
     intersection = ((mask1 > 0) & (mask2 > 0)).sum()
     union = ((mask1 > 0) | (mask2 > 0)).sum()
-    #print ("Intersection: ",intersection,"     |     Union: ", union)
+    print ("Intersection: ",intersection,"     |     Union: ", union)
     return intersection / (union + eps)
 
 
@@ -253,9 +253,6 @@ def train_deferral_model(X, y):
     clf = LogisticRegression()
     clf.fit(X_train_scaled, y_train)
     y_pred = clf.predict(X_test_scaled)
-    y_pred_prob = clf.predict_proba(X_test_scaled)
-    for i, prob in enumerate(y_pred_prob):
-        print(f"Test case {i+1}: Probability of positive class = {prob[1]:.3f}")
     print(f"Model accuracy: {accuracy_score(y_test, y_pred):.3f}")
     return clf
 
@@ -263,6 +260,9 @@ def save_model(model, output_path, model_name):
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     joblib.dump(model, os.path.join(output_path, model_name + ".pkl"))
+    
+def load_logistic_regression_model(model_path, model_name):
+    return joblib.load(os.path.join(model_path, model_name + ".pkl"))
  
     
 def downstream_impact(pred_logits_uncorrected, pred_logits_corrected, gt_masks,score_thresh):
@@ -278,9 +278,8 @@ def downstream_impact(pred_logits_uncorrected, pred_logits_corrected, gt_masks,s
         future_iou_u.append(compute_iou(mask_u, gt))
         future_iou_c.append(compute_iou(mask_c, gt))
 
-    #impact = ((np.mean(future_iou_c) - np.mean(future_iou_u))/( np.mean(future_iou_u)+  1e-5))*100
-    impact = (np.mean(future_iou_c) - np.mean(future_iou_u))
-    #print (impact)
+    impact = ((np.mean(future_iou_c) - np.mean(future_iou_u))/( np.mean(future_iou_u)+  1e-5))*100
+    print (impact)
     return impact
     
 
@@ -326,7 +325,7 @@ def vos_inference(
     input_frame_inds = sorted(set(input_frame_inds))
 
     # add those input masks to SAM 2 inference state before propagation
-    #os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
+    os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
     object_ids_set = None
     for input_frame_idx in input_frame_inds:
         try:
@@ -695,15 +694,22 @@ def main():
     # Here we are not considering this scenario : vos_separate_inference_per_object
     assert not args.track_object_appearing_later_in_video
     
-    print(f"Train on {len(video_names)} videos:\n{video_names}")
+    print(f"running inference on {len(video_names)} videos:\n{video_names}")
+    
+    #------------------------------Load Model--------------------------------------
+    
+    
+    
+    
+    clf = load_logistic_regression_model(args.post_hoc_model_save_dir,"deferral_model" )
+    lambda_value = 1.8
     
     #--------------------------Loop though vidoes----------------------------------
     
-    X = []  # features per frame
-    y_tmp = []  # labels per frame
-    y=[]
-    impact_list = []
-    iou_threshold = 0.75
+    #X = []  # features per frame
+    #y = []  # labels per frame
+    #impact_list = []
+    #iou_threshold = 0.75
 
     for n_video, video_name in enumerate(video_names):
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
@@ -713,7 +719,7 @@ def main():
         frame_indices = set()
         
         frame_names = get_frame_names(os.path.join(args.base_video_dir, video_name))    
-        mask_img_list_with_obj = sorted(get_mask_img_list_with_obj(args, frame_names, video_name))
+        mask_img_list_with_obj = get_mask_img_list_with_obj(args, frame_names, video_name)
         if mask_img_list_with_obj[0] != 0:
             exit()
         else:
@@ -775,56 +781,78 @@ def main():
                 gt = np.any(input_mask != 0, axis=-1)
                 gt = np.expand_dims(gt, axis=0) 
                 gt_list.append(gt)
+         
+                
+        flagged_frames = []        
+        # Feature extraction from frames
+        for t in range(1, len(frame_names)):
+            curr_mask = (video_segments_0[t][1] > args.score_thresh).astype(float)
+            prev_mask = (video_segments_0[t-1][1] > args.score_thresh).astype(float)
+            logit = video_segments_0[t][1] 
+            
+            
+            features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_0[t][0][0])
+            #defer_label = 1 if impact > 1.8 else 0
+            
+            #X.append(features)
+            #y.append(defer_label)
+            
+            prob = clf.predict_proba([features])[0][1]
+            print (prob)
+            if prob > 0.5:
+                flagged_frames.append(t)
+                
+        print(flagged_frames)
             
         
         # -------------------Correction Prompts -------------------------------------
         
-        for second_prompt in mask_img_list_with_obj:
-            print ("second_prompt: ",second_prompt)
+        # for second_prompt in mask_img_list_with_obj:
+        #     print ("second_prompt: ",second_prompt)
             
-            # if second_prompt==10:
-            #     break
-            input_frame_inds = [0, second_prompt]
+        #     # if second_prompt==10:
+        #     #     break
+        #     input_frame_inds = [0, second_prompt]
             
-            folder_name = "_".join(map(str, input_frame_inds))
-            folder_name_list.append(folder_name)
-            output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
+        #     folder_name = "_".join(map(str, input_frame_inds))
+        #     folder_name_list.append(folder_name)
+        #     output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
             
-            video_segments_cor, confidence_scores_cor = vos_inference(
-                predictor=predictor,
-                base_video_dir=args.base_video_dir,
-                input_mask_dir=args.input_mask_dir,
-                output_mask_dir=output_mask_dir,
-                video_name=video_name,
-                input_frame_inds = input_frame_inds,
-                score_thresh=args.score_thresh,
-                use_all_masks=args.use_all_masks,
-                per_obj_png_file=args.per_obj_png_file,
-                save_palette_png=args.save_palette_png,
-                )
+        #     video_segments_cor, confidence_scores_cor = vos_inference(
+        #         predictor=predictor,
+        #         base_video_dir=args.base_video_dir,
+        #         input_mask_dir=args.input_mask_dir,
+        #         output_mask_dir=output_mask_dir,
+        #         video_name=video_name,
+        #         input_frame_inds = input_frame_inds,
+        #         score_thresh=args.score_thresh,
+        #         use_all_masks=args.use_all_masks,
+        #         per_obj_png_file=args.per_obj_png_file,
+        #         save_palette_png=args.save_palette_png,
+        #         )
             
-            for idx, value in confidence_scores_cor.items():
-                score = float(value[0][0])  # Extract float from array([[value]])
-                if idx not in combined_scores:
-                    combined_scores[idx] = {}
-                combined_scores[idx][folder_name] = score
-                frame_indices.add(idx)
+        #     for idx, value in confidence_scores_cor.items():
+        #         score = float(value[0][0])  # Extract float from array([[value]])
+        #         if idx not in combined_scores:
+        #             combined_scores[idx] = {}
+        #         combined_scores[idx][folder_name] = score
+        #         frame_indices.add(idx)
                 
-            impact = downstream_impact(video_segments_0, video_segments_cor, gt_list, args.score_thresh)
-            impact_list.append(impact) 
+        #     impact = downstream_impact(video_segments_0, video_segments_cor, gt_list, args.score_thresh)
+        #     impact_list.append(impact) 
                 
-            # Feature extraction from frames
-            for t in range(1, len(frame_names)):
-                curr_mask = (video_segments_0[t][1] > args.score_thresh).astype(float)
-                prev_mask = (video_segments_0[t-1][1] > args.score_thresh).astype(float)
-                logit = video_segments_0[t][1] 
+            # # Feature extraction from frames
+            # for t in range(1, len(frame_names)):
+            #     curr_mask = (video_segments_0[t][1] > args.score_thresh).astype(float)
+            #     prev_mask = (video_segments_0[t-1][1] > args.score_thresh).astype(float)
+            #     logit = video_segments_0[t][1] 
                 
                 
-                features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_0[t][0][0])
-                #defer_label = 1 if impact > 1.8 else 0
+            #     features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_0[t][0][0])
+            #     defer_label = 1 if impact > 1.8 else 0
                 
-                X.append(features)
-                y_tmp.append(impact)
+            #     X.append(features)
+            #     y.append(defer_label)
                     
                 
             
@@ -848,28 +876,9 @@ def main():
     
 
 
-    with open(os.path.join(args.output_mask_dir,"impact_list.csv"), "w", newline="") as f:
-        print("Saving impact list csv")
-        writer = csv.writer(f)
-        writer.writerow(["Impact"])
-        for impact in impact_list:
-            writer.writerow([impact])
-    
-    lambda_value = np.quantile(impact_list, 0.90) 
-    y = [1 if i >= lambda_value else 0 for i in y_tmp]
-    print ("lambda_value - ", lambda_value)
-    print (impact_list)
-    
-    clf = train_deferral_model(X, y)
-    save_model(clf, args.post_hoc_model_save_dir, "deferral_model")
-    
-
-               
-    
-
     print(
         f"completed inference on {len(video_names)} videos -- "
-        f"output masks saved to {args.output_mask_dir}"
+        # f"output masks saved to {args.output_mask_dir}"
     )
 
 
