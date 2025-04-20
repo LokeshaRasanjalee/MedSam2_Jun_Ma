@@ -265,12 +265,13 @@ def save_model(model, output_path, model_name):
     joblib.dump(model, os.path.join(output_path, model_name + ".pkl"))
  
     
-def downstream_impact(pred_logits_uncorrected, pred_logits_corrected, gt_masks,score_thresh):
+def downstream_impact(start_idx, pred_logits_uncorrected, pred_logits_corrected, gt_masks,score_thresh):
     #consider the entire impact on the video, not just specific to a region
     future_iou_u, future_iou_c = [], []
     T = len(pred_logits_uncorrected)
 
-    for k in range(0,T):
+    for k in range(start_idx,start_idx+T-1):
+        print (k)
         mask_u = (pred_logits_uncorrected[k][1] > score_thresh).astype(float)
         mask_c = (pred_logits_corrected[k][1] > score_thresh).astype(float)
         gt = gt_masks[k]
@@ -714,30 +715,28 @@ def main():
         
         frame_names = get_frame_names(os.path.join(args.base_video_dir, video_name))    
         mask_img_list_with_obj = sorted(get_mask_img_list_with_obj(args, frame_names, video_name))
-        if mask_img_list_with_obj[0] != 0:
-            exit()
-        else:
-            mask_img_list_with_obj.pop(0)
+        initial_prompt = int(mask_img_list_with_obj[0])
+        mask_img_list_with_obj.pop(0)
             
         # -------------------- Prompt on First frame ------------------------------
 
-        folder_name = "0"
+        folder_name = str(initial_prompt)
         folder_name_list.append(folder_name)
         output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
-        video_segments_0, confidence_scores_0 = vos_inference(
+        video_segments_first, confidence_scores_first = vos_inference(
             predictor=predictor,
             base_video_dir=args.base_video_dir,
             input_mask_dir=args.input_mask_dir,
             output_mask_dir=output_mask_dir,
             video_name=video_name,
-            input_frame_inds = [0],
+            input_frame_inds = [initial_prompt],
             score_thresh=args.score_thresh,
             use_all_masks=args.use_all_masks,
             per_obj_png_file=args.per_obj_png_file,
             save_palette_png=args.save_palette_png,
             )
         
-        for idx, value in confidence_scores_0.items():
+        for idx, value in confidence_scores_first.items():
             score = float(value[0][0])  # Extract float from array([[value]])
             if idx not in combined_scores:
                 combined_scores[idx] = {}
@@ -747,9 +746,9 @@ def main():
         # Note: Considering only single object
         # # Feature extraction from frames
         # for t in range(1, len(frame_names)):
-        #     curr_mask = (video_segments_0[t][1] > args.score_thresh).astype(float)
-        #     prev_mask = (video_segments_0[t-1][1] > args.score_thresh).astype(float)
-        #     logit = video_segments_0[t][1] 
+        #     curr_mask = (video_segments_first[t][1] > args.score_thresh).astype(float)
+        #     prev_mask = (video_segments_first[t-1][1] > args.score_thresh).astype(float)
+        #     logit = video_segments_first[t][1] 
             
         #     #gt = per_obj_input_mask[1]   # I have hard coded this since i know there is only one object ant it's id is 1
         #     input_mask_path = os.path.join(args.input_mask_dir, video_name, f"{frame_names[t]}.png")
@@ -760,7 +759,7 @@ def main():
                 
             
             
-        #     features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_0[t][0][0])
+        #     features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_first[t][0][0])
         #     iou = compute_iou(curr_mask, gt)
         #     label = 1 if iou < iou_threshold else 0
             
@@ -782,9 +781,9 @@ def main():
         for second_prompt in mask_img_list_with_obj:
             print ("second_prompt: ",second_prompt)
             
-            # if second_prompt==10:
-            #     break
-            input_frame_inds = [0, second_prompt]
+            if second_prompt==10:
+                break
+            input_frame_inds = [initial_prompt, second_prompt]
             
             folder_name = "_".join(map(str, input_frame_inds))
             folder_name_list.append(folder_name)
@@ -808,19 +807,19 @@ def main():
                 if idx not in combined_scores:
                     combined_scores[idx] = {}
                 combined_scores[idx][folder_name] = score
-                frame_indices.add(idx)
+                #frame_indices.add(idx)
                 
-            impact = downstream_impact(video_segments_0, video_segments_cor, gt_list, args.score_thresh)
+            impact = downstream_impact(initial_prompt+1, video_segments_first, video_segments_cor, gt_list, args.score_thresh)
             impact_list.append(impact) 
                 
             # Feature extraction from frames
-            for t in range(1, len(frame_names)):
-                curr_mask = (video_segments_0[t][1] > args.score_thresh).astype(float)
-                prev_mask = (video_segments_0[t-1][1] > args.score_thresh).astype(float)
-                logit = video_segments_0[t][1] 
+            for t in range(initial_prompt+1, len(frame_names)):
+                curr_mask = (video_segments_first[t][1] > args.score_thresh).astype(float)
+                prev_mask = (video_segments_first[t-1][1] > args.score_thresh).astype(float)
+                logit = video_segments_first[t][1] 
                 
                 
-                features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_0[t][0][0])
+                features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_first[t][0][0])
                 #defer_label = 1 if impact > 1.8 else 0
                 
                 X.append(features)
@@ -834,7 +833,9 @@ def main():
         
         
         # Write confidence to a CSV file
-        with open(os.path.join(args.output_mask_dir, video_name, "combined_confidence_scores.csv"), "w", newline="") as f:
+        folder_name = os.path.join(args.output_mask_dir, video_name, "combined_confidence_scores")
+        os.makedirs(folder_name, exist_ok=True)
+        with open(os.path.join(folder_name, "combined_confidence_scores.csv"), "w", newline="") as f:
             print ("Saving confidence csv")
             writer = csv.writer(f)
             header = ["frame_index"] + folder_name_list
