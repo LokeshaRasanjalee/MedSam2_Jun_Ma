@@ -119,3 +119,6 @@ model:
   # Compilation flag
   # HieraT does not currently support compilation, should always be set to False
   compile_image_encoder: False
+
+  #Lokesha addded
+  add_all_frames_to_correct_as_cond: True  # when a frame receives a correction click, it becomes a conditioning frame (even if it's not initially a conditioning frame)

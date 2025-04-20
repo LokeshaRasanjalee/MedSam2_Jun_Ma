@@ -14,6 +14,7 @@ import torch
 from PIL import Image
 from sam2.build_sam import build_sam2_video_predictor
 import csv
+import logging
 
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
@@ -25,6 +26,8 @@ import joblib
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
 
+# Set up logging
+logging.basicConfig(filename='output.log', level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def load_ann_png(path):
     """Load a PNG file as a mask and its palette."""
@@ -245,7 +248,8 @@ def compute_iou(mask1, mask2, eps=1e-5):
 
 
 def train_deferral_model(X, y):
-    print ("train_deferral_model")
+    print("train_deferral_model")
+    logging.info("train_deferral_model")
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
@@ -271,7 +275,7 @@ def downstream_impact(start_idx, pred_logits_uncorrected, pred_logits_corrected,
     T = len(pred_logits_uncorrected)
 
     for k in range(start_idx,start_idx+T-1):
-        print (k)
+        #print (k)
         mask_u = (pred_logits_uncorrected[k][1] > score_thresh).astype(float)
         mask_c = (pred_logits_corrected[k][1] > score_thresh).astype(float)
         gt = gt_masks[k]
@@ -289,6 +293,163 @@ def downstream_impact(start_idx, pred_logits_uncorrected, pred_logits_corrected,
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
 def vos_inference(
+    predictor,
+    base_video_dir,
+    input_mask_dir,
+    output_mask_dir,
+    video_name,
+    input_frame_inds,
+    score_thresh=0.0,
+    use_all_masks=False,
+    per_obj_png_file=False,
+    save_palette_png=False,
+):
+    """Run inference on a single video with the given predictor."""
+    # load the video frames and initialize the inference state on this video
+    video_dir = os.path.join(base_video_dir, video_name)
+    frame_names = [
+        os.path.splitext(p)[0]
+        for p in os.listdir(video_dir)
+        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+    ]
+    frame_names = list(sorted(frame_names))
+    inference_state = predictor.init_state(
+        video_path=video_dir, async_loading_frames=False
+    )
+    predictor.reset_state(inference_state)
+    height = inference_state["video_height"]
+    width = inference_state["video_width"]
+    input_palette = None
+    
+        
+    # check and make sure we got at least one input frame
+    if len(input_frame_inds) == 0:
+        raise RuntimeError(
+            f"In {video_name=}, got no input masks in {input_mask_dir=}. "
+            "Please make sure the input masks are available in the correct format."
+        )
+    input_frame_inds = sorted(set(input_frame_inds))
+
+    # add those input masks to SAM 2 inference state before propagation
+    #os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
+    object_ids_set = None
+    for input_frame_idx in input_frame_inds:
+        try:
+            per_obj_input_mask, input_palette = load_masks_from_dir(
+                input_mask_dir=input_mask_dir,
+                video_name=video_name,
+                frame_name=frame_names[input_frame_idx],
+                per_obj_png_file=per_obj_png_file,
+            )
+        except FileNotFoundError as e:
+            raise RuntimeError(
+                f"In {video_name=}, failed to load input mask for frame {input_frame_idx=}. "
+                "Please add the `--track_object_appearing_later_in_video` flag "
+                "for VOS datasets that don't have all objects to track appearing "
+                "in the first frame (such as LVOS or YouTube-VOS)."
+            ) from e
+        
+        # get the list of object ids to track from the first input frame
+        if object_ids_set is None:
+            object_ids_set = set(per_obj_input_mask)
+        for object_id, object_mask in per_obj_input_mask.items():
+            # check and make sure no new object ids appear only in later frames
+            if object_id not in object_ids_set:
+                raise RuntimeError(
+                    f"In {video_name=}, got a new {object_id=} appearing only in a "
+                    f"later {input_frame_idx=} (but not appearing in the first frame). "
+                    "Please add the `--track_object_appearing_later_in_video` flag "
+                    "for VOS datasets that don't have all objects to track appearing "
+                    "in the first frame (such as LVOS or YouTube-VOS)."
+                )
+            _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
+                inference_state=inference_state,
+                frame_idx=input_frame_idx,
+                obj_id=object_id,
+                mask=object_mask,
+            )
+            
+            # plt.figure(figsize=(9, 6))
+            # plt.title(f"frame {input_frame_idx}")
+            # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+            # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+            # print(out_mask_logits.shape)
+            
+            # # Save the visualization image
+            # vis_path = os.path.join(output_mask_dir, video_name, f"vis_{frame_names[input_frame_idx]}.png")
+            # plt.savefig(vis_path)
+            # plt.close()  # Close the figure to free memory
+
+        # check and make sure we have at least one object to track
+        if object_ids_set is None or len(object_ids_set) == 0:
+            raise RuntimeError(
+                f"In {video_name=}, got no object ids on {input_frame_inds=}. "
+                "Please add the `--track_object_appearing_later_in_video` flag "
+                "for VOS datasets that don't have all objects to track appearing "
+                "in the first frame (such as LVOS or YouTube-VOS)."
+            )
+        
+        # run propagation throughout the video and collect the results in a dict
+        output_palette = input_palette or DAVIS_PALETTE
+        video_segments = {}  # video_segments contains the per-frame segmentation results
+        confidence_scores = {}
+        video_segments_logits = {}
+
+        for out_frame_idx, out_obj_ids, out_mask_logits, object_score_logits in predictor.propagate_in_video(
+            inference_state
+        ):
+            per_obj_output_mask = {
+                out_obj_id: (out_mask_logits[i] > score_thresh).cpu().numpy()
+                for i, out_obj_id in enumerate(out_obj_ids)
+            }
+            
+            per_obj_output_mask_logits = {
+                out_obj_id: (out_mask_logits[i]).cpu().numpy()
+                for i, out_obj_id in enumerate(out_obj_ids)
+            }
+            
+            video_segments_logits[out_frame_idx] = per_obj_output_mask_logits
+            video_segments[out_frame_idx] = per_obj_output_mask
+            confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
+        
+    predictor.reset_state(inference_state)
+
+    # # write the output masks as palette PNG files to output_mask_dir
+    # for out_frame_idx, per_obj_output_mask in video_segments.items():
+    #     if save_palette_png:
+    #         # save palette PNG prediction results
+    #         save_palette_masks_to_dir(
+    #             output_mask_dir=output_mask_dir,
+    #             video_name=video_name,
+    #             frame_name=frame_names[out_frame_idx],
+    #             per_obj_output_mask=per_obj_output_mask,
+    #             height=height,
+    #             width=width,
+    #             per_obj_png_file=per_obj_png_file,
+    #             output_palette=output_palette,
+    #             confidence_scores=confidence_scores[out_frame_idx][0],
+    #         )
+    #     else:
+    #         # save raw prediction results
+    #         save_masks_to_dir(
+    #             output_mask_dir=output_mask_dir,
+    #             video_name=video_name,
+    #             frame_name=frame_names[out_frame_idx],
+    #             per_obj_output_mask=per_obj_output_mask,
+    #             height=height,
+    #             width=width,
+    #             per_obj_png_file=per_obj_png_file,
+    #             confidence_scores=confidence_scores[out_frame_idx][0],
+    #         )
+        
+    #     print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
+    
+    return video_segments_logits, confidence_scores
+
+
+@torch.inference_mode()
+@torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+def vos_inference_old(
     predictor,
     base_video_dir,
     input_mask_dir,
@@ -659,8 +820,10 @@ def main():
     
     # Print all arguments
     print("\nArguments:")
+    logging.info("\nArguments:")
     for arg in vars(args):
         print(f"{arg}: {getattr(args, arg)}")
+        logging.info(f"{arg}: {getattr(args, arg)}")
     print("\n")
     
     # if we use per-object PNG files, they could possibly overlap in inputs and outputs
@@ -697,6 +860,7 @@ def main():
     assert not args.track_object_appearing_later_in_video
     
     print(f"Train on {len(video_names)} videos:\n{video_names}")
+    logging.info(f"Train on {len(video_names)} videos:\n{video_names}")
     
     #--------------------------Loop though vidoes----------------------------------
     
@@ -707,7 +871,10 @@ def main():
     iou_threshold = 0.75
 
     for n_video, video_name in enumerate(video_names):
+        
+        
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
+        logging.info(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         
         folder_name_list = []
         combined_scores = {}      # frame_index → {folder_name: confidence}
@@ -779,10 +946,11 @@ def main():
         # -------------------Correction Prompts -------------------------------------
         
         for second_prompt in mask_img_list_with_obj:
-            print ("second_prompt: ",second_prompt)
+            print("second_prompt: ", second_prompt)
+            logging.info("second_prompt: " + str(second_prompt))
             
-            if second_prompt==10:
-                break
+            # if second_prompt==10:
+            #     break
             input_frame_inds = [initial_prompt, second_prompt]
             
             folder_name = "_".join(map(str, input_frame_inds))
@@ -836,7 +1004,8 @@ def main():
         folder_name = os.path.join(args.output_mask_dir, video_name, "combined_confidence_scores")
         os.makedirs(folder_name, exist_ok=True)
         with open(os.path.join(folder_name, "combined_confidence_scores.csv"), "w", newline="") as f:
-            print ("Saving confidence csv")
+            print("Saving confidence csv")
+            logging.info("Saving confidence csv")
             writer = csv.writer(f)
             header = ["frame_index"] + folder_name_list
             writer.writerow(header)
@@ -851,6 +1020,7 @@ def main():
 
     with open(os.path.join(args.output_mask_dir,"impact_list.csv"), "w", newline="") as f:
         print("Saving impact list csv")
+        logging.info("Saving impact list csv")
         writer = csv.writer(f)
         writer.writerow(["Impact"])
         for impact in impact_list:
@@ -858,20 +1028,20 @@ def main():
     
     lambda_value = np.quantile(impact_list, 0.90) 
     y = [1 if i >= lambda_value else 0 for i in y_tmp]
-    print ("lambda_value - ", lambda_value)
-    print (impact_list)
+    print("lambda_value - ", lambda_value)
+    logging.info("lambda_value - ", lambda_value)
+    print(impact_list)
+    logging.info(impact_list)
     
     clf = train_deferral_model(X, y)
-    save_model(clf, args.post_hoc_model_save_dir, "deferral_model")
+    save_model(clf, args.post_hoc_model_save_dir, "deferral_model_all_2")
     
 
                
     
 
-    print(
-        f"completed inference on {len(video_names)} videos -- "
-        f"output masks saved to {args.output_mask_dir}"
-    )
+    print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+    logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
 
 
 if __name__ == "__main__":
