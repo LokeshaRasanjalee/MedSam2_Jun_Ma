@@ -887,7 +887,17 @@ def main():
     )
     args = parser.parse_args()
 
-    # Set up logging to use the output_mask_dir
+   
+    
+    # Add timestamp to the output directory
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    args.output_mask_dir = os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}")
+    
+    # Ensure the directory exists
+    os.makedirs(args.output_mask_dir, exist_ok=True)
+
+    
+     # Set up logging to use the output_mask_dir
     logging.basicConfig(
         filename=os.path.join(args.output_mask_dir, 'output.log'),
         level=logging.INFO,
@@ -901,14 +911,8 @@ def main():
         print(f"{arg}: {getattr(args, arg)}")
         logging.info(f"{arg}: {getattr(args, arg)}")
     print("\n")
+
     
-    # Add timestamp to the output directory
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    args.output_mask_dir = os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}")
-
-    # Ensure the directory exists
-    os.makedirs(args.output_mask_dir, exist_ok=True)
-
     # if we use per-object PNG files, they could possibly overlap in inputs and outputs
     hydra_overrides_extra = [
         "++model.non_overlap_masks=" + ("false" if args.per_obj_png_file else "true")
@@ -1041,6 +1045,10 @@ def main():
         # -------------------Correction Prompts -------------------------------------
         
         for second_prompt in range (initial_prompt+1, len(frame_names)):
+            
+            # if second_prompt == 10:
+            #     continue
+            
             if second_prompt in mask_img_list_with_obj:
                 print("second_prompt: ", second_prompt)
                 logging.info("second_prompt: " + str(second_prompt))
