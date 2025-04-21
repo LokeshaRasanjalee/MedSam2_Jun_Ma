@@ -7,6 +7,8 @@
 import argparse
 import os
 from collections import defaultdict
+import datetime
+import logging
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -653,6 +655,13 @@ def main():
         action="store_true",
         help="whether to use vos optimized video predictor with all modules compiled",
     )
+    parser.add_argument(
+        "-e",
+        "--experiment_name",
+        type=str,
+        required=True,
+        help="Name of the experiment for logging and identification purposes",
+    )
     args = parser.parse_args()
     
     # Print all arguments
@@ -661,6 +670,20 @@ def main():
         print(f"{arg}: {getattr(args, arg)}")
     print("\n")
     
+    # Add timestamp to the output directory
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    args.output_mask_dir = os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}")
+
+    # Ensure the directory exists
+    os.makedirs(args.output_mask_dir, exist_ok=True)
+
+    # Set up logging to use the output_mask_dir
+    logging.basicConfig(
+        filename=os.path.join(args.output_mask_dir, 'output.log'),
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
     # if we use per-object PNG files, they could possibly overlap in inputs and outputs
     hydra_overrides_extra = [
         "++model.non_overlap_masks=" + ("false" if args.per_obj_png_file else "true")
@@ -701,7 +724,7 @@ def main():
     
     
     
-    clf = load_logistic_regression_model(args.post_hoc_model_save_dir,"deferral_model" )
+    clf = load_logistic_regression_model(args.post_hoc_model_save_dir,"deferral_classification_model" )
     lambda_value = 1.8
     
     #--------------------------Loop though vidoes----------------------------------
@@ -712,6 +735,8 @@ def main():
     #iou_threshold = 0.75
 
     for n_video, video_name in enumerate(video_names):
+        if video_name == "seq16":
+            continue
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         
         folder_name_list = []
