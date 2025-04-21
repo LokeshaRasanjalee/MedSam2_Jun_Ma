@@ -250,7 +250,7 @@ def compute_iou(mask1, mask2, eps=1e-5):
 def train_deferral_model(X, y):
     print("train_deferral_model")
     logging.info("train_deferral_model")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)
@@ -259,8 +259,11 @@ def train_deferral_model(X, y):
     y_pred = clf.predict(X_test_scaled)
     y_pred_prob = clf.predict_proba(X_test_scaled)
     for i, prob in enumerate(y_pred_prob):
+        logging.info(f"Test case {i+1}: Probability of positive class = {prob[1]:.3f}")
         print(f"Test case {i+1}: Probability of positive class = {prob[1]:.3f}")
+    logging.info(f"Model accuracy: {accuracy_score(y_test, y_pred):.3f}")
     print(f"Model accuracy: {accuracy_score(y_test, y_pred):.3f}")
+    
     return clf
 
 def save_model(model, output_path, model_name):
@@ -275,7 +278,9 @@ def downstream_impact(start_idx, pred_logits_uncorrected, pred_logits_corrected,
     T = len(pred_logits_uncorrected)
 
     for k in range(start_idx,start_idx+T-1):
-        #print (k)
+        # print (k)
+        # if k==17:
+        #     print("17")
         mask_u = (pred_logits_uncorrected[k][1] > score_thresh).astype(float)
         mask_c = (pred_logits_corrected[k][1] > score_thresh).astype(float)
         gt = gt_masks[k]
@@ -331,7 +336,7 @@ def vos_inference(
     input_frame_inds = sorted(set(input_frame_inds))
 
     # add those input masks to SAM 2 inference state before propagation
-    #os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
+    
     object_ids_set = None
     for input_frame_idx in input_frame_inds:
         try:
@@ -369,16 +374,17 @@ def vos_inference(
                 mask=object_mask,
             )
             
-            # plt.figure(figsize=(9, 6))
-            # plt.title(f"frame {input_frame_idx}")
-            # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
-            # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-            # print(out_mask_logits.shape)
+            os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
+            plt.figure(figsize=(9, 6))
+            plt.title(f"frame {input_frame_idx}")
+            plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+            show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+            print(out_mask_logits.shape)
             
-            # # Save the visualization image
-            # vis_path = os.path.join(output_mask_dir, video_name, f"vis_{frame_names[input_frame_idx]}.png")
-            # plt.savefig(vis_path)
-            # plt.close()  # Close the figure to free memory
+            # Save the visualization image
+            vis_path = os.path.join(output_mask_dir, video_name, f"vis_{frame_names[input_frame_idx]}.png")
+            plt.savefig(vis_path)
+            plt.close()  # Close the figure to free memory
 
         # check and make sure we have at least one object to track
         if object_ids_set is None or len(object_ids_set) == 0:
@@ -938,7 +944,12 @@ def main():
             input_mask_path = os.path.join(args.input_mask_dir, video_name, f"{mask_name}.png")
             if os.path.exists(input_mask_path):
                 input_mask, _ = load_ann_png(input_mask_path)
-                gt = np.any(input_mask != 0, axis=-1)
+                if input_mask.ndim == 3:
+                # RGB mask → binary mask
+                    gt = np.any(input_mask != 0, axis=-1)
+                elif input_mask.ndim == 2:
+                    # Already 2D, just ensure it's boolean
+                    gt = input_mask != 0
                 gt = np.expand_dims(gt, axis=0) 
                 gt_list.append(gt)
             
@@ -949,8 +960,8 @@ def main():
             print("second_prompt: ", second_prompt)
             logging.info("second_prompt: " + str(second_prompt))
             
-            # if second_prompt==10:
-            #     break
+            if second_prompt==5:
+                break
             input_frame_inds = [initial_prompt, second_prompt]
             
             folder_name = "_".join(map(str, input_frame_inds))
@@ -1029,7 +1040,7 @@ def main():
     lambda_value = np.quantile(impact_list, 0.90) 
     y = [1 if i >= lambda_value else 0 for i in y_tmp]
     print("lambda_value - ", lambda_value)
-    logging.info("lambda_value - ", lambda_value)
+    logging.info("lambda_value - "+ str(lambda_value))
     print(impact_list)
     logging.info(impact_list)
     
