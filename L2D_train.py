@@ -404,6 +404,7 @@ def vos_inference(
         for out_frame_idx, out_obj_ids, out_mask_logits, object_score_logits in predictor.propagate_in_video(
             inference_state
         ):
+            print (out_frame_idx)
             per_obj_output_mask = {
                 out_obj_id: (out_mask_logits[i] > score_thresh).cpu().numpy()
                 for i, out_obj_id in enumerate(out_obj_ids)
@@ -420,7 +421,7 @@ def vos_inference(
           
         #---------------------------------Save Prediction--------------------------------------  
         vis_frame_stride = 1   
-        for out_frame_idx in range(0, len(frame_names), vis_frame_stride):
+        for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
             frame_name = frame_names[out_frame_idx]
             # print(frame_name)
             # print(out_frame_idx)
@@ -921,6 +922,9 @@ def main():
 
     for n_video, video_name in enumerate(video_names):
         
+        if video_name == "seq4":
+            continue
+        
         
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         logging.info(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
@@ -1004,8 +1008,8 @@ def main():
             print("second_prompt: ", second_prompt)
             logging.info("second_prompt: " + str(second_prompt))
             
-            if second_prompt==5:
-                break
+            # if second_prompt==5:
+            #     break
             input_frame_inds = [initial_prompt, second_prompt]
             
             folder_name = "_".join(map(str, input_frame_inds))
