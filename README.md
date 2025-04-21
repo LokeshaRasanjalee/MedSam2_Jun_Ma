@@ -94,3 +94,6 @@ sbatch multi_node_train.sh
 }
 ```
 
+
+
+CUDA_VISIBLE_DEVICES=1 nohup python L2D_train.py --base_video_dir ./media/polypgen_seq/Train_new/Images_jpg/ --input_mask_dir ./media/polypgen_seq/Train_new/Masks/ --post_hoc_model_save_dir ./l2d_models/  -o ./media/Inference -e 'full_dataset_Polypgen' > output.log 2>&1 &
