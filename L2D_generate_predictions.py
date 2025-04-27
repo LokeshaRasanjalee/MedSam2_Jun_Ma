@@ -384,17 +384,17 @@ def vos_inference(
             
             #------------------Save Images------------------------------
             
-            # os.makedirs(output_mask_dir, exist_ok=True)
-            # plt.figure(figsize=(9, 6))
-            # plt.title(f"frame {input_frame_idx}")
-            # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
-            # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-            # print(out_mask_logits.shape)
+            os.makedirs(output_mask_dir, exist_ok=True)
+            plt.figure(figsize=(9, 6))
+            plt.title(f"frame {input_frame_idx}")
+            plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+            show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+            print(out_mask_logits.shape)
             
-            # # Save the visualization image
-            # vis_path = os.path.join(output_mask_dir, f"vis_add_{frame_names[input_frame_idx]}.png")
-            # plt.savefig(vis_path)
-            # plt.close()  # Close the figure to free memory
+            # Save the visualization image
+            vis_path = os.path.join(output_mask_dir, f"vis_add_{frame_names[input_frame_idx]}.png")
+            plt.savefig(vis_path)
+            plt.close()  # Close the figure to free memory
             
             #-----------------Save Images - End-------------------------
 
@@ -1027,128 +1027,128 @@ def main():
         #     X.append(features)
         #     y.append(label)
         
-        gt_list = []
-        for mask_name in frame_names:
-            input_mask_path = os.path.join(args.input_mask_dir, video_name, f"{mask_name}.png")
-            if os.path.exists(input_mask_path):
-                input_mask, _ = load_ann_png(input_mask_path)
-                if input_mask.ndim == 3:
-                # RGB mask → binary mask
-                    gt = np.any(input_mask != 0, axis=-1)
-                elif input_mask.ndim == 2:
-                    # Already 2D, just ensure it's boolean
-                    gt = input_mask != 0
-                gt = np.expand_dims(gt, axis=0) 
-                gt_list.append(gt)
+    #     gt_list = []
+    #     for mask_name in frame_names:
+    #         input_mask_path = os.path.join(args.input_mask_dir, video_name, f"{mask_name}.png")
+    #         if os.path.exists(input_mask_path):
+    #             input_mask, _ = load_ann_png(input_mask_path)
+    #             if input_mask.ndim == 3:
+    #             # RGB mask → binary mask
+    #                 gt = np.any(input_mask != 0, axis=-1)
+    #             elif input_mask.ndim == 2:
+    #                 # Already 2D, just ensure it's boolean
+    #                 gt = input_mask != 0
+    #             gt = np.expand_dims(gt, axis=0) 
+    #             gt_list.append(gt)
             
         
-        # -------------------Correction Prompts -------------------------------------
+    #     # -------------------Correction Prompts -------------------------------------
         
-        for second_prompt in range (initial_prompt+1, len(frame_names)):
+    #     for second_prompt in range (initial_prompt+1, len(frame_names)):
             
-            # if second_prompt == 10:
-            #     continue
+    #         # if second_prompt == 10:
+    #         #     continue
             
-            if second_prompt in mask_img_list_with_obj:
-                print("second_prompt: ", second_prompt)
-                logging.info("second_prompt: " + str(second_prompt))
+    #         if second_prompt in mask_img_list_with_obj:
+    #             print("second_prompt: ", second_prompt)
+    #             logging.info("second_prompt: " + str(second_prompt))
             
-                input_frame_inds = [initial_prompt, second_prompt]
+    #             input_frame_inds = [initial_prompt, second_prompt]
                 
-                folder_name = "_".join(map(str, input_frame_inds))
-                folder_name_list.append(folder_name)
-                output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
+    #             folder_name = "_".join(map(str, input_frame_inds))
+    #             folder_name_list.append(folder_name)
+    #             output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
                 
-                video_segments_cor, confidence_scores_cor = vos_inference(
-                    predictor=predictor,
-                    base_video_dir=args.base_video_dir,
-                    input_mask_dir=args.input_mask_dir,
-                    output_mask_dir=output_mask_dir,
-                    video_name=video_name,
-                    input_frame_inds = input_frame_inds,
-                    score_thresh=args.score_thresh,
-                    use_all_masks=args.use_all_masks,
-                    per_obj_png_file=args.per_obj_png_file,
-                    save_palette_png=args.save_palette_png,
-                    )
+    #             video_segments_cor, confidence_scores_cor = vos_inference(
+    #                 predictor=predictor,
+    #                 base_video_dir=args.base_video_dir,
+    #                 input_mask_dir=args.input_mask_dir,
+    #                 output_mask_dir=output_mask_dir,
+    #                 video_name=video_name,
+    #                 input_frame_inds = input_frame_inds,
+    #                 score_thresh=args.score_thresh,
+    #                 use_all_masks=args.use_all_masks,
+    #                 per_obj_png_file=args.per_obj_png_file,
+    #                 save_palette_png=args.save_palette_png,
+    #                 )
                 
-                for idx, value in confidence_scores_cor.items():
-                    score = float(value[0][0])  # Extract float from array([[value]])
-                    if idx not in combined_scores:
-                        combined_scores[idx] = {}
-                    combined_scores[idx][folder_name] = score
-                    #frame_indices.add(idx)
+    #             for idx, value in confidence_scores_cor.items():
+    #                 score = float(value[0][0])  # Extract float from array([[value]])
+    #                 if idx not in combined_scores:
+    #                     combined_scores[idx] = {}
+    #                 combined_scores[idx][folder_name] = score
+    #                 #frame_indices.add(idx)
                     
                 
                 
-                curr_mask = (video_segments_first[second_prompt][1] > args.score_thresh).astype(float)
-                prev_mask = (video_segments_first[second_prompt-1][1] > args.score_thresh).astype(float)
-                logit = video_segments_first[second_prompt][1] 
-                features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_first[second_prompt][0][0])
-                impact, mean_future_iou_c, mean_future_iou_u = downstream_impact(initial_prompt,second_prompt, video_segments_first, video_segments_cor, gt_list, args.score_thresh, K=7)
+    #             curr_mask = (video_segments_first[second_prompt][1] > args.score_thresh).astype(float)
+    #             prev_mask = (video_segments_first[second_prompt-1][1] > args.score_thresh).astype(float)
+    #             logit = video_segments_first[second_prompt][1] 
+    #             features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_first[second_prompt][0][0])
+    #             impact, mean_future_iou_c, mean_future_iou_u = downstream_impact(initial_prompt,second_prompt, video_segments_first, video_segments_cor, gt_list, args.score_thresh, K=7)
 
-                impact_list.append(impact) 
+    #             impact_list.append(impact) 
                     
-                X.append(features)
-                y_tmp.append(impact)
-                mean_future_iou_c_list.append(mean_future_iou_c)
-                mean_future_iou_u_list.append(mean_future_iou_u)
+    #             X.append(features)
+    #             y_tmp.append(impact)
+    #             mean_future_iou_c_list.append(mean_future_iou_c)
+    #             mean_future_iou_u_list.append(mean_future_iou_u)
                 
                     
                 
                      
         
         
-        # Write confidence to a CSV file
-        folder_name = os.path.join(args.output_mask_dir, video_name, "combined_confidence_scores")
-        os.makedirs(folder_name, exist_ok=True)
-        with open(os.path.join(folder_name, "combined_confidence_scores.csv"), "w", newline="") as f:
-            print("Saving confidence csv")
-            logging.info("Saving confidence csv")
-            writer = csv.writer(f)
-            header = ["frame_index"] + folder_name_list
-            writer.writerow(header)
+    #     # Write confidence to a CSV file
+    #     folder_name = os.path.join(args.output_mask_dir, video_name, "combined_confidence_scores")
+    #     os.makedirs(folder_name, exist_ok=True)
+    #     with open(os.path.join(folder_name, "combined_confidence_scores.csv"), "w", newline="") as f:
+    #         print("Saving confidence csv")
+    #         logging.info("Saving confidence csv")
+    #         writer = csv.writer(f)
+    #         header = ["frame_index"] + folder_name_list
+    #         writer.writerow(header)
 
-            for idx in frame_indices:
-                row = [idx]
-                for folder_name in folder_name_list:
-                    row.append(combined_scores[idx].get(folder_name, ""))  # blank if missing
-                writer.writerow(row)
+    #         for idx in frame_indices:
+    #             row = [idx]
+    #             for folder_name in folder_name_list:
+    #                 row.append(combined_scores[idx].get(folder_name, ""))  # blank if missing
+    #             writer.writerow(row)
     
 
 
-    with open(os.path.join(args.output_mask_dir,"impact_list.csv"), "w", newline="") as f:
-        print("Saving impact list csv")
-        logging.info("Saving impact list csv")
-        writer = csv.writer(f)
-        writer.writerow(["Impact"])
-        for impact in impact_list:
-            writer.writerow([impact])
+    # with open(os.path.join(args.output_mask_dir,"impact_list.csv"), "w", newline="") as f:
+    #     print("Saving impact list csv")
+    #     logging.info("Saving impact list csv")
+    #     writer = csv.writer(f)
+    #     writer.writerow(["Impact"])
+    #     for impact in impact_list:
+    #         writer.writerow([impact])
     
-    lambda_value = np.quantile(impact_list, 0.90) 
-    y = [1 if i >= lambda_value else 0 for i in y_tmp]
-    print("lambda_value - ", lambda_value)
-    logging.info("lambda_value - "+ str(lambda_value))
-    print(impact_list)
-    logging.info(impact_list)
+    # lambda_value = np.quantile(impact_list, 0.90) 
+    # y = [1 if i >= lambda_value else 0 for i in y_tmp]
+    # print("lambda_value - ", lambda_value)
+    # logging.info("lambda_value - "+ str(lambda_value))
+    # print(impact_list)
+    # logging.info(impact_list)
     
-    clf = train_deferral_model(X, y)
-    save_model(clf, os.path.join(args.post_hoc_model_save_dir, f"{args.experiment_name}_{timestamp}"), "deferral_classification_model")
+    # clf = train_deferral_model(X, y)
+    # save_model(clf, os.path.join(args.post_hoc_model_save_dir, f"{args.experiment_name}_{timestamp}"), "deferral_classification_model")
     
-    reg = train_regression_model(X, y_tmp)
-    save_model(reg, os.path.join(args.post_hoc_model_save_dir, f"{args.experiment_name}_{timestamp}"), "deferral_regression_model")
+    # reg = train_regression_model(X, y_tmp)
+    # save_model(reg, os.path.join(args.post_hoc_model_save_dir, f"{args.experiment_name}_{timestamp}"), "deferral_regression_model")
     
 
-    with open(os.path.join(args.output_mask_dir, "model_training_data.csv"), "w", newline="") as f:
-        print("Saving model training data csv")
-        logging.info("Saving model training data csv")
-        writer = csv.writer(f)
-        header = ["X", "y", "y_tmp", "mean_future_iou_c", "mean_future_iou_u"]
-        writer.writerow(header)
+    # with open(os.path.join(args.output_mask_dir, "model_training_data.csv"), "w", newline="") as f:
+    #     print("Saving model training data csv")
+    #     logging.info("Saving model training data csv")
+    #     writer = csv.writer(f)
+    #     header = ["X", "y", "y_tmp", "mean_future_iou_c", "mean_future_iou_u"]
+    #     writer.writerow(header)
 
-        for i in range(len(X)):
-            row = [X[i], y[i], y_tmp[i], mean_future_iou_c_list[i], mean_future_iou_u_list[i]]
-            writer.writerow(row)
+    #     for i in range(len(X)):
+    #         row = [X[i], y[i], y_tmp[i], mean_future_iou_c_list[i], mean_future_iou_u_list[i]]
+    #         writer.writerow(row)
                
     
 

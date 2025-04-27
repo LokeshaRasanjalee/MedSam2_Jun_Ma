@@ -365,16 +365,18 @@ def vos_inference(
                 mask=object_mask,
             )
             
-            # plt.figure(figsize=(9, 6))
-            # plt.title(f"frame {input_frame_idx}")
-            # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
-            # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-            # print(out_mask_logits.shape)
+            os.makedirs(output_mask_dir, exist_ok=True)
+            plt.figure(figsize=(9, 6))
+            plt.title(f"frame {input_frame_idx}")
+            plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+            show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+            print(out_mask_logits.shape)
             
-            # # Save the visualization image
-            # vis_path = os.path.join(output_mask_dir, video_name, f"vis_{frame_names[input_frame_idx]}.png")
-            # plt.savefig(vis_path)
-            # plt.close()  # Close the figure to free memory
+            # Save the visualization image
+            vis_path = os.path.join(output_mask_dir, f"vis_add_{frame_names[input_frame_idx]}.png")
+            plt.savefig(vis_path)
+            plt.close()  # Close the figure to free memory
+            
 
     # check and make sure we have at least one object to track
     if object_ids_set is None or len(object_ids_set) == 0:
@@ -408,37 +410,79 @@ def vos_inference(
         video_segments[out_frame_idx] = per_obj_output_mask
         confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
         
+    vis_frame_stride = 1   
+    for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
+        frame_name = frame_names[out_frame_idx]
+        # print(frame_name)
+        # print(out_frame_idx)
+        # Load RGB frame
+        img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
+
+        # Load ground truth mask image (you can convert it to grayscale if needed)
+        gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
+        gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
+
+        fig, ax = plt.subplots(figsize=(8, 6))
+        #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
+
+        # Show the input image
+        ax.imshow(img)
+        ax.set_title("Predicted + Ground Truth")
+        ax.axis("off")  
+
+        # Convert ground truth to NumPy and normalize to [0,1]
+        gt_mask_np = np.array(gt_mask) / 255.0
+
+        # Create transparent green overlay
+        green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
+        green_overlay[..., 1] = 1.0  # green channel
+        green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
+
+        # Overlay ground truth
+        ax.imshow(green_overlay)
+
+        # Show predicted masks
+        for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+            show_mask(out_mask, ax, obj_id=out_obj_id)
+
+        save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=150)
+        
+        plt.close(fig) 
+    
+    
     predictor.reset_state(inference_state)
 
-    # # write the output masks as palette PNG files to output_mask_dir
-    # for out_frame_idx, per_obj_output_mask in video_segments.items():
-    #     if save_palette_png:
-    #         # save palette PNG prediction results
-    #         save_palette_masks_to_dir(
-    #             output_mask_dir=output_mask_dir,
-    #             video_name=video_name,
-    #             frame_name=frame_names[out_frame_idx],
-    #             per_obj_output_mask=per_obj_output_mask,
-    #             height=height,
-    #             width=width,
-    #             per_obj_png_file=per_obj_png_file,
-    #             output_palette=output_palette,
-    #             confidence_scores=confidence_scores[out_frame_idx][0],
-    #         )
-    #     else:
-    #         # save raw prediction results
-    #         save_masks_to_dir(
-    #             output_mask_dir=output_mask_dir,
-    #             video_name=video_name,
-    #             frame_name=frame_names[out_frame_idx],
-    #             per_obj_output_mask=per_obj_output_mask,
-    #             height=height,
-    #             width=width,
-    #             per_obj_png_file=per_obj_png_file,
-    #             confidence_scores=confidence_scores[out_frame_idx][0],
-    #         )
+    # write the output masks as palette PNG files to output_mask_dir
+    for out_frame_idx, per_obj_output_mask in video_segments.items():
+        if save_palette_png:
+            # save palette PNG prediction results
+            save_palette_masks_to_dir(
+                output_mask_dir=output_mask_dir,
+                video_name=video_name,
+                frame_name=frame_names[out_frame_idx],
+                per_obj_output_mask=per_obj_output_mask,
+                height=height,
+                width=width,
+                per_obj_png_file=per_obj_png_file,
+                output_palette=output_palette,
+                confidence_scores=confidence_scores[out_frame_idx][0],
+            )
+        else:
+            # save raw prediction results
+            save_masks_to_dir(
+                output_mask_dir=output_mask_dir,
+                video_name=video_name,
+                frame_name=frame_names[out_frame_idx],
+                per_obj_output_mask=per_obj_output_mask,
+                height=height,
+                width=width,
+                per_obj_png_file=per_obj_png_file,
+                confidence_scores=confidence_scores[out_frame_idx][0],
+            )
         
-    #     print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
+        print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
     
     return video_segments_logits, confidence_scores
     
@@ -724,7 +768,7 @@ def main():
     
     
     
-    clf = load_logistic_regression_model(args.post_hoc_model_save_dir,"deferral_classification_model" )
+    clf = load_logistic_regression_model(args.post_hoc_model_save_dir,"random_forest_model" )
     lambda_value = 1.8
     
     #--------------------------Loop though vidoes----------------------------------
@@ -735,8 +779,6 @@ def main():
     #iou_threshold = 0.75
 
     for n_video, video_name in enumerate(video_names):
-        if video_name == "seq16":
-            continue
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         
         folder_name_list = []
@@ -745,14 +787,14 @@ def main():
         
         frame_names = get_frame_names(os.path.join(args.base_video_dir, video_name))    
         mask_img_list_with_obj = get_mask_img_list_with_obj(args, frame_names, video_name)
-        if mask_img_list_with_obj[0] != 0:
-            exit()
-        else:
-            mask_img_list_with_obj.pop(0)
+        # if mask_img_list_with_obj[0] != 0:
+        #     exit()
+        # else:
+        #     mask_img_list_with_obj.pop(0)
             
         # -------------------- Prompt on First frame ------------------------------
 
-        folder_name = "0"
+        folder_name = "6"
         folder_name_list.append(folder_name)
         output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
         video_segments_0, confidence_scores_0 = vos_inference(
@@ -761,7 +803,7 @@ def main():
             input_mask_dir=args.input_mask_dir,
             output_mask_dir=output_mask_dir,
             video_name=video_name,
-            input_frame_inds = [0],
+            input_frame_inds = [6],
             score_thresh=args.score_thresh,
             use_all_masks=args.use_all_masks,
             per_obj_png_file=args.per_obj_png_file,
@@ -810,7 +852,7 @@ def main():
                 
         flagged_frames = []        
         # Feature extraction from frames
-        for t in range(1, len(frame_names)):
+        for t in range(7, len(frame_names)):
             curr_mask = (video_segments_0[t][1] > args.score_thresh).astype(float)
             prev_mask = (video_segments_0[t-1][1] > args.score_thresh).astype(float)
             logit = video_segments_0[t][1] 
@@ -822,13 +864,13 @@ def main():
             #X.append(features)
             #y.append(defer_label)
             
-            prob = clf.predict_proba([features])[0][1]
-            print (prob)
-            if prob > 0.5:
-                flagged_frames.append(t)
+            prob = clf.predict([features])
+            flagged_frames.append((t, prob))
                 
-        print(flagged_frames)
-            
+        print("Frames sorted by probability of being flagged (highest to lowest):")
+        flagged_frames.sort(key=lambda x: x[1], reverse=True)
+        for frame, prob in flagged_frames:
+            print(f"Frame {frame}: Probability of being flagged - {prob}")
         
         # -------------------Correction Prompts -------------------------------------
         

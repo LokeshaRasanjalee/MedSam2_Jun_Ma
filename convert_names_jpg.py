@@ -35,6 +35,6 @@ def convert_image_filenames(input_dir, output_dir):
                     print(f"Failed to read: {input_path}")
 
 if __name__ == "__main__":
-    input_dir = "media/image"
-    output_dir = "media/image_jpg"
+    input_dir = "/home/lokesha/Documents/Codes/MedSAM2_Jun_Ma/MedSAM2/media/polypgen_seq/Test_new/Images"
+    output_dir = "/home/lokesha/Documents/Codes/MedSAM2_Jun_Ma/MedSAM2/media/polypgen_seq/Test_new/Images_jpg"
     convert_image_filenames(input_dir, output_dir)
