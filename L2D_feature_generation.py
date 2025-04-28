@@ -323,22 +323,22 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     frame_indices_for_clip: list of frame indices to calculate IoU # PASS THE LIST OF INDICES
     """
     total_iou = 0.0
-    valid_frames = 0
+    # valid_frames = 0
     
     for idx in frame_indices_for_clip:
-        if idx >= len(video_segments) or idx >= len(gt_list):
-            continue  # Skip out of range indices
+        # if idx >= len(video_segments) or idx >= len(gt_list):
+        #     continue  # Skip out of range indices
 
         pred_mask = video_segments[idx][1]  # Assuming your video_segments store (frame_index, mask) tuples
         gt_mask = gt_list[idx][0]            # Your gt_list stores (1, H, W) numpy arrays
 
         iou = compute_iou(pred_mask, gt_mask)
         total_iou += iou
-        valid_frames += 1
+        # valid_frames += 1
 
-    assert valid_frames != 0
+    # assert valid_frames != 0
 
-    avg_iou = total_iou / valid_frames
+    avg_iou = total_iou / len(frame_indices_for_clip)
     downstream_loss = 1.0 - avg_iou
     return downstream_loss
 
@@ -1017,6 +1017,9 @@ def main():
 
     for n_video, video_name in enumerate(video_names):
         
+        if video_name == 'seq4':
+            continue
+        
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         logging.info(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         
@@ -1106,8 +1109,8 @@ def main():
                 continue  # Skip this second_promptsecond_prompt >=initial_prompt+half_window)) or (second_prompt < (len(frame_names)-half_window)):
                 
             
-            # if second_prompt == 10:
-            #     break
+            if second_prompt != 51:
+                continue
             
             if second_prompt in mask_img_list_with_obj:
                 print("second_prompt: ", second_prompt)
