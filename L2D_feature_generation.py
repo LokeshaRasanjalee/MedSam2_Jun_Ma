@@ -989,15 +989,6 @@ def main():
     print(f"Train on {len(video_names)} videos:\n{video_names}")
     logging.info(f"Train on {len(video_names)} videos:\n{video_names}")
     
-    # ----- Prepare R(2+1)D model -----
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-    model = models.r2plus1d_18(pretrained=True)
-    model.fc = nn.Linear(model.fc.in_features, 1)  # Assuming binary classification (prompt vs no prompt)
-    model = model.to(device)
-
-    optimizer = optim.Adam(model.parameters(), lr=1e-4)
-    criterion = nn.BCEWithLogitsLoss()  # For binary classification
 
     # ----- Define Resize Transform for R(2+1)D -----
     r2plus1d_transform = T.Compose([
@@ -1115,8 +1106,8 @@ def main():
                 continue  # Skip this second_promptsecond_prompt >=initial_prompt+half_window)) or (second_prompt < (len(frame_names)-half_window)):
                 
             
-            if second_prompt == 10:
-                break
+            # if second_prompt == 10:
+            #     break
             
             if second_prompt in mask_img_list_with_obj:
                 print("second_prompt: ", second_prompt)
