@@ -23,6 +23,15 @@ from sklearn.metrics import accuracy_score
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 import joblib
+import pickle
+
+import torch
+import torch.nn as nn
+from torchvision.models.video import r2plus1d_18
+import torchvision.transforms as T
+import torch.optim as optim
+import torchvision.models.video as models
+from PIL import Image
 
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
@@ -242,7 +251,10 @@ def compute_iou(mask1, mask2, eps=1e-5):
     intersection = ((mask1 > 0) & (mask2 > 0)).sum()
     union = ((mask1 > 0) | (mask2 > 0)).sum()
     #print ("Intersection: ",intersection,"     |     Union: ", union)
-    return intersection / (union + eps)
+    if union == 0:
+        return 1.0 if intersection == 0 else 0.0  # Special case: both empty = perfect match
+    else:
+        return intersection / (union)
 
 
 def train_deferral_model(X, y):
@@ -300,7 +312,35 @@ def downstream_impact(fir_prom, sec_prom, pred_logits_uncorrected, pred_logits_c
     impact = (np.mean(future_iou_c) - np.mean(future_iou_u))
     #print (impact)
     return impact, np.mean(future_iou_c), np.mean(future_iou_u)
+
+
+def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
+    """
+    Compute downstream loss for the given frame indices.
     
+    video_segments: list of predicted masks (numpy arrays), either uncorrected or corrected
+    gt_list: list of ground truth masks (numpy arrays)
+    frame_indices_for_clip: list of frame indices to calculate IoU # PASS THE LIST OF INDICES
+    """
+    total_iou = 0.0
+    valid_frames = 0
+    
+    for idx in frame_indices_for_clip:
+        if idx >= len(video_segments) or idx >= len(gt_list):
+            continue  # Skip out of range indices
+
+        pred_mask = video_segments[idx][1]  # Assuming your video_segments store (frame_index, mask) tuples
+        gt_mask = gt_list[idx][0]            # Your gt_list stores (1, H, W) numpy arrays
+
+        iou = compute_iou(pred_mask, gt_mask)
+        total_iou += iou
+        valid_frames += 1
+
+    assert valid_frames != 0
+
+    avg_iou = total_iou / valid_frames
+    downstream_loss = 1.0 - avg_iou
+    return downstream_loss
 
 
 @torch.inference_mode()
@@ -949,6 +989,25 @@ def main():
     print(f"Train on {len(video_names)} videos:\n{video_names}")
     logging.info(f"Train on {len(video_names)} videos:\n{video_names}")
     
+    # ----- Prepare R(2+1)D model -----
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    model = models.r2plus1d_18(pretrained=True)
+    model.fc = nn.Linear(model.fc.in_features, 1)  # Assuming binary classification (prompt vs no prompt)
+    model = model.to(device)
+
+    optimizer = optim.Adam(model.parameters(), lr=1e-4)
+    criterion = nn.BCEWithLogitsLoss()  # For binary classification
+
+    # ----- Define Resize Transform for R(2+1)D -----
+    r2plus1d_transform = T.Compose([
+        T.Resize((112, 112)),    # Downsample frames to 112x112
+        T.ToTensor(),            # (H, W, C) -> (C, H, W)
+    ])
+
+    
+    
+    
     #--------------------------Loop though vidoes----------------------------------
     
     X = []  # features per frame
@@ -957,13 +1016,15 @@ def main():
     impact_list = []
     mean_future_iou_c_list=[] 
     mean_future_iou_u_list =[]
-    video_name_list = []
-    frame_id_list =[]
+    clips = []    # Will store sequences of frames
+    labels = []   # Will store labels: 1 (needs correction) or 0 (no correction)
+    delta_Ls = []
+    f_names=[]
+
+    window_size = 8  # number of frames per clip
+    half_window = (window_size//2)
 
     for n_video, video_name in enumerate(video_names):
-        
-        # if video_name == "seq4":
-        #     continue
         
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         logging.info(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
@@ -1004,6 +1065,29 @@ def main():
             frame_indices.add(idx)
             
         frame_indices = sorted(frame_indices)
+            
+        # Note: Considering only single object
+        # # Feature extraction from frames
+        # for t in range(1, len(frame_names)):
+        #     curr_mask = (video_segments_first[t][1] > args.score_thresh).astype(float)
+        #     prev_mask = (video_segments_first[t-1][1] > args.score_thresh).astype(float)
+        #     logit = video_segments_first[t][1] 
+            
+        #     #gt = per_obj_input_mask[1]   # I have hard coded this since i know there is only one object ant it's id is 1
+        #     input_mask_path = os.path.join(args.input_mask_dir, video_name, f"{frame_names[t]}.png")
+        #     if os.path.exists(input_mask_path):
+        #         input_mask, _ = load_ann_png(input_mask_path)
+        #         gt = np.any(input_mask != 0, axis=-1)
+        #         gt = np.expand_dims(gt, axis=0) 
+                
+            
+            
+        #     features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_first[t][0][0])
+        #     iou = compute_iou(curr_mask, gt)
+        #     label = 1 if iou < iou_threshold else 0
+            
+        #     X.append(features)
+        #     y.append(label)
         
         gt_list = []
         for mask_name in frame_names:
@@ -1021,23 +1105,92 @@ def main():
             
         
         # -------------------Correction Prompts -------------------------------------
-          
-        for frame_id in range(initial_prompt+1, len(frame_names)):
+        
+        for second_prompt in range (initial_prompt+1, len(frame_names)):
+            
+            if (second_prompt >= initial_prompt + half_window) and (second_prompt < len(frame_names) - half_window):
+                # GOOD → continue normal processing
+                pass
+            else:
+                continue  # Skip this second_promptsecond_prompt >=initial_prompt+half_window)) or (second_prompt < (len(frame_names)-half_window)):
                 
-            curr_mask = (video_segments_first[frame_id][1] > args.score_thresh).astype(float)
-            prev_mask = (video_segments_first[frame_id-1][1] > args.score_thresh).astype(float)
-            logit = video_segments_first[frame_id][1] 
-            features = compute_frame_features(curr_mask, prev_mask, logit, confidence_scores_first[frame_id][0][0])
             
+            if second_prompt == 10:
+                break
             
-            video_name_list.append(video_name)    
-            frame_id_list.append(frame_id)
-            X.append(features)
+            if second_prompt in mask_img_list_with_obj:
+                print("second_prompt: ", second_prompt)
+                logging.info("second_prompt: " + str(second_prompt))
             
+                input_frame_inds = [initial_prompt, second_prompt]
                 
+                folder_name = "_".join(map(str, input_frame_inds))
+                folder_name_list.append(folder_name)
+                output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
+                
+                video_segments_cor, confidence_scores_cor = vos_inference(
+                    predictor=predictor,
+                    base_video_dir=args.base_video_dir,
+                    input_mask_dir=args.input_mask_dir,
+                    output_mask_dir=output_mask_dir,
+                    video_name=video_name,
+                    input_frame_inds = input_frame_inds,
+                    score_thresh=args.score_thresh,
+                    use_all_masks=args.use_all_masks,
+                    per_obj_png_file=args.per_obj_png_file,
+                    save_palette_png=args.save_palette_png,
+                    )
+                
+                for idx, value in confidence_scores_cor.items():
+                    score = float(value[0][0])  # Extract float from array([[value]])
+                    if idx not in combined_scores:
+                        combined_scores[idx] = {}
+                    combined_scores[idx][folder_name] = score
+                    #frame_indices.add(idx)
                     
+                    
+                clip_frames = []
+                start_idx = max(0, second_prompt - half_window)
+                end_idx = min(len(frame_names), second_prompt + half_window)
+                frame_indices_for_clip = list(range(start_idx, end_idx))
+                              
                 
-                     
+                # assert len(frame_indices_for_clip) == window_size-1
+                # #center_frame = frame_indices_for_clip[half_window]
+                # frame_indices_for_clip.insert(half_window-1, second_prompt)  # Duplicate center [0, 1, 2, 3, 3, 4, 5, 6]
+                assert len(frame_indices_for_clip) == window_size #[0, 1, 2, 3, 4, 5, 6, 7]
+                
+                for idx in frame_indices_for_clip:
+                    frame_mask = video_segments_first[idx][1]
+                    frame_mask = np.squeeze(frame_mask)  
+                    frame_mask = Image.fromarray(frame_mask)
+                    frame_mask = r2plus1d_transform(frame_mask)
+                    clip_frames.append(frame_mask)
+                    
+                    
+                clip = torch.stack(clip_frames, dim=1)
+                clips.append(clip)
+                
+                # Uncorrected downstream loss
+                L_no_defer = compute_downstream_loss(video_segments_first, gt_list, frame_indices_for_clip)
+
+                # Corrected downstream loss
+                L_post_defer = compute_downstream_loss(video_segments_cor, gt_list, frame_indices_for_clip)
+
+                # Delta Loss
+                delta_L = L_no_defer - L_post_defer
+
+                # Make the label: if delta_L > threshold, say 1 (worth prompting)
+                loss_threshold = 0.01  # You choose based on experiments
+                label = 1 if delta_L > loss_threshold else 0
+                
+                labels.append(label)
+                delta_Ls.append(delta_L)
+                
+                #Save meta data
+                f_name = f"{video_name}_{initial_prompt}_{second_prompt}"
+                f_names.append(f_name)
+              
         
         
         # Write confidence to a CSV file
@@ -1057,20 +1210,9 @@ def main():
                 writer.writerow(row)
     
 
-    
-    
-    with open(os.path.join(args.output_mask_dir, "model_training_data.csv"), "w", newline="") as f:
-        print("Saving model training data csv")
-        logging.info("Saving model training data csv")
-        writer = csv.writer(f)
-        header = ["Video", "Frame","X"]
-        writer.writerow(header)
-
-        for i in range(len(X)):
-            row = [ video_name_list[i], frame_id_list[i], X[i]]
-            writer.writerow(row)
-               
-    
+    # Save all lists in a single file
+    with open(os.path.join(args.output_mask_dir,'data.pkl'), 'wb') as f:
+        pickle.dump({'clips': clips, 'labels': labels, 'delta_Ls': delta_Ls}, f)
 
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
