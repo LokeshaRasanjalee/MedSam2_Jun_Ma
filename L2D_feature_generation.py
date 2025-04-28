@@ -1017,8 +1017,8 @@ def main():
 
     for n_video, video_name in enumerate(video_names):
         
-        if video_name == 'seq4':
-            continue
+        # if video_name == 'seq4':
+        #     continue
         
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         logging.info(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
@@ -1109,8 +1109,8 @@ def main():
                 continue  # Skip this second_promptsecond_prompt >=initial_prompt+half_window)) or (second_prompt < (len(frame_names)-half_window)):
                 
             
-            if second_prompt != 51:
-                continue
+            # if second_prompt != 51:
+            #     continue
             
             if second_prompt in mask_img_list_with_obj:
                 print("second_prompt: ", second_prompt)
