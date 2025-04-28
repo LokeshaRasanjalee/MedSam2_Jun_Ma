@@ -291,7 +291,7 @@ def train_regression_model(X, y):
 def save_model(model, output_path, model_name):
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    joblib.dump(model, os.path.join(output_path, model_name + ".pkl"))
+    joblib.dump(model, os.path.join(output_path, model_name))
  
     
 def downstream_impact(fir_prom, sec_prom, pred_logits_uncorrected, pred_logits_corrected, gt_masks,score_thresh, K):
@@ -353,6 +353,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
         clips_batch = clips_batch.to(device)
         labels_batch = labels_batch.to(device)
 
+        clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
         outputs = model(clips_batch).squeeze(1)
         loss = criterion(outputs, labels_batch)
 
@@ -383,6 +384,7 @@ def validate_one_epoch(model, loader, criterion, device):
             clips_batch = clips_batch.to(device)
             labels_batch = labels_batch.to(device)
 
+            clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
             outputs = model(clips_batch).squeeze(1)
             loss = criterion(outputs, labels_batch)
 
@@ -1061,7 +1063,7 @@ def main():
     batch_size = 8
     num_epochs = 10
     learning_rate = 1e-4
-    pickle_file = 'data.pkl'
+    pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
     train_loader, val_loader = get_dataloaders(pickle_file, batch_size=batch_size)
     criterion = nn.BCEWithLogitsLoss()
@@ -1076,12 +1078,14 @@ def main():
 
         print(f"Epoch [{epoch+1}/{num_epochs}] "
               f"Train Loss: {train_loss:.4f} "
-              f"Train Acc: {train_acc:.4f}"
+              f"Train Acc: {train_acc:.4f} "
               f"Val Loss: {val_loss:.4f} "
               f"Val Acc: {val_acc:.4f}")
     
     
     
+    
+    save_model(model, os.path.join(args.post_hoc_model_save_dir, f"{args.experiment_name}_{timestamp}"), "r_2_plus_1_d.pth")
     
    
 
