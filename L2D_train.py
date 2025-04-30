@@ -292,6 +292,40 @@ def save_model(model, output_path, model_name):
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     joblib.dump(model, os.path.join(output_path, model_name))
+    
+    
+def plot_predicted_vs_actual(predictions, actuals, output_dir, filename="predicted_vs_actual.png"):
+    plt.figure(figsize=(10, 6))
+    plt.scatter(actuals, predictions, alpha=0.5)
+    plt.plot([actuals.min(), actuals.max()], [actuals.min(), actuals.max()], 'k--', lw=2)
+    plt.xlabel('Actual Values')
+    plt.ylabel('Predicted Values')
+    plt.title('Predicted vs Actual Values')
+    plt.grid(True)
+
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Save the plot to the specified directory
+    plt.savefig(os.path.join(output_dir, filename))
+    plt.close()
+    
+def plot_residuals(predictions, actuals, output_dir, filename="residuals.png"):
+    residuals = actuals - predictions
+    plt.figure(figsize=(10, 6))
+    plt.scatter(actuals, residuals, alpha=0.5)
+    plt.axhline(0, color='k', linestyle='--', lw=2)
+    plt.xlabel('Actual Values')
+    plt.ylabel('Residuals')
+    plt.title('Residual Plot')
+    plt.grid(True)
+
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Save the plot to the specified directory
+    plt.savefig(os.path.join(output_dir, filename))
+    plt.close()
  
     
 def downstream_impact(fir_prom, sec_prom, pred_logits_uncorrected, pred_logits_corrected, gt_masks,score_thresh, K):
@@ -346,8 +380,9 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
     total_loss = 0
-    correct = 0
-    total = 0
+    total_mae = 0
+    total_ss_res = 0
+    total_ss_tot = 0
 
     for clips_batch, labels_batch in loader:
         clips_batch = clips_batch.to(device)
@@ -363,21 +398,29 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
 
         total_loss += loss.item() * clips_batch.size(0)
 
-        # Compute accuracy
-        preds = (torch.sigmoid(outputs) > 0.5).float()
-        correct += (preds == labels_batch).sum().item()
-        total += labels_batch.size(0)
+        # Calculate MAE
+        mae = torch.abs(outputs - labels_batch).mean().item()
+        total_mae += mae * clips_batch.size(0)
+
+        # Calculate R-squared components
+        ss_res = torch.sum((outputs - labels_batch) ** 2).item()
+        ss_tot = torch.sum((labels_batch - labels_batch.mean()) ** 2).item()
+        total_ss_res += ss_res
+        total_ss_tot += ss_tot
 
     avg_loss = total_loss / len(loader.dataset)
-    accuracy = correct / total
-    return avg_loss, accuracy
+    avg_mae = total_mae / len(loader.dataset)
+    r2 = 1 - (total_ss_res / total_ss_tot) if total_ss_tot != 0 else float('nan')
+
+    return avg_loss, avg_mae, r2
 
 
 def validate_one_epoch(model, loader, criterion, device):
     model.eval()
     total_loss = 0
-    correct = 0
-    total = 0
+    total_mae = 0
+    total_ss_res = 0
+    total_ss_tot = 0
 
     with torch.no_grad():
         for clips_batch, labels_batch in loader:
@@ -390,13 +433,21 @@ def validate_one_epoch(model, loader, criterion, device):
 
             total_loss += loss.item() * clips_batch.size(0)
 
-            preds = (torch.sigmoid(outputs) > 0.5).float()
-            correct += (preds == labels_batch).sum().item()
-            total += labels_batch.size(0)
+            # Calculate MAE
+            mae = torch.abs(outputs - labels_batch).mean().item()
+            total_mae += mae * clips_batch.size(0)
+
+            # Calculate R-squared components
+            ss_res = torch.sum((outputs - labels_batch) ** 2).item()
+            ss_tot = torch.sum((labels_batch - labels_batch.mean()) ** 2).item()
+            total_ss_res += ss_res
+            total_ss_tot += ss_tot
 
     avg_loss = total_loss / len(loader.dataset)
-    accuracy = correct / total
-    return avg_loss, accuracy
+    avg_mae = total_mae / len(loader.dataset)
+    r2 = 1 - (total_ss_res / total_ss_tot) if total_ss_tot != 0 else float('nan')
+
+    return avg_loss, avg_mae, r2
 
 
 @torch.inference_mode()
@@ -1061,26 +1112,49 @@ def main():
     ])
     
     batch_size = 8
-    num_epochs = 20
+    num_epochs = 10
     learning_rate = 1e-4
     pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
     train_loader, val_loader = get_dataloaders(pickle_file, batch_size=batch_size)
-    criterion = nn.BCEWithLogitsLoss()
+    criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
     
     #--------------------------Train Model----------------------------------
     
     for epoch in range(num_epochs):
-        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss, val_acc = validate_one_epoch(model, val_loader, criterion, device)
+        train_loss, train_mae, train_r2 = train_one_epoch(model, train_loader, criterion, optimizer, device)
+        val_loss, val_mae, val_r2 = validate_one_epoch(model, val_loader, criterion, device)
 
         print(f"Epoch [{epoch+1}/{num_epochs}] "
               f"Train Loss: {train_loss:.4f} "
-              f"Train Acc: {train_acc:.4f} "
+              f"Train MAE: {train_mae:.4f} "
+              f"Train R²: {train_r2:.4f} "
               f"Val Loss: {val_loss:.4f} "
-              f"Val Acc: {val_acc:.4f}")
+              f"Val MAE: {val_mae:.4f} "
+              f"Val R²: {val_r2:.4f}")
+        
+        
+    predictions = []
+    actuals = []
+    model.eval()
+    with torch.no_grad():
+        for clips_batch, labels_batch in val_loader:
+            clips_batch = clips_batch.to(device)
+            labels_batch = labels_batch.to(device)
+
+            clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+            outputs = model(clips_batch).squeeze(1)
+
+            predictions.extend(outputs.cpu().numpy())
+            actuals.extend(labels_batch.cpu().numpy())
+
+    # Save the predicted vs actual plot after training
+    plot_predicted_vs_actual(np.array(predictions), np.array(actuals), args.output_mask_dir)
+    
+    # Save the residual plot after training
+    plot_residuals(np.array(predictions), np.array(actuals), args.output_mask_dir)
     
     
     

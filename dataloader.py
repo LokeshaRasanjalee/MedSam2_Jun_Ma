@@ -8,15 +8,15 @@ class ClipDataset(Dataset):
         with open(pickle_file, 'rb') as f:
             data = pickle.load(f)
         self.clips = data['clips']  # list of (C, T, H, W) tensors
-        self.labels = data['labels']  # list of 0/1
+        self.delta_Ls = data['delta_Ls']  # list of 0/1
 
     def __len__(self):
         return len(self.clips)
 
     def __getitem__(self, idx):
         clip = self.clips[idx]
-        label = self.labels[idx]
-        return clip, torch.tensor(label, dtype=torch.float32)
+        delta_L = self.delta_Ls[idx]
+        return clip, torch.tensor(delta_L, dtype=torch.float32)
 
 def get_dataloaders(pickle_file, batch_size=8, split_ratio=0.8):
     dataset = ClipDataset(pickle_file)
