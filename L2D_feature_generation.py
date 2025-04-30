@@ -1285,7 +1285,7 @@ def main():
         # Save all lists in a single file
         data_pkl_folder = os.path.join(args.output_mask_dir, "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
-        with open(os.path.join(args.output_mask_dir,f'{video_name}_data.pkl'), 'wb') as f:
+        with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
             pickle.dump({'clips': clips, 'labels': labels, 'delta_Ls': delta_Ls, 'clips_without_trans': clips_without_trans, 'conf_list':conf_list, 'gt_frame_list':gt_frame_list, 'img_frame_list':img_frame_list, 'L_no_defer_full_list':L_no_defer_full_list, 'L_post_defer_full_list':L_post_defer_full_list}, f)
    
                 
