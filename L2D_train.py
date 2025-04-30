@@ -33,6 +33,9 @@ import torch.optim as optim
 import torchvision.models.video as models
 from PIL import Image
 from dataloader import get_dataloaders
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import confusion_matrix
 
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
@@ -882,7 +885,115 @@ def vos_separate_inference_per_object(
             per_obj_png_file=per_obj_png_file,
             output_palette=output_palette,
         )
+        
+def calculate_auc(model, data_loader, device):
+    model.eval()  # Set the model to evaluation mode
+    true_labels = []
+    predicted_probs = []
 
+    with torch.no_grad():  # Disable gradient calculation
+        for inputs, labels in data_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            # Get model predictions
+            inputs = inputs.repeat(1, 3, 1, 1, 1)
+            outputs = model(inputs)
+            probabilities = torch.sigmoid(outputs).cpu().numpy()  # Assuming binary classification
+
+            true_labels.extend(labels.cpu().numpy())
+            predicted_probs.extend(probabilities)
+
+    # Calculate AUC
+    auc = roc_auc_score(true_labels, predicted_probs)
+    return auc
+
+def plot_roc_curve(model, data_loader, device, output_dir):
+    model.eval()  # Set the model to evaluation mode
+    true_labels = []
+    predicted_probs = []
+
+    with torch.no_grad():  # Disable gradient calculation
+        for inputs, labels in data_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            # Get model predictions
+            inputs = inputs.repeat(1, 3, 1, 1, 1)
+            outputs = model(inputs)
+            probabilities = torch.sigmoid(outputs).cpu().numpy()  # Assuming binary classification
+
+            true_labels.extend(labels.cpu().numpy())
+            predicted_probs.extend(probabilities)
+
+    # Calculate ROC curve
+    fpr, tpr, _ = roc_curve(true_labels, predicted_probs)
+    roc_auc = auc(fpr, tpr)
+
+    # Plot ROC curve
+    plt.figure()
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+
+    # Save the plot to the specified directory
+    roc_curve_path = os.path.join(output_dir, 'roc_curve.png')
+    plt.savefig(roc_curve_path)
+    plt.close()  # Close the figure to free memory
+
+def calculate_confusion_matrix(model, data_loader, device):
+    model.eval()  # Set the model to evaluation mode
+    true_labels = []
+    predicted_labels = []
+
+    with torch.no_grad():  # Disable gradient calculation
+        for inputs, labels in data_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            # Get model predictions
+            inputs = inputs.repeat(1, 3, 1, 1, 1)
+            outputs = model(inputs)
+            preds = (torch.sigmoid(outputs) > 0.5).cpu().numpy()  # Assuming binary classification
+
+            true_labels.extend(labels.cpu().numpy())
+            predicted_labels.extend(preds)
+
+    # Calculate confusion matrix
+    cm = confusion_matrix(true_labels, predicted_labels)
+    return cm
+
+def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, output_dir):
+    # Create a figure for the plots
+    plt.figure(figsize=(10, 5))
+    
+    # Plot Loss Curves
+    plt.subplot(1, 2, 1)
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.title('Loss Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    
+    # Plot Accuracy Curves
+    plt.subplot(1, 2, 2)
+    plt.plot(train_accs, label='Training Accuracy')
+    plt.plot(val_accs, label='Validation Accuracy')
+    plt.title('Accuracy Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    
+    # Save the plot to the specified directory
+    plot_path = os.path.join(output_dir, 'loss_accuracy_curves.png')
+    plt.savefig(plot_path)
+    plt.close()  # Close the figure to free memory
 
 def main():
     parser = argparse.ArgumentParser()
@@ -1061,27 +1172,58 @@ def main():
     ])
     
     batch_size = 8
-    num_epochs = 20
-    learning_rate = 1e-4
+    num_epochs = 30
+    learning_rate = 1e-5
     pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
     train_loader, val_loader = get_dataloaders(pickle_file, batch_size=batch_size)
-    criterion = nn.BCEWithLogitsLoss()
+
+    # Calculate the number of positive and negative samples
+    num_positive = sum(train_loader.dataset.dataset.labels)
+    num_negative = len(train_loader.dataset.dataset) - num_positive
+
+    # Calculate pos_weight
+    pos_weight = num_negative / num_positive
+
+    # Define the criterion with pos_weight
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=device))
+    
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
     
     #--------------------------Train Model----------------------------------
     
+    train_losses, train_accs, val_losses, val_accs = [], [], [], []
     for epoch in range(num_epochs):
         train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, val_acc = validate_one_epoch(model, val_loader, criterion, device)
+
+        train_losses.append(train_loss)
+        train_accs.append(train_acc)
+        val_losses.append(val_loss)
+        val_accs.append(val_acc)
 
         print(f"Epoch [{epoch+1}/{num_epochs}] "
               f"Train Loss: {train_loss:.4f} "
               f"Train Acc: {train_acc:.4f} "
               f"Val Loss: {val_loss:.4f} "
               f"Val Acc: {val_acc:.4f}")
-    
+
+    # Plotting Loss and Accuracy Curves
+    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
+
+    # Calculate AUC
+    auc = calculate_auc(model, val_loader, device)
+    logging.info(f"AUC: {auc:.4f}")
+    print(f"AUC: {auc:.4f}")
+
+    # Plot ROC curve and save it
+    plot_roc_curve(model, val_loader, device, args.output_mask_dir)
+
+    # Calculate Confusion Matrix
+    confusion_matrix = calculate_confusion_matrix(model, val_loader, device)
+    logging.info(f"Confusion Matrix:\n{confusion_matrix}")
+    print(f"Confusion Matrix:\n{confusion_matrix}")
     
     
     
