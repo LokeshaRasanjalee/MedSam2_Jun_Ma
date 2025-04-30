@@ -1007,15 +1007,23 @@ def main():
     impact_list = []
     mean_future_iou_c_list=[] 
     mean_future_iou_u_list =[]
-    clips = []    # Will store sequences of frames
-    labels = []   # Will store labels: 1 (needs correction) or 0 (no correction)
-    delta_Ls = []
     f_names=[]
+  
 
     window_size = 8  # number of frames per clip
     half_window = (window_size//2)
 
     for n_video, video_name in enumerate(video_names):
+        
+        clips = []    # Will store sequences of frames
+        clips_without_trans = []
+        labels = []   # Will store labels: 1 (needs correction) or 0 (no correction)
+        delta_Ls = []
+        conf_list=[]
+        gt_frame_list = []
+        img_frame_list = []
+        L_no_defer_full_list = []
+        L_post_defer_full_list = []
         
         # if video_name == 'seq4':
         #     continue
@@ -1035,6 +1043,7 @@ def main():
         # -------------------- Prompt on First frame ------------------------------
 
         folder_name = str(initial_prompt)
+        print ("Inital Prompt: ", folder_name)
         folder_name_list.append(folder_name)
         output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
         
@@ -1097,6 +1106,19 @@ def main():
                 gt = np.expand_dims(gt, axis=0) 
                 gt_list.append(gt)
             
+            
+        img_list=[]
+        for f_name in frame_names:
+            input_f_path = os.path.join(args.base_video_dir, video_name, f"{f_name}.jpg")
+            if os.path.exists(input_f_path):
+                input_f, _ = load_ann_png(input_f_path)
+                img_list.append(input_f)
+        
+        # Uncorrected downstream loss
+        L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
+
+                
+        
         
         # -------------------Correction Prompts -------------------------------------
         
@@ -1109,8 +1131,6 @@ def main():
                 continue  # Skip this second_promptsecond_prompt >=initial_prompt+half_window)) or (second_prompt < (len(frame_names)-half_window)):
                 
             
-            # if second_prompt != 51:
-            #     continue
             
             if second_prompt in mask_img_list_with_obj:
                 print("second_prompt: ", second_prompt)
@@ -1143,7 +1163,8 @@ def main():
                     #frame_indices.add(idx)
                     
                     
-                clip_frames = []
+                
+               
                 start_idx = max(0, second_prompt - half_window)
                 end_idx = min(len(frame_names), second_prompt + half_window)
                 frame_indices_for_clip = list(range(start_idx, end_idx))
@@ -1154,16 +1175,60 @@ def main():
                 # frame_indices_for_clip.insert(half_window-1, second_prompt)  # Duplicate center [0, 1, 2, 3, 3, 4, 5, 6]
                 assert len(frame_indices_for_clip) == window_size #[0, 1, 2, 3, 4, 5, 6, 7]
                 
+                
+                #Get frames of the frame_indices_for_clip range
+                clip_frames = []
                 for idx in frame_indices_for_clip:
                     frame_mask = video_segments_first[idx][1]
                     frame_mask = np.squeeze(frame_mask)  
                     frame_mask = Image.fromarray(frame_mask)
                     frame_mask = r2plus1d_transform(frame_mask)
                     clip_frames.append(frame_mask)
-                    
-                    
+                                       
                 clip = torch.stack(clip_frames, dim=1)
                 clips.append(clip)
+                
+                
+                #Get original_pred masks in the frame_indices_for_clip range
+                clip_frames_without_trans = []
+                for idx in frame_indices_for_clip:
+                    frame_mask = video_segments_first[idx][1]
+                    frame_mask = np.squeeze(frame_mask)  
+                    frame_mask = Image.fromarray(frame_mask)
+                    #frame_mask = r2plus1d_transform(frame_mask)
+                    clip_frames_without_trans.append(frame_mask)
+                                       
+                clip_without_trans = torch.stack([torch.from_numpy(np.array(frame)) for frame in clip_frames_without_trans], dim=1)
+                clips_without_trans.append(clip_without_trans)
+                               
+                
+                #Get ground truths of the frame_indices_for_clip range
+                gt_tmp=[]
+                for idx in frame_indices_for_clip:
+                    gt_tmp.append (gt_list[idx])
+                    
+                gt_frame_list.append(gt_tmp)
+                               
+                
+                #get original images of the frame_indices_for_clip range
+                img_tmp=[]
+                for idx in frame_indices_for_clip:
+                    img_tmp.append (img_list[idx])
+                    
+                img_frame_list.append(img_tmp)
+                               
+                             
+                #get confidence scores for the frame_indices_for_clip range
+                conf_tmp = []
+                for idx in frame_indices_for_clip:
+                    conf = confidence_scores_first[idx]
+                    conf_tmp.append(conf)
+                    
+                conf_list.append(conf_tmp)
+                    
+                        
+            
+                
                 
                 # Uncorrected downstream loss
                 L_no_defer = compute_downstream_loss(video_segments_first, gt_list, frame_indices_for_clip)
@@ -1181,9 +1246,22 @@ def main():
                 labels.append(label)
                 delta_Ls.append(delta_L)
                 
-                #Save meta data
-                f_name = f"{video_name}_{initial_prompt}_{second_prompt}"
-                f_names.append(f_name)
+                # #Save meta data
+                # f_name = f"{video_name}_{initial_prompt}_{second_prompt}"
+                # f_names.append(f_name)
+                
+                
+                
+                #for the full sequnce
+                
+                # Corrected downstream loss
+                L_post_defer_full = compute_downstream_loss(video_segments_cor, gt_list, frame_indices)
+                
+                L_no_defer_full_list.append(L_no_defer_full)
+                L_post_defer_full_list.append(L_post_defer_full)
+
+             
+            
               
         
         
@@ -1202,12 +1280,18 @@ def main():
                 for folder_name in folder_name_list:
                     row.append(combined_scores[idx].get(folder_name, ""))  # blank if missing
                 writer.writerow(row)
+                
+                
+        # Save all lists in a single file
+        data_pkl_folder = os.path.join(args.output_mask_dir, "data_pkl")
+        os.makedirs(data_pkl_folder, exist_ok=True)
+        with open(os.path.join(args.output_mask_dir,f'{video_name}_data.pkl'), 'wb') as f:
+            pickle.dump({'clips': clips, 'labels': labels, 'delta_Ls': delta_Ls, 'clips_without_trans': clips_without_trans, 'conf_list':conf_list, 'gt_frame_list':gt_frame_list, 'img_frame_list':img_frame_list, 'L_no_defer_full_list':L_no_defer_full_list, 'L_post_defer_full_list':L_post_defer_full_list}, f)
+   
+                
     
 
-    # Save all lists in a single file
-    with open(os.path.join(args.output_mask_dir,'data.pkl'), 'wb') as f:
-        pickle.dump({'clips': clips, 'labels': labels, 'delta_Ls': delta_Ls}, f)
-
+    
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
 
