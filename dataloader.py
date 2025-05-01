@@ -19,16 +19,21 @@ class ClipDataset(Dataset):
         self.delta_Ls=[]
         self.L_post_defer_full_list=[]
         self.labels =[]
+        self.confidence = []
+        
         for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
             print ("File: ",file)
             with open(file, 'rb') as f:
                 data = pickle.load(f)
+                if len(data['clips'])==0:
+                    continue
                 self.clips.extend(data['clips'])
                 # self.L_no_defer_full_list = data['L_no_defer_full_list']
                 # self.L_post_defer_full_list = data['L_post_defer_full_list']
                 delta_L = [a - b for a, b in zip(data['L_no_defer_full_list'], data['L_post_defer_full_list'])]
                 self.delta_Ls.extend(delta_L)
-                self.labels.extend([1 if delta_L > 0.28 else 0 for delta_L in self.delta_Ls])
+                self.labels.extend([1 if delta_l > 0.28 else 0 for delta_l in delta_L])
+                self.confidence.extend(data['conf_list'])
                 del data
                 del delta_L
                 gc.collect()
