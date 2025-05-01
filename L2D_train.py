@@ -1117,7 +1117,7 @@ def main():
     pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
     train_loader, val_loader = get_dataloaders(pickle_file, batch_size=batch_size)
-    criterion = nn.MSELoss()
+    criterion = nn.SmoothL1Loss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
     
