@@ -36,6 +36,8 @@ from dataloader import get_dataloaders
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import confusion_matrix
+from collections import Counter
+
 
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
@@ -352,7 +354,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
     correct = 0
     total = 0
 
-    for clips_batch, labels_batch in loader:
+    for clips_batch, labels_batch,delta_l_batch in loader:
         clips_batch = clips_batch.to(device)
         labels_batch = labels_batch.to(device)
 
@@ -383,7 +385,7 @@ def validate_one_epoch(model, loader, criterion, device):
     total = 0
 
     with torch.no_grad():
-        for clips_batch, labels_batch in loader:
+        for clips_batch, labels_batch, delta_l_batch in loader:
             clips_batch = clips_batch.to(device)
             labels_batch = labels_batch.to(device)
 
@@ -892,7 +894,7 @@ def calculate_auc(model, data_loader, device):
     predicted_probs = []
 
     with torch.no_grad():  # Disable gradient calculation
-        for inputs, labels in data_loader:
+        for inputs, labels, delta_l_batch in data_loader:
             inputs = inputs.to(device)
             labels = labels.to(device)
 
@@ -914,7 +916,7 @@ def plot_roc_curve(model, data_loader, device, output_dir):
     predicted_probs = []
 
     with torch.no_grad():  # Disable gradient calculation
-        for inputs, labels in data_loader:
+        for inputs, labels, delta_l_batch in data_loader:
             inputs = inputs.to(device)
             labels = labels.to(device)
 
@@ -952,21 +954,26 @@ def calculate_confusion_matrix(model, data_loader, device):
     predicted_labels = []
 
     with torch.no_grad():  # Disable gradient calculation
-        for inputs, labels in data_loader:
+        for inputs, labels, delta_l_batch in data_loader:
             inputs = inputs.to(device)
             labels = labels.to(device)
 
             # Get model predictions
             inputs = inputs.repeat(1, 3, 1, 1, 1)
             outputs = model(inputs)
-            preds = (torch.sigmoid(outputs) > 0.5).cpu().numpy()  # Assuming binary classification
+            preds = (torch.sigmoid(outputs) > 0.5).cpu().numpy()  
+            # Assuming binary classification
+            preds_int = [int(pred[0]) for pred in preds]
 
             true_labels.extend(labels.cpu().numpy())
-            predicted_labels.extend(preds)
+            predicted_labels.extend(preds_int)
 
     # Calculate confusion matrix
     cm = confusion_matrix(true_labels, predicted_labels)
-    return cm
+    true_labels_count = Counter(true_labels)
+    predicted_labels_count = Counter(predicted_labels)
+    cm_df = pd.DataFrame(cm, index=['Actual 0', 'Actual 1'], columns=['Predicted 0', 'Predicted 1'])
+    return true_labels_count, predicted_labels_count, cm_df
 
 def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, output_dir):
     # Create a figure for the plots
@@ -1172,7 +1179,7 @@ def main():
     ])
     
     batch_size = 8
-    num_epochs = 30
+    num_epochs = 1
     learning_rate = 1e-5
     pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
@@ -1221,9 +1228,11 @@ def main():
     plot_roc_curve(model, val_loader, device, args.output_mask_dir)
 
     # Calculate Confusion Matrix
-    confusion_matrix = calculate_confusion_matrix(model, val_loader, device)
-    logging.info(f"Confusion Matrix:\n{confusion_matrix}")
-    print(f"Confusion Matrix:\n{confusion_matrix}")
+    true_labels_count, predicted_labels_count, cm_df = calculate_confusion_matrix(model, val_loader, device)
+    logging.info(f"True Labels Count: {str(true_labels_count)}")
+    logging.info(f"Predicted Labels Count: {str(predicted_labels_count)}")
+    logging.info(f"Confusion Matrix:\n{cm_df}")
+    print(f"Confusion Matrix:\n{cm_df}")
     
     
     
