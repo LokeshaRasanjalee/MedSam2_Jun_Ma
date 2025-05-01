@@ -4,15 +4,47 @@ import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 from sklearn.model_selection import StratifiedShuffleSplit
 from torch.utils.data import Subset
+import os
+import glob
+import gc
+import pickle
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 class ClipDataset(Dataset):
-    def __init__(self, pickle_file):
-        with open(pickle_file, 'rb') as f:
-            data = pickle.load(f)
-        self.clips = data['clips']  # list of (C, T, H, W) tensors
-        # self.labels = data['labels']  # list of 0/1
-        self.delta_Ls = data['delta_Ls']
-        self.labels = [1 if delta_L > 0.7 else 0 for delta_L in self.delta_Ls]
+    def __init__(self, pickle_file, save_dir):
+      
+
+        self.clips = []
+        self.delta_Ls=[]
+        self.L_post_defer_full_list=[]
+        self.labels =[]
+        for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
+            print ("File: ",file)
+            with open(file, 'rb') as f:
+                data = pickle.load(f)
+                self.clips.extend(data['clips'])
+                # self.L_no_defer_full_list = data['L_no_defer_full_list']
+                # self.L_post_defer_full_list = data['L_post_defer_full_list']
+                delta_L = [a - b for a, b in zip(data['L_no_defer_full_list'], data['L_post_defer_full_list'])]
+                self.delta_Ls.extend(delta_L)
+                self.labels.extend([1 if delta_L > 0.28 else 0 for delta_L in self.delta_Ls])
+                del data
+                del delta_L
+                gc.collect()
+                
+                
+        print ("Loaded all")
+        # Plot the distribution
+        plt.figure(figsize=(10, 6))
+        sns.histplot(self.delta_Ls, bins=30, kde=True)
+        plt.title('Distribution of delta_Ls')
+        plt.xlabel('delta_Ls')
+        plt.ylabel('Frequency')
+
+        # Save the plot
+        plt.savefig(os.path.join(save_dir, 'delta_Ls_distribution.png'))
+        plt.close() 
 
     def __len__(self):
         return len(self.clips)
@@ -28,8 +60,8 @@ class ClipDataset(Dataset):
         count_0s = len(self.labels) - count_1s
         return count_1s, count_0s
 
-def get_dataloaders(pickle_file, batch_size=8, split_ratio=0.8):
-    dataset = ClipDataset(pickle_file)
+def get_dataloaders(pickle_file_folder, save_dir, batch_size=8, split_ratio=0.8):
+    dataset = ClipDataset(pickle_file_folder, save_dir)
     labels = [data[1] for data in dataset]  # Assuming the dataset returns (input, label)
 
     stratified_split = StratifiedShuffleSplit(n_splits=1, test_size=1-split_ratio, random_state=42)

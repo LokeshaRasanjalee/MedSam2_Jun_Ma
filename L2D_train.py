@@ -357,10 +357,14 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
     for clips_batch, labels_batch,delta_l_batch in loader:
         clips_batch = clips_batch.to(device)
         labels_batch = labels_batch.to(device)
+        delta_l_batch = delta_l_batch.to(device)
 
         clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
         outputs = model(clips_batch).squeeze(1)
-        loss = criterion(outputs, labels_batch)
+        #loss = criterion(outputs, labels_batch)
+        
+        advantage = delta_l_batch - 0.7
+        loss = torch.log1p(torch.exp(-advantage.unsqueeze(1)*outputs)).mean()
 
         optimizer.zero_grad()
         loss.backward()
@@ -388,10 +392,14 @@ def validate_one_epoch(model, loader, criterion, device):
         for clips_batch, labels_batch, delta_l_batch in loader:
             clips_batch = clips_batch.to(device)
             labels_batch = labels_batch.to(device)
+            delta_l_batch = delta_l_batch.to(device)
 
             clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
             outputs = model(clips_batch).squeeze(1)
-            loss = criterion(outputs, labels_batch)
+            #loss = criterion(outputs, labels_batch)
+            
+            advantage = delta_l_batch - 0.7
+            loss = torch.log1p(torch.exp(-advantage.unsqueeze(1)*outputs)).mean()
 
             total_loss += loss.item() * clips_batch.size(0)
 
@@ -1179,11 +1187,11 @@ def main():
     ])
     
     batch_size = 8
-    num_epochs = 50
+    num_epochs = 30
     learning_rate = 1e-5
-    pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
+    #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
-    train_loader, val_loader = get_dataloaders(pickle_file, batch_size=batch_size)
+    train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args.output_mask_dir, batch_size=batch_size)
 
     # Calculate the number of positive and negative samples
     num_positive = sum(train_loader.dataset.dataset.labels)
