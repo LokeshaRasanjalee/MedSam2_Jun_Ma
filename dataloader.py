@@ -11,6 +11,7 @@ class ClipDataset(Dataset):
             data = pickle.load(f)
         self.clips = data['clips']  # list of (C, T, H, W) tensors
         self.labels = data['labels']  # list of 0/1
+        self.delta_Ls = data['delta_Ls']
 
     def __len__(self):
         return len(self.clips)
