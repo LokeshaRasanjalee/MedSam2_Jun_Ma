@@ -1179,11 +1179,12 @@ def main():
     ])
     
     batch_size = 8
-    num_epochs = 50
+    num_epochs = 1
     learning_rate = 1e-5
-    pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
+    #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
-    train_loader, val_loader = get_dataloaders(pickle_file, batch_size=batch_size)
+    train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args.output_mask_dir, batch_size=batch_size)
+
 
     # Calculate the number of positive and negative samples
     num_positive = sum(train_loader.dataset.dataset.labels)
