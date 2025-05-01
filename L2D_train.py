@@ -1179,7 +1179,7 @@ def main():
     ])
     
     batch_size = 8
-    num_epochs = 1
+    num_epochs = 50
     learning_rate = 1e-5
     pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
