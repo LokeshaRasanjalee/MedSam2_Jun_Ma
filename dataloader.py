@@ -30,8 +30,9 @@ class ClipDataset(Dataset):
                 self.clips.extend(data['clips'])
                 # self.L_no_defer_full_list = data['L_no_defer_full_list']
                 # self.L_post_defer_full_list = data['L_post_defer_full_list']
-                delta_L = [a - b for a, b in zip(data['L_no_defer_full_list'], data['L_post_defer_full_list'])]
-                self.delta_Ls.extend(delta_L)
+                # delta_L = [a - b for a, b in zip(data['L_no_defer_full_list'], data['L_post_defer_full_list'])]
+                self.delta_Ls.extend(data['delta_Ls'])
+                delta_L = data['delta_Ls']
                 self.labels.extend([1 if delta_l > 0.28 else 0 for delta_l in delta_L])
                 self.confidence.extend(data['conf_list'])
                 del data
