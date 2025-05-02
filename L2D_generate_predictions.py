@@ -960,8 +960,8 @@ def main():
 
     for n_video, video_name in enumerate(video_names):
         
-        # if video_name == "seq4":
-        #     continue
+        if video_name != "seq20":
+            continue
         
         
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
