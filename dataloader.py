@@ -28,15 +28,26 @@ class ClipDataset(Dataset):
                 if len(data['clips'])==0:
                     continue
                 self.clips.extend(data['clips'])
-                self.L_no_defer_full_list = data['L_no_defer_full_list']
-                self.L_post_defer_full_list = data['L_post_defer_full_list']
-                delta_L = [a - b for a, b in zip(data['L_no_defer_full_list'], data['L_post_defer_full_list'])]
-                self.delta_Ls.extend(delta_L)
+                
+                #------For total_iou
+                # self.L_no_defer_full_list = data['L_no_defer_full_list']
+                # self.L_post_defer_full_list = data['L_post_defer_full_list']
+                # delta_L = [a - b for a, b in zip(data['L_no_defer_full_list'], data['L_post_defer_full_list'])]
+                # self.delta_Ls.extend(delta_L)
+                # #delta_L = data['delta_Ls']
+                # self.labels.extend([1 if delta_l > 0.28 else 0 for delta_l in delta_L])
+                # self.confidence.extend(data['conf_list'])
+                # del data
+                # del delta_L
+                # gc.collect()
+                
+                
+                #------For regional_iou-----------
+                self.delta_Ls.extend(data['delta_Ls'])
                 #delta_L = data['delta_Ls']
-                self.labels.extend([1 if delta_l > 0.28 else 0 for delta_l in delta_L])
+                self.labels.extend([1 if delta_l > 0.7 else 0 for delta_l in data['delta_Ls']])
                 self.confidence.extend(data['conf_list'])
                 del data
-                del delta_L
                 gc.collect()
                 
                 
@@ -60,7 +71,7 @@ class ClipDataset(Dataset):
         label = self.labels[idx]
         delta_l = self.delta_Ls [idx]
         conf = self.confidence[idx]
-        return clip, torch.tensor(label, dtype=torch.float32), conf
+        return clip, torch.tensor(label, dtype=torch.float32), delta_l
 
     def count_labels(self):
         count_1s = sum(1 for label in self.labels if label == 1)
@@ -69,15 +80,15 @@ class ClipDataset(Dataset):
 
 def get_dataloaders(pickle_file_folder, save_dir, batch_size=8, split_ratio=0.8):
     dataset = ClipDataset(pickle_file_folder, save_dir)
-    labels = [data[1] for data in dataset]  # Assuming the dataset returns (input, label)
+    # labels = [data[1] for data in dataset]  # Assuming the dataset returns (input, label)
 
-    stratified_split = StratifiedShuffleSplit(n_splits=1, test_size=1-split_ratio, random_state=42)
-    train_idx, val_idx = next(stratified_split.split(range(len(dataset)), labels))
+    # stratified_split = StratifiedShuffleSplit(n_splits=1, test_size=1-split_ratio, random_state=42)
+    # train_idx, val_idx = next(stratified_split.split(range(len(dataset)), labels))
 
-    train_dataset = Subset(dataset, train_idx)
-    val_dataset = Subset(dataset, val_idx)
+    # train_dataset = Subset(dataset, train_idx)
+    # val_dataset = Subset(dataset, val_idx)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    # train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
-    return train_loader, val_loader
+    return val_loader, val_loader
