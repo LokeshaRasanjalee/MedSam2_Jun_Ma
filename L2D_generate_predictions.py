@@ -476,35 +476,35 @@ def vos_inference(
         
     predictor.reset_state(inference_state)
 
-    # # write the output masks as palette PNG files to output_mask_dir
-    # for out_frame_idx, per_obj_output_mask in video_segments.items():
-    #     if save_palette_png:
-    #         # save palette PNG prediction results
-    #         save_palette_masks_to_dir(
-    #             output_mask_dir=output_mask_dir,
-    #             video_name=video_name,
-    #             frame_name=frame_names[out_frame_idx],
-    #             per_obj_output_mask=per_obj_output_mask,
-    #             height=height,
-    #             width=width,
-    #             per_obj_png_file=per_obj_png_file,
-    #             output_palette=output_palette,
-    #             confidence_scores=confidence_scores[out_frame_idx][0],
-    #         )
-    #     else:
-    #         # save raw prediction results
-    #         save_masks_to_dir(
-    #             output_mask_dir=output_mask_dir,
-    #             video_name=video_name,
-    #             frame_name=frame_names[out_frame_idx],
-    #             per_obj_output_mask=per_obj_output_mask,
-    #             height=height,
-    #             width=width,
-    #             per_obj_png_file=per_obj_png_file,
-    #             confidence_scores=confidence_scores[out_frame_idx][0],
-    #         )
+    # write the output masks as palette PNG files to output_mask_dir
+    for out_frame_idx, per_obj_output_mask in video_segments.items():
+        if save_palette_png:
+            # save palette PNG prediction results
+            save_palette_masks_to_dir(
+                output_mask_dir=output_mask_dir,
+                video_name=video_name,
+                frame_name=frame_names[out_frame_idx],
+                per_obj_output_mask=per_obj_output_mask,
+                height=height,
+                width=width,
+                per_obj_png_file=per_obj_png_file,
+                output_palette=output_palette,
+                confidence_scores=confidence_scores[out_frame_idx][0],
+            )
+        else:
+            # save raw prediction results
+            save_masks_to_dir(
+                output_mask_dir=output_mask_dir,
+                video_name=video_name,
+                frame_name=frame_names[out_frame_idx],
+                per_obj_output_mask=per_obj_output_mask,
+                height=height,
+                width=width,
+                per_obj_png_file=per_obj_png_file,
+                confidence_scores=confidence_scores[out_frame_idx][0],
+            )
         
-    #     print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
+        print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
     
     return video_segments_logits, confidence_scores
 

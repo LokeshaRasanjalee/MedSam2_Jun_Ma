@@ -377,6 +377,33 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     downstream_loss = 1.0 - avg_iou
     return downstream_loss
 
+def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, output_dir):
+    # Create a figure for the plots
+    plt.figure(figsize=(10, 5))
+    
+    # Plot Loss Curves
+    plt.subplot(1, 2, 1)
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.title('Loss Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    
+    # Plot Accuracy Curves
+    plt.subplot(1, 2, 2)
+    plt.plot(train_accs, label='Training R2') # Here plotting R2 values not accuracy
+    plt.plot(val_accs, label='Validation R2')
+    plt.title('Accuracy Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    
+    # Save the plot to the specified directory
+    plot_path = os.path.join(output_dir, 'loss_accuracy_curves.png')
+    plt.savefig(plot_path)
+    plt.close()  # Close the figure to free memory
+
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
     total_loss = 0
@@ -1112,17 +1139,17 @@ def main():
     ])
     
     batch_size = 8
-    num_epochs = 10
+    num_epochs = 15
     learning_rate = 1e-4
-    pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
+    #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
-    train_loader, val_loader = get_dataloaders(pickle_file, batch_size=batch_size)
+    train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args.output_mask_dir, batch_size=batch_size)
     criterion = nn.SmoothL1Loss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
     
     #--------------------------Train Model----------------------------------
-    
+    train_losses, train_r2s, val_losses, val_r2s = [], [], [], []
     for epoch in range(num_epochs):
         train_loss, train_mae, train_r2 = train_one_epoch(model, train_loader, criterion, optimizer, device)
         val_loss, val_mae, val_r2 = validate_one_epoch(model, val_loader, criterion, device)
@@ -1134,6 +1161,11 @@ def main():
               f"Val Loss: {val_loss:.4f} "
               f"Val MAE: {val_mae:.4f} "
               f"Val R²: {val_r2:.4f}")
+        
+        train_losses.append(train_loss)
+        train_r2s.append(train_r2)
+        val_losses.append(val_loss)
+        val_r2s.append(val_r2)
         
         
     predictions = []
@@ -1155,6 +1187,8 @@ def main():
     
     # Save the residual plot after training
     plot_residuals(np.array(predictions), np.array(actuals), args.output_mask_dir)
+    
+    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_r2s, val_r2s, args.output_mask_dir)
     
     
     
