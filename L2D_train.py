@@ -1215,7 +1215,7 @@ def main():
     
     
     
-    save_model(model,regression_head,optimizer,epoch, os.path.join(args.post_hoc_model_save_dir, f"{args.experiment_name}_{timestamp}"), "r_2_plus_1_d.pth")
+    save_model(model,regression_head,optimizer,epoch, os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}"), "r_2_plus_1_d.pth")
     
    
 
