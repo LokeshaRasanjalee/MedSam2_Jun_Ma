@@ -415,7 +415,8 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
         clips_batch = clips_batch.to(device)
         labels_batch = labels_batch.to(device)
 
-        clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+        #clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+        clips_batch = clips_batch.permute(0, 2, 1, 3, 4) 
         outputs = model(clips_batch).squeeze(1)
         loss = criterion(outputs, labels_batch)
 
@@ -454,7 +455,8 @@ def validate_one_epoch(model, loader, criterion, device):
             clips_batch = clips_batch.to(device)
             labels_batch = labels_batch.to(device)
 
-            clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+            #clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+            clips_batch = clips_batch.permute(0, 2, 1, 3, 4)
             outputs = model(clips_batch).squeeze(1)
             loss = criterion(outputs, labels_batch)
 
@@ -1127,7 +1129,27 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = models.r2plus1d_18(pretrained=True)
-    model.fc = nn.Linear(model.fc.in_features, 1)  # Assuming binary classification (prompt vs no prompt)
+    # Modify the first conv layer to accept 4 input channels instead of 3
+    old_conv = model.stem[0]  # First Conv3d layer
+
+    # Create new Conv3d layer with 4 input channels
+    new_conv = nn.Conv3d(
+        in_channels=4,
+        out_channels=old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        bias=old_conv.bias is not None
+    )
+
+    # Initialize new_conv weights: copy RGB weights and init 4th channel as mean
+    with torch.no_grad():
+        new_conv.weight[:, :3] = old_conv.weight  # Copy RGB weights
+        new_conv.weight[:, 3] = old_conv.weight.mean(dim=1)  # Init mask channel
+
+    # Replace the old conv layer with the new one
+    model.stem[0] = new_conv
+    model.fc = nn.Linear(model.fc.in_features, 1)
     model = model.to(device)
 
     
@@ -1139,7 +1161,7 @@ def main():
     ])
     
     batch_size = 8
-    num_epochs = 30
+    num_epochs = 20
     learning_rate = 1e-5
     #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
@@ -1176,7 +1198,8 @@ def main():
             clips_batch = clips_batch.to(device)
             labels_batch = labels_batch.to(device)
 
-            clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+            #clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+            clips_batch = clips_batch.permute(0, 2, 1, 3, 4)
             outputs = model(clips_batch).squeeze(1)
 
             predictions.extend(outputs.cpu().numpy())

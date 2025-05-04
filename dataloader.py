@@ -10,9 +10,20 @@ import gc
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
+from PIL import Image
+from torchvision import transforms
+from PIL import Image
+import torch
+import numpy as np
 
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, save_dir):
+        
+        transform = transforms.Compose([
+            transforms.Resize((112, 112)),
+            transforms.ToTensor(),
+         
+        ])
       
 
         self.clips = []
@@ -23,11 +34,60 @@ class ClipDataset(Dataset):
         
         for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
             print ("File: ",file)
+            # if file != "./media/data_2/seq3_data.pkl":
+            #     continue
             with open(file, 'rb') as f:
                 data = pickle.load(f)
                 if len(data['clips'])==0:
                     continue
-                self.clips.extend(data['clips'])
+                
+                
+                processed_clips = []
+
+                for clip in data['img_frame_list']:
+                    transformed_frames = []
+                    
+                    for t in range(len(clip)):  # assuming shape is (H, T, W)
+                        frame = clip[t]  # shape: (H, W)
+                        #frame = frame.numpy().astype('uint8')  # convert to numpy uint8
+                        #frame = np.stack((frame,)*3, axis=-1)  # convert to 3 channels
+                        frame = Image.fromarray(frame)  # convert to PIL Image
+
+                        transformed_frame = transform(frame)  # now shape (3, 224, 224)
+                        transformed_frames.append(transformed_frame)
+
+                    # Stack back: (T, C, H, W)
+                    clip_tensor = torch.stack(transformed_frames, dim=0)
+                    processed_clips.append(clip_tensor)
+
+                # If needed, batch them: (B, T, C, H, W)
+                clip_stack = torch.stack(processed_clips)
+                
+                
+                # Stack masks: (B, 1, H, W)
+                mask_stack = data['clips']
+                
+                # Combine clips and masks to create 4-channel input
+                # For each clip in the batch, concatenate the corresponding mask as 4th channel
+                combined_clips = []
+                for i in range(clip_stack.shape[0]):
+                    # For each time frame in the clip
+                    combined_frames = []
+                    for t in range(clip_stack.shape[1]):
+                        # Concatenate 3-channel frame with 1-channel mask
+                        # clip_stack[i, t] shape: (3, H, W), mask_stack[i] shape: (1, H, W)
+                        combined_frame = torch.cat([clip_stack[i, t],mask_stack[i][:,t,:,:]], dim=0)  # Shape: (4, H, W)
+                        combined_frames.append(combined_frame)
+                    # Stack back: (T, 4, H, W)
+                    combined_clip = torch.stack(combined_frames, dim=0)
+                    combined_clips.append(combined_clip)
+                
+                # Stack combined clips: (B, T, 4, H, W)
+                combined_stack = torch.stack(combined_clips)
+                
+                # Store the combined clips
+                self.clips.extend([combined_clip for combined_clip in combined_stack])
+                
                 
                 #------For total_iou
                 # self.L_no_defer_full_list = data['L_no_defer_full_list']
