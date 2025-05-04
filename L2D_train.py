@@ -33,6 +33,13 @@ import torch.optim as optim
 import torchvision.models.video as models
 from PIL import Image
 from dataloader import get_dataloaders
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import confusion_matrix
+from collections import Counter
+
+# Import VideoMAE model
+from transformers import VideoMAEForVideoClassification, VideoMAEFeatureExtractor
 
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
@@ -292,40 +299,6 @@ def save_model(model, output_path, model_name):
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     joblib.dump(model, os.path.join(output_path, model_name))
-    
-    
-def plot_predicted_vs_actual(predictions, actuals, output_dir, filename="predicted_vs_actual.png"):
-    plt.figure(figsize=(10, 6))
-    plt.scatter(actuals, predictions, alpha=0.5)
-    plt.plot([actuals.min(), actuals.max()], [actuals.min(), actuals.max()], 'k--', lw=2)
-    plt.xlabel('Actual Values')
-    plt.ylabel('Predicted Values')
-    plt.title('Predicted vs Actual Values')
-    plt.grid(True)
-
-    # Ensure the output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Save the plot to the specified directory
-    plt.savefig(os.path.join(output_dir, filename))
-    plt.close()
-    
-def plot_residuals(predictions, actuals, output_dir, filename="residuals.png"):
-    residuals = actuals - predictions
-    plt.figure(figsize=(10, 6))
-    plt.scatter(actuals, residuals, alpha=0.5)
-    plt.axhline(0, color='k', linestyle='--', lw=2)
-    plt.xlabel('Actual Values')
-    plt.ylabel('Residuals')
-    plt.title('Residual Plot')
-    plt.grid(True)
-
-    # Ensure the output directory exists
-    os.makedirs(output_dir, exist_ok=True)
-
-    # Save the plot to the specified directory
-    plt.savefig(os.path.join(output_dir, filename))
-    plt.close()
  
     
 def downstream_impact(fir_prom, sec_prom, pred_logits_uncorrected, pred_logits_corrected, gt_masks,score_thresh, K):
@@ -377,41 +350,13 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     downstream_loss = 1.0 - avg_iou
     return downstream_loss
 
-def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, output_dir):
-    # Create a figure for the plots
-    plt.figure(figsize=(10, 5))
-    
-    # Plot Loss Curves
-    plt.subplot(1, 2, 1)
-    plt.plot(train_losses, label='Training Loss')
-    plt.plot(val_losses, label='Validation Loss')
-    plt.title('Loss Curves')
-    plt.xlabel('Epochs')
-    plt.ylabel('Loss')
-    plt.legend()
-    
-    # Plot Accuracy Curves
-    plt.subplot(1, 2, 2)
-    plt.plot(train_accs, label='Training R2') # Here plotting R2 values not accuracy
-    plt.plot(val_accs, label='Validation R2')
-    plt.title('Accuracy Curves')
-    plt.xlabel('Epochs')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    
-    # Save the plot to the specified directory
-    plot_path = os.path.join(output_dir, 'loss_accuracy_curves.png')
-    plt.savefig(plot_path)
-    plt.close()  # Close the figure to free memory
-
 def train_one_epoch(model, loader, criterion, optimizer, device):
     model.train()
     total_loss = 0
-    total_mae = 0
-    total_ss_res = 0
-    total_ss_tot = 0
+    correct = 0
+    total = 0
 
-    for clips_batch, labels_batch in loader:
+    for clips_batch, labels_batch,delta_l_batch in loader:
         clips_batch = clips_batch.to(device)
         labels_batch = labels_batch.to(device)
 
@@ -425,32 +370,24 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
 
         total_loss += loss.item() * clips_batch.size(0)
 
-        # Calculate MAE
-        mae = torch.abs(outputs - labels_batch).mean().item()
-        total_mae += mae * clips_batch.size(0)
-
-        # Calculate R-squared components
-        ss_res = torch.sum((outputs - labels_batch) ** 2).item()
-        ss_tot = torch.sum((labels_batch - labels_batch.mean()) ** 2).item()
-        total_ss_res += ss_res
-        total_ss_tot += ss_tot
+        # Compute accuracy
+        preds = (torch.sigmoid(outputs) > 0.5).float()
+        correct += (preds == labels_batch).sum().item()
+        total += labels_batch.size(0)
 
     avg_loss = total_loss / len(loader.dataset)
-    avg_mae = total_mae / len(loader.dataset)
-    r2 = 1 - (total_ss_res / total_ss_tot) if total_ss_tot != 0 else float('nan')
-
-    return avg_loss, avg_mae, r2
+    accuracy = correct / total
+    return avg_loss, accuracy
 
 
 def validate_one_epoch(model, loader, criterion, device):
     model.eval()
     total_loss = 0
-    total_mae = 0
-    total_ss_res = 0
-    total_ss_tot = 0
+    correct = 0
+    total = 0
 
     with torch.no_grad():
-        for clips_batch, labels_batch in loader:
+        for clips_batch, labels_batch, delta_l_batch in loader:
             clips_batch = clips_batch.to(device)
             labels_batch = labels_batch.to(device)
 
@@ -460,21 +397,13 @@ def validate_one_epoch(model, loader, criterion, device):
 
             total_loss += loss.item() * clips_batch.size(0)
 
-            # Calculate MAE
-            mae = torch.abs(outputs - labels_batch).mean().item()
-            total_mae += mae * clips_batch.size(0)
-
-            # Calculate R-squared components
-            ss_res = torch.sum((outputs - labels_batch) ** 2).item()
-            ss_tot = torch.sum((labels_batch - labels_batch.mean()) ** 2).item()
-            total_ss_res += ss_res
-            total_ss_tot += ss_tot
+            preds = (torch.sigmoid(outputs) > 0.5).float()
+            correct += (preds == labels_batch).sum().item()
+            total += labels_batch.size(0)
 
     avg_loss = total_loss / len(loader.dataset)
-    avg_mae = total_mae / len(loader.dataset)
-    r2 = 1 - (total_ss_res / total_ss_tot) if total_ss_tot != 0 else float('nan')
-
-    return avg_loss, avg_mae, r2
+    accuracy = correct / total
+    return avg_loss, accuracy
 
 
 @torch.inference_mode()
@@ -960,7 +889,120 @@ def vos_separate_inference_per_object(
             per_obj_png_file=per_obj_png_file,
             output_palette=output_palette,
         )
+        
+def calculate_auc(model, data_loader, device):
+    model.eval()  # Set the model to evaluation mode
+    true_labels = []
+    predicted_probs = []
 
+    with torch.no_grad():  # Disable gradient calculation
+        for inputs, labels, delta_l_batch in data_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            # Get model predictions
+            inputs = inputs.repeat(1, 3, 1, 1, 1)
+            outputs = model(inputs)
+            probabilities = torch.sigmoid(outputs).cpu().numpy()  # Assuming binary classification
+
+            true_labels.extend(labels.cpu().numpy())
+            predicted_probs.extend(probabilities)
+
+    # Calculate AUC
+    auc = roc_auc_score(true_labels, predicted_probs)
+    return auc
+
+def plot_roc_curve(model, data_loader, device, output_dir):
+    model.eval()  # Set the model to evaluation mode
+    true_labels = []
+    predicted_probs = []
+
+    with torch.no_grad():  # Disable gradient calculation
+        for inputs, labels, delta_l_batch in data_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            # Get model predictions
+            inputs = inputs.repeat(1, 3, 1, 1, 1)
+            outputs = model(inputs)
+            probabilities = torch.sigmoid(outputs).cpu().numpy()  # Assuming binary classification
+
+            true_labels.extend(labels.cpu().numpy())
+            predicted_probs.extend(probabilities)
+
+    # Calculate ROC curve
+    fpr, tpr, _ = roc_curve(true_labels, predicted_probs)
+    roc_auc = auc(fpr, tpr)
+
+    # Plot ROC curve
+    plt.figure()
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+
+    # Save the plot to the specified directory
+    roc_curve_path = os.path.join(output_dir, 'roc_curve.png')
+    plt.savefig(roc_curve_path)
+    plt.close()  # Close the figure to free memory
+
+def calculate_confusion_matrix(model, data_loader, device):
+    model.eval()  # Set the model to evaluation mode
+    true_labels = []
+    predicted_labels = []
+
+    with torch.no_grad():  # Disable gradient calculation
+        for inputs, labels, delta_l_batch in data_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+
+            # Get model predictions
+            inputs = inputs.repeat(1, 3, 1, 1, 1)
+            outputs = model(inputs)
+            preds = (torch.sigmoid(outputs) > 0.5).cpu().numpy()  
+            # Assuming binary classification
+            preds_int = [int(pred[0]) for pred in preds]
+
+            true_labels.extend(labels.cpu().numpy())
+            predicted_labels.extend(preds_int)
+
+    # Calculate confusion matrix
+    cm = confusion_matrix(true_labels, predicted_labels)
+    true_labels_count = Counter(true_labels)
+    predicted_labels_count = Counter(predicted_labels)
+    cm_df = pd.DataFrame(cm, index=['Actual 0', 'Actual 1'], columns=['Predicted 0', 'Predicted 1'])
+    return true_labels_count, predicted_labels_count, cm_df
+
+def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, output_dir):
+    # Create a figure for the plots
+    plt.figure(figsize=(10, 5))
+    
+    # Plot Loss Curves
+    plt.subplot(1, 2, 1)
+    plt.plot(train_losses, label='Training Loss')
+    plt.plot(val_losses, label='Validation Loss')
+    plt.title('Loss Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    
+    # Plot Accuracy Curves
+    plt.subplot(1, 2, 2)
+    plt.plot(train_accs, label='Training Accuracy')
+    plt.plot(val_accs, label='Validation Accuracy')
+    plt.title('Accuracy Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    
+    # Save the plot to the specified directory
+    plot_path = os.path.join(output_dir, 'loss_accuracy_curves.png')
+    plt.savefig(plot_path)
+    plt.close()  # Close the figure to free memory
 
 def main():
     parser = argparse.ArgumentParser()
@@ -1123,73 +1165,77 @@ def main():
     print(f"Train on {len(video_names)} videos:\n{video_names}")
     logging.info(f"Train on {len(video_names)} videos:\n{video_names}")
     
-    # ----- Prepare R(2+1)D model -----
+    # ----- Prepare VideoMAE model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = models.r2plus1d_18(pretrained=True)
-    model.fc = nn.Linear(model.fc.in_features, 1)  # Assuming binary classification (prompt vs no prompt)
+    # Initialize VideoMAE model with pretrained weights
+    feature_extractor = VideoMAEFeatureExtractor.from_pretrained('MCG-NJU/videomae-base')
+    model = VideoMAEForVideoClassification.from_pretrained('MCG-NJU/videomae-base')
     model = model.to(device)
 
-    
-
-    # ----- Define Resize Transform for R(2+1)D -----
+    # Define Resize Transform for VideoMAE
     r2plus1d_transform = T.Compose([
-        T.Resize((112, 112)),    # Downsample frames to 112x112
-        T.ToTensor(),            # (H, W, C) -> (C, H, W)
+        T.Resize((224, 224)),  # Resize frames to 224x224 for VideoMAE
+        T.ToTensor(),          # (H, W, C) -> (C, H, W)
+        T.Normalize(mean=feature_extractor.image_mean, std=feature_extractor.image_std),
     ])
     
     batch_size = 8
-    num_epochs = 30
+    num_epochs = 50
     learning_rate = 1e-5
     #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
     train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args.output_mask_dir, batch_size=batch_size)
-    criterion = nn.SmoothL1Loss()
+
+
+    # Calculate the number of positive and negative samples
+    num_positive = sum(train_loader.dataset.dataset.labels)
+    num_negative = len(train_loader.dataset.dataset) - num_positive
+
+    # Calculate pos_weight
+    pos_weight = num_negative / num_positive
+
+    # Define the criterion with pos_weight
+    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=device))
+    
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     
     
     #--------------------------Train Model----------------------------------
-    train_losses, train_r2s, val_losses, val_r2s = [], [], [], []
+    
+    train_losses, train_accs, val_losses, val_accs = [], [], [], []
     for epoch in range(num_epochs):
-        train_loss, train_mae, train_r2 = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss, val_mae, val_r2 = validate_one_epoch(model, val_loader, criterion, device)
+        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
+        val_loss, val_acc = validate_one_epoch(model, val_loader, criterion, device)
+
+        train_losses.append(train_loss)
+        train_accs.append(train_acc)
+        val_losses.append(val_loss)
+        val_accs.append(val_acc)
 
         print(f"Epoch [{epoch+1}/{num_epochs}] "
               f"Train Loss: {train_loss:.4f} "
-              f"Train MAE: {train_mae:.4f} "
-              f"Train R²: {train_r2:.4f} "
+              f"Train Acc: {train_acc:.4f} "
               f"Val Loss: {val_loss:.4f} "
-              f"Val MAE: {val_mae:.4f} "
-              f"Val R²: {val_r2:.4f}")
-        
-        train_losses.append(train_loss)
-        train_r2s.append(train_r2)
-        val_losses.append(val_loss)
-        val_r2s.append(val_r2)
-        
-        
-    predictions = []
-    actuals = []
-    model.eval()
-    with torch.no_grad():
-        for clips_batch, labels_batch in val_loader:
-            clips_batch = clips_batch.to(device)
-            labels_batch = labels_batch.to(device)
+              f"Val Acc: {val_acc:.4f}")
 
-            clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
-            outputs = model(clips_batch).squeeze(1)
+    # Plotting Loss and Accuracy Curves
+    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
 
-            predictions.extend(outputs.cpu().numpy())
-            actuals.extend(labels_batch.cpu().numpy())
+    # Calculate AUC
+    auc = calculate_auc(model, val_loader, device)
+    logging.info(f"AUC: {auc:.4f}")
+    print(f"AUC: {auc:.4f}")
 
-    # Save the predicted vs actual plot after training
-    plot_predicted_vs_actual(np.array(predictions), np.array(actuals), args.output_mask_dir)
-    
-    # Save the residual plot after training
-    plot_residuals(np.array(predictions), np.array(actuals), args.output_mask_dir)
-    
-    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_r2s, val_r2s, args.output_mask_dir)
-    
+    # Plot ROC curve and save it
+    plot_roc_curve(model, val_loader, device, args.output_mask_dir)
+
+    # Calculate Confusion Matrix
+    true_labels_count, predicted_labels_count, cm_df = calculate_confusion_matrix(model, val_loader, device)
+    logging.info(f"True Labels Count: {str(true_labels_count)}")
+    logging.info(f"Predicted Labels Count: {str(predicted_labels_count)}")
+    logging.info(f"Confusion Matrix:\n{cm_df}")
+    print(f"Confusion Matrix:\n{cm_df}")
     
     
     
