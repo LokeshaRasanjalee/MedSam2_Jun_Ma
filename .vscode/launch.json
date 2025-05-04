@@ -41,7 +41,7 @@
             "request": "launch",
             "program": "L2D_inference.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./media/polypgen_seq/Train_new/Images_jpg/ --input_mask_dir ./media/polypgen_seq/Train_new/Masks/ --post_hoc_model_save_dir ./media/data_3 -o ./media/Inference -e 'debug_inference_run'"
+            "args": "--base_video_dir ./media/polypgen_seq/Test_new/Images_jpg/ --input_mask_dir ./media/polypgen_seq/Test_new/Masks/ --post_hoc_model_save_dir ./media/data_2/regression_20250502_151955/r_2_plus_1_d.pth -o ./media/Inference -e 'debug_inference_run'"
         },
 
         {
