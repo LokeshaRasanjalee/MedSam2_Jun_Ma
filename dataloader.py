@@ -10,9 +10,24 @@ import gc
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
+from PIL import Image
+from torchvision import transforms
+from PIL import Image
+import torch
 
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, save_dir):
+        
+        # Define the transform for RGB images
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], 
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
       
 
         self.clips = []
@@ -25,9 +40,31 @@ class ClipDataset(Dataset):
             print ("File: ",file)
             with open(file, 'rb') as f:
                 data = pickle.load(f)
-                if len(data['clips'])==0:
+                if len(data['clips_without_trans'])==0:
                     continue
-                self.clips.extend(data['clips'])
+                #self.clips.extend(data['clips_without_trans'])
+                
+                processed_clips = []
+
+                for clip in data['clips_without_trans']:
+                    transformed_frames = []
+                    
+                    for t in range(clip.shape[1]):  # assuming shape is (H, T, W)
+                        frame = clip[:, t, :]  # shape: (H, W)
+                        frame = frame.numpy().astype('uint8')  # convert to numpy uint8
+                        frame = Image.fromarray(frame).convert("RGB")  # grayscale to RGB
+
+                        transformed_frame = transform(frame)  # now shape (3, 224, 224)
+                        transformed_frames.append(transformed_frame)
+
+                    # Stack back: (T, C, H, W)
+                    clip_tensor = torch.stack(transformed_frames, dim=0)
+                    processed_clips.append(clip_tensor)
+
+                # If needed, batch them: (B, T, C, H, W)
+                clip_stack = torch.stack(processed_clips)
+                self.clips.extend(clip_stack)
+                
                 
                 #------For total_iou
                 # self.L_no_defer_full_list = data['L_no_defer_full_list']
