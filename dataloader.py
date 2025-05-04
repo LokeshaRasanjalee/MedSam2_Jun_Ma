@@ -10,23 +10,54 @@ import gc
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
+from PIL import Image
+
+def get_frame_names(video_dir):
+    frame_names = [
+        os.path.splitext(p)[0]
+        for p in os.listdir(video_dir)
+        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+    ]
+    frame_names = list(sorted(frame_names))
+    return frame_names  
+
+def get_mask_img_list_with_obj(args, frame_names, video_name):
+    mask_img_list = [
+        name
+        for idx, name in enumerate(frame_names)
+        if os.path.exists(
+            os.path.join(args.input_mask_dir, video_name, f"{name}.png")
+        )
+    ]
+    mask_img_list_with_obj = sorted([
+        idx
+        for idx, name in enumerate(mask_img_list)
+        if np.any(np.array(Image.open(os.path.join(args.input_mask_dir, video_name, f"{name}.png")).convert('L')) > 0)
+    ])
+
+    return mask_img_list_with_obj
 
 class ClipDataset(Dataset):
-    def __init__(self, pickle_file, save_dir):
+    def __init__(self,args, pickle_file, save_dir):
       
 
         self.clips = []
         self.delta_Ls=[]
         self.L_post_defer_full_list=[]
         self.labels =[]
+        self.mask_list=[]
         self.confidence = []
         
         for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
-            print ("File: ",file)
+            seq_name = file.split('/')[-1].split('_')[0].split('data')[0]
+            print ("Sequence: ", seq_name)
+            
             with open(file, 'rb') as f:
                 data = pickle.load(f)
                 if len(data['clips'])==0:
                     continue
+                
                 self.clips.extend(data['clips'])
                 
                 #------For total_iou
@@ -50,6 +81,29 @@ class ClipDataset(Dataset):
                 del data
                 gc.collect()
                 
+                mask_frame_list = []
+                frame_names = get_frame_names(os.path.join(args.base_video_dir, seq_name))    
+                mask_img_list_with_obj = sorted(get_mask_img_list_with_obj(args, frame_names, seq_name))
+                initial_prompt = int(mask_img_list_with_obj[0])
+                mask_img_list_with_obj.pop(0)
+                
+                half_window = 4
+                
+                for second_prompt in range (initial_prompt+1, len(frame_names)):
+            
+                    if (second_prompt >= initial_prompt + half_window) and (second_prompt < len(frame_names) - half_window):
+                        # GOOD → continue normal processing
+                        pass
+                    else:
+                        continue  # Skip this second_promptsecond_prompt >=initial_prompt+half_window)) or (second_prompt < (len(frame_names)-half_window)):
+                    if second_prompt in mask_img_list_with_obj:
+                        mask_frame_list.append(second_prompt)
+                
+                self.mask_list.extend(mask_frame_list) 
+                
+                
+                
+                
                 
         print ("Loaded all")
         # Plot the distribution
@@ -71,15 +125,16 @@ class ClipDataset(Dataset):
         label = self.labels[idx]
         delta_l = self.delta_Ls [idx]
         conf = self.confidence[idx]
-        return clip, torch.tensor(label, dtype=torch.float32), delta_l
+        frame_idx = self.mask_list[idx]
+        return clip, torch.tensor(label, dtype=torch.float32), delta_l,frame_idx
 
     def count_labels(self):
         count_1s = sum(1 for label in self.labels if label == 1)
         count_0s = len(self.labels) - count_1s
         return count_1s, count_0s
 
-def get_dataloaders(pickle_file_folder, save_dir, batch_size=8, split_ratio=0.8):
-    dataset = ClipDataset(pickle_file_folder, save_dir)
+def get_dataloaders(args, pickle_file_folder, save_dir, batch_size=8, split_ratio=0.8):
+    dataset = ClipDataset(args, pickle_file_folder, save_dir)
     # labels = [data[1] for data in dataset]  # Assuming the dataset returns (input, label)
 
     # stratified_split = StratifiedShuffleSplit(n_splits=1, test_size=1-split_ratio, random_state=42)

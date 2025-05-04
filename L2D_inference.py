@@ -320,6 +320,23 @@ def downstream_impact(fir_prom, sec_prom, pred_logits_uncorrected, pred_logits_c
     #print (impact)
     return impact, np.mean(future_iou_c), np.mean(future_iou_u)
 
+def custom_moving_average(data, window_size=8):
+    # Initialize an array to hold the moving averages
+    moving_avg = np.zeros(len(data))
+    
+    for i in range(len(data)):
+        # Determine the start and end indices for the window
+        start_idx = max(0, i - 4)  # 4 back
+        end_idx = min(len(data), i + 3 + 1)  # 3 forward, +1 for inclusive
+        
+        # Calculate the average for the current window
+        current_window = data[start_idx:end_idx]
+        
+        # Calculate the mean of the available values
+        moving_avg[i] = np.mean(current_window)  # Calculate the mean of the available values
+    
+    return moving_avg
+
 
 def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     """
@@ -387,21 +404,27 @@ def validate_one_epoch(model, loader, criterion, device, args):
     
     outputs_list = []
     delta_l_list = []
+    frame_idx_list = []
 
     with torch.no_grad():
-        for clips_batch, labels_batch, delta_l_batch in loader:
+        for clips_batch, labels_batch, delta_l_batch, frame_idx in loader:
             clips_batch = clips_batch.to(device)
             labels_batch = labels_batch.to(device)
             delta_l_batch = delta_l_batch.to(device)
+            frame_idx_batch = frame_idx.to(device)
 
             clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
             outputs = model(clips_batch).squeeze(1)
             loss = criterion(outputs, labels_batch)
             print (outputs, delta_l_batch)
-            for out, delta in zip(outputs, delta_l_batch):
+            frame_idx_batch = frame_idx.to(device)
+            for out, delta,frame_idx in zip(outputs, delta_l_batch,frame_idx_batch):
                 
                 outputs_list.append(out.detach().cpu().item())
                 delta_l_list.append(delta.detach().cpu().item())
+                
+                frame_idx_list.append(frame_idx.detach().cpu().item()) 
+                
 
             
 
@@ -415,19 +438,21 @@ def validate_one_epoch(model, loader, criterion, device, args):
     accuracy = correct / total
     
     plt.figure(figsize=(10, 6))
-    x = list(range(len(outputs_list)))  # Assuming same length for both lists
-
     fig, ax1 = plt.subplots(figsize=(10, 6))
 
-    # Plot outputs on the left Y-axis
-    ax1.plot(x, outputs_list, label='Model Output', color='blue', linestyle='-', marker='o')
-    ax1.set_xlabel('Index')
+    # Plot outputs using frame_idx_list as x-axis
+    ax1.plot(frame_idx_list, outputs_list, label='Model Output', color='blue', linestyle='-', marker='o')
+    ax1.set_xlabel('Frame Index')
     ax1.set_ylabel('Model Output', color='blue')
     ax1.tick_params(axis='y', labelcolor='blue')
 
+    # Set x-ticks to the values in frame_idx_list
+    ax1.set_xticks(frame_idx_list)  # Set x-ticks to the actual frame indices
+    ax1.set_xticklabels(frame_idx_list, rotation=45)  # Optionally rotate for better visibility
+
     # Create a second Y-axis sharing the same X-axis
     ax2 = ax1.twinx()
-    ax2.plot(x, delta_l_list, label='Delta L', color='red', linestyle='--', marker='x')
+    ax2.plot(frame_idx_list, delta_l_list, label='Delta L', color='red', linestyle='--', marker='x')
     ax2.set_ylabel('Delta L', color='red')
     ax2.tick_params(axis='y', labelcolor='red')
 
@@ -447,21 +472,25 @@ def validate_one_epoch(model, loader, criterion, device, args):
     delta_l_series = pd.Series(delta_l_list)
 
     # Calculate the moving average with a window of 8
-    outputs_moving_avg = outputs_series.rolling(window=8).mean()
-    delta_l_moving_avg = delta_l_series.rolling(window=8).mean()
+    outputs_moving_avg = custom_moving_average(outputs_series.values, window_size=8)
+    delta_l_moving_avg = custom_moving_average(delta_l_series.values, window_size=8)
 
-    # Create a dual-axis plot
+    # Create a dual-axis plot for moving averages
     fig, ax1 = plt.subplots(figsize=(10, 6))
 
-    # Plot the moving average of model output on the left Y-axis
-    ax1.plot(outputs_moving_avg, label='Moving Average of Model Output', color='blue', linestyle='-', marker='o')
-    ax1.set_xlabel('Index')
+    # Plot the moving average of model output using frame_idx_list as x-axis
+    ax1.plot(frame_idx_list, outputs_moving_avg, label='Moving Average of Model Output', color='blue', linestyle='-', marker='o')
+    ax1.set_xlabel('Frame Index')
     ax1.set_ylabel('Moving Average of Model Output', color='blue')
     ax1.tick_params(axis='y', labelcolor='blue')
 
+    # Set x-ticks to the values in frame_idx_list
+    ax1.set_xticks(frame_idx_list)  # Set x-ticks to the actual frame indices
+    ax1.set_xticklabels(frame_idx_list, rotation=45)  # Optionally rotate for better visibility
+
     # Create a second Y-axis sharing the same X-axis
     ax2 = ax1.twinx()
-    ax2.plot(delta_l_moving_avg, label='Moving Average of Delta L', color='red', linestyle='--', marker='x')
+    ax2.plot(frame_idx_list, delta_l_moving_avg, label='Moving Average of Delta L', color='red', linestyle='--', marker='x')
     ax2.set_ylabel('Moving Average of Delta L', color='red')
     ax2.tick_params(axis='y', labelcolor='red')
 
@@ -991,7 +1020,7 @@ def plot_roc_curve(model, data_loader, device, output_dir):
     predicted_probs = []
 
     with torch.no_grad():  # Disable gradient calculation
-        for inputs, labels, delta_l_batch in data_loader:
+        for inputs, labels, delta_l_batch, frame_idx in data_loader:
             inputs = inputs.to(device)
             labels = labels.to(device)
 
@@ -1029,7 +1058,7 @@ def calculate_confusion_matrix(model, data_loader, device):
     predicted_labels = []
 
     with torch.no_grad():  # Disable gradient calculation
-        for inputs, labels, delta_l_batch in data_loader:
+        for inputs, labels, delta_l_batch,  frame_idx in data_loader:
             inputs = inputs.to(device)
             labels = labels.to(device)
 
@@ -1260,7 +1289,7 @@ def main():
     learning_rate = 1e-5
     #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
-    train_loader, val_loader = get_dataloaders('./media/data_3', args.output_mask_dir, batch_size=batch_size)
+    train_loader, val_loader = get_dataloaders(args, './media/data_3', args.output_mask_dir, batch_size=batch_size)
 
 
     # # Calculate the number of positive and negative samples
