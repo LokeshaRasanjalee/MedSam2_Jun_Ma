@@ -10,10 +10,27 @@ import gc
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
+from PIL import Image
+from torchvision import transforms
+from PIL import Image
+import torch
+
 
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, save_dir):
       
+        # Define the transform for RGB images
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], 
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+      
+
 
         self.clips = []
         self.delta_Ls=[]
@@ -23,11 +40,36 @@ class ClipDataset(Dataset):
         
         for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
             print ("File: ",file)
+            # if file != './media/data_2/seq3_data.pkl':
+            #     continue
             with open(file, 'rb') as f:
                 data = pickle.load(f)
                 if len(data['clips'])==0:
                     continue
-                self.clips.extend(data['clips'])
+                #self.clips.extend(data['clips'])
+                
+                
+                processed_clips = []
+
+                for clip in data['clips_without_trans']:
+                    transformed_frames = []
+                    
+                    for t in range(clip.shape[1]):  # assuming shape is (H, T, W)
+                        frame = clip[:, t, :]  # shape: (H, W)
+                        frame = frame.numpy().astype('uint8')  # convert to numpy uint8
+                        frame = np.stack((frame,)*3, axis=-1)  # convert to 3 channels
+                        frame = Image.fromarray(frame)  # convert to PIL Image
+
+                        transformed_frame = transform(frame)  # now shape (3, 224, 224)
+                        transformed_frames.append(transformed_frame)
+
+                    # Stack back: (T, C, H, W)
+                    clip_tensor = torch.stack(transformed_frames, dim=0)
+                    processed_clips.append(clip_tensor)
+
+                # If needed, batch them: (B, T, C, H, W)
+                clip_stack = torch.stack(processed_clips)
+                self.clips.extend(clip_stack)
                 
                 #------For total_iou
                 # self.L_no_defer_full_list = data['L_no_defer_full_list']
@@ -78,7 +120,7 @@ class ClipDataset(Dataset):
         count_0s = len(self.labels) - count_1s
         return count_1s, count_0s
 
-def get_dataloaders(pickle_file_folder, save_dir, batch_size=8, split_ratio=0.8):
+def get_dataloaders(pickle_file_folder, save_dir, batch_size, split_ratio=0.8):
     dataset = ClipDataset(pickle_file_folder, save_dir)
     train_size = int(split_ratio * len(dataset))
     val_size = len(dataset) - train_size

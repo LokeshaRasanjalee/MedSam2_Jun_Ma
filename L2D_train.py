@@ -33,6 +33,10 @@ import torch.optim as optim
 import torchvision.models.video as models
 from PIL import Image
 from dataloader import get_dataloaders
+from sklearn.metrics import r2_score
+
+# Import VideoMAE model
+from transformers import TimesformerModel, TimesformerConfig
 
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
@@ -288,10 +292,17 @@ def train_regression_model(X, y):
     print("Regression Model MSE: ", mean_squared_error(y_test, y_pred))
     return reg
 
-def save_model(model, output_path, model_name):
+def save_model(model, regression_head, optimizer, epoch, output_path, model_name):
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    joblib.dump(model, os.path.join(output_path, model_name))
+        
+    torch.save({
+    "base_model_state": model.state_dict(),
+    "head_state": regression_head.state_dict(),
+    "optimizer_state": optimizer.state_dict(),   # optional
+    "epoch": epoch                               # optional
+    }, os.path.join(output_path, model_name))
+    
     
     
 def plot_predicted_vs_actual(predictions, actuals, output_dir, filename="predicted_vs_actual.png"):
@@ -404,19 +415,23 @@ def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val
     plt.savefig(plot_path)
     plt.close()  # Close the figure to free memory
 
-def train_one_epoch(model, loader, criterion, optimizer, device):
+def train_one_epoch(model, regression_head, loader, criterion, optimizer, device):
     model.train()
+    regression_head.train()
     total_loss = 0
     total_mae = 0
-    total_ss_res = 0
-    total_ss_tot = 0
+    all_preds = []
+    all_labels = []
 
     for clips_batch, labels_batch in loader:
+        print (labels_batch)
         clips_batch = clips_batch.to(device)
         labels_batch = labels_batch.to(device)
 
-        clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
-        outputs = model(clips_batch).squeeze(1)
+        #clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+        #clips_batch = clips_batch.permute(0, 2, 1, 3, 4)
+        outputs = model(clips_batch).last_hidden_state[:, 0]
+        outputs = regression_head(outputs).squeeze(1)
         loss = criterion(outputs, labels_batch)
 
         optimizer.zero_grad()
@@ -430,32 +445,33 @@ def train_one_epoch(model, loader, criterion, optimizer, device):
         total_mae += mae * clips_batch.size(0)
 
         # Calculate R-squared components
-        ss_res = torch.sum((outputs - labels_batch) ** 2).item()
-        ss_tot = torch.sum((labels_batch - labels_batch.mean()) ** 2).item()
-        total_ss_res += ss_res
-        total_ss_tot += ss_tot
+        all_preds.extend(outputs.detach().cpu().numpy())
+        all_labels.extend(labels_batch.detach().cpu().numpy())
 
     avg_loss = total_loss / len(loader.dataset)
     avg_mae = total_mae / len(loader.dataset)
-    r2 = 1 - (total_ss_res / total_ss_tot) if total_ss_tot != 0 else float('nan')
+    r2 = r2_score(all_labels, all_preds)
+
 
     return avg_loss, avg_mae, r2
 
 
-def validate_one_epoch(model, loader, criterion, device):
+def validate_one_epoch(model, regression_head, loader, criterion, device):
     model.eval()
+    regression_head.eval()
     total_loss = 0
     total_mae = 0
-    total_ss_res = 0
-    total_ss_tot = 0
+    all_preds = []
+    all_labels = []
 
     with torch.no_grad():
         for clips_batch, labels_batch in loader:
             clips_batch = clips_batch.to(device)
             labels_batch = labels_batch.to(device)
 
-            clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
-            outputs = model(clips_batch).squeeze(1)
+            #clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+            outputs = model(clips_batch).last_hidden_state[:, 0]
+            outputs = regression_head(outputs).squeeze(1)
             loss = criterion(outputs, labels_batch)
 
             total_loss += loss.item() * clips_batch.size(0)
@@ -467,12 +483,13 @@ def validate_one_epoch(model, loader, criterion, device):
             # Calculate R-squared components
             ss_res = torch.sum((outputs - labels_batch) ** 2).item()
             ss_tot = torch.sum((labels_batch - labels_batch.mean()) ** 2).item()
-            total_ss_res += ss_res
-            total_ss_tot += ss_tot
+            # Calculate R-squared components
+            all_preds.extend(outputs.detach().cpu().numpy())
+            all_labels.extend(labels_batch.detach().cpu().numpy())
 
     avg_loss = total_loss / len(loader.dataset)
     avg_mae = total_mae / len(loader.dataset)
-    r2 = 1 - (total_ss_res / total_ss_tot) if total_ss_tot != 0 else float('nan')
+    r2 = r2_score(all_labels, all_preds)
 
     return avg_loss, avg_mae, r2
 
@@ -1126,33 +1143,38 @@ def main():
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = models.r2plus1d_18(pretrained=True)
-    model.fc = nn.Linear(model.fc.in_features, 1)  # Assuming binary classification (prompt vs no prompt)
-    model = model.to(device)
+    config = TimesformerConfig.from_pretrained("facebook/timesformer-base-finetuned-k400")
+    model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400")
+
+    # Freeze base model if needed (optional)
+    # for param in base_model.parameters():
+    #     param.requires_grad = False
+
+    # Add regression head
+    regression_head = nn.Linear(config.hidden_size, 1)
+    model=model.to(device)
+    regression_head=regression_head.to(device)
 
     
 
     # ----- Define Resize Transform for R(2+1)D -----
-    r2plus1d_transform = T.Compose([
-        T.Resize((112, 112)),    # Downsample frames to 112x112
-        T.ToTensor(),            # (H, W, C) -> (C, H, W)
-    ])
+
     
-    batch_size = 8
-    num_epochs = 30
-    learning_rate = 1e-5
+    batch_size = 1
+    num_epochs = 10
+    learning_rate = 1e-3
     #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
     train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args.output_mask_dir, batch_size=batch_size)
-    criterion = nn.SmoothL1Loss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    criterion = nn.SmoothL1Loss()  # or nn.MSELoss()
+    optimizer = torch.optim.AdamW(list(model.parameters()) + list(regression_head.parameters()), lr=1e-4)
     
     
     #--------------------------Train Model----------------------------------
     train_losses, train_r2s, val_losses, val_r2s = [], [], [], []
     for epoch in range(num_epochs):
-        train_loss, train_mae, train_r2 = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss, val_mae, val_r2 = validate_one_epoch(model, val_loader, criterion, device)
+        train_loss, train_mae, train_r2 = train_one_epoch(model,regression_head, train_loader, criterion, optimizer, device)
+        val_loss, val_mae, val_r2 = validate_one_epoch(model,regression_head, val_loader, criterion, device)
 
         print(f"Epoch [{epoch+1}/{num_epochs}] "
               f"Train Loss: {train_loss:.4f} "
@@ -1176,9 +1198,9 @@ def main():
             clips_batch = clips_batch.to(device)
             labels_batch = labels_batch.to(device)
 
-            clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
-            outputs = model(clips_batch).squeeze(1)
-
+            #clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
+            outputs = model(clips_batch).last_hidden_state[:, 0]
+            outputs = regression_head(outputs).squeeze(1)
             predictions.extend(outputs.cpu().numpy())
             actuals.extend(labels_batch.cpu().numpy())
 
@@ -1193,7 +1215,7 @@ def main():
     
     
     
-    save_model(model, os.path.join(args.post_hoc_model_save_dir, f"{args.experiment_name}_{timestamp}"), "r_2_plus_1_d.pth")
+    save_model(model,regression_head,optimizer,epoch, os.path.join(args.post_hoc_model_save_dir, f"{args.experiment_name}_{timestamp}"), "r_2_plus_1_d.pth")
     
    
 
