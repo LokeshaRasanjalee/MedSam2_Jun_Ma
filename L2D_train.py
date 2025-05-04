@@ -424,7 +424,6 @@ def train_one_epoch(model, regression_head, loader, criterion, optimizer, device
     all_labels = []
 
     for clips_batch, labels_batch in loader:
-        print (labels_batch)
         clips_batch = clips_batch.to(device)
         labels_batch = labels_batch.to(device)
 
@@ -1173,6 +1172,7 @@ def main():
     #--------------------------Train Model----------------------------------
     train_losses, train_r2s, val_losses, val_r2s = [], [], [], []
     for epoch in range(num_epochs):
+        logging.info(f"Epoch [{epoch+1}/{num_epochs}]")
         train_loss, train_mae, train_r2 = train_one_epoch(model,regression_head, train_loader, criterion, optimizer, device)
         val_loss, val_mae, val_r2 = validate_one_epoch(model,regression_head, val_loader, criterion, device)
 
