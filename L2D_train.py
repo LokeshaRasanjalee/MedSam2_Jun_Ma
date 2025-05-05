@@ -1144,6 +1144,35 @@ def main():
 
     config = TimesformerConfig.from_pretrained("facebook/timesformer-base-finetuned-k400")
     model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400")
+    
+        # 1. Load pretrained model
+    model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400")
+
+    # 2. Get the original patch embedding conv2d layer (Conv2d: in_channels=3 → out_channels=768)
+    old_conv = model.embeddings.patch_embeddings.projection
+
+    # 3. Create a new Conv2D layer with 4 input channels
+    new_conv = nn.Conv2d(
+        in_channels=4,  # RGB (3) + Mask (1)
+        out_channels=old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        bias=old_conv.bias is not None
+    )
+
+    # 4. Copy pretrained weights from old conv to new conv
+    with torch.no_grad():
+        new_conv.weight[:, :3, :, :] = old_conv.weight  # Copy RGB weights
+        # Option 1: duplicate red channel (or use zeros, average, or He initialization)
+        new_conv.weight[:, 3, :, :] = old_conv.weight[:, 0, :, :]  # Copy red channel weights to mask
+        if old_conv.bias is not None:
+            new_conv.bias = old_conv.bias
+
+    # 5. Replace the original projection layer
+    model.embeddings.patch_embeddings.projection = new_conv
+    
+    
 
     # Freeze base model if needed (optional)
     # for param in base_model.parameters():
@@ -1160,7 +1189,7 @@ def main():
 
     
     batch_size = 1
-    num_epochs = 10
+    num_epochs = 30
     learning_rate = 1e-3
     #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
