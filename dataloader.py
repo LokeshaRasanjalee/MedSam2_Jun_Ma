@@ -11,7 +11,10 @@ import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+import seaborn as sns
+from torchvision import transforms
 from PIL import Image
+import torch
 
 def get_frame_names(video_dir):
     frame_names = [
@@ -40,6 +43,22 @@ def get_mask_img_list_with_obj(args, frame_names, video_name):
 
 class ClipDataset(Dataset):
     def __init__(self,args, pickle_file, save_dir):
+        
+        # Define the transform for RGB images
+        self.rgb_transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406], 
+                std=[0.229, 0.224, 0.225]
+            )
+        ])
+
+        # Mask transform (grayscale only, no normalization)
+        self.mask_transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),  # produces 1x224x224
+        ])
       
 
         self.clips = []
@@ -58,7 +77,51 @@ class ClipDataset(Dataset):
                 if len(data['clips'])==0:
                     continue
                 
-                self.clips.extend(data['clips'])
+                processed_clips = []
+
+                for clip in data['clips_without_trans']:
+                    transformed_frames = []
+                    
+                    for t in range(clip.shape[1]):  # assuming shape is (H, T, W)
+                        frame = clip[:, t, :]  # shape: (H, W)
+                        frame = frame.numpy().astype('uint8')  # convert to numpy uint8
+                        #frame = np.stack((frame,)*3, axis=-1)  # convert to 3 channels
+                        frame = Image.fromarray(frame)  # convert to PIL Image
+
+                        transformed_frame = self.mask_transform (frame)  # now shape (3, 224, 224)
+                        transformed_frames.append(transformed_frame)
+
+                    # Stack back: (T, C, H, W)
+                    clip_tensor = torch.stack(transformed_frames, dim=0)
+                    processed_clips.append(clip_tensor)
+
+                # If needed, batch them: (B, T, C, H, W)
+                mask_stack = torch.stack(processed_clips)
+                #self.clips.extend(clip_stack)
+                
+                
+                #Images
+                processed_clips = []
+
+                for clip in data['img_frame_list']:
+                    transformed_frames = []
+                    
+                    for t in range(len(clip)):  # assuming shape is (H, T, W)
+                        frame = clip[t]  # shape: (H, W)
+                        #frame = frame.numpy().astype('uint8')  # convert to numpy uint8
+                        #frame = np.stack((frame,)*3, axis=-1)  # convert to 3 channels
+                        frame = Image.fromarray(frame)  # convert to PIL Image
+
+                        transformed_frame = self.rgb_transform(frame)  # now shape (3, 224, 224)
+                        transformed_frames.append(transformed_frame)
+
+                    # Stack back: (T, C, H, W)
+                    clip_tensor = torch.stack(transformed_frames, dim=0)
+                    processed_clips.append(clip_tensor)
+
+                img_stack = torch.stack(processed_clips)
+                combined_clip = torch.cat([mask_stack, img_stack], dim=2)
+                self.clips.extend(combined_clip)
                 
                 #------For total_iou
                 # self.L_no_defer_full_list = data['L_no_defer_full_list']
@@ -80,6 +143,8 @@ class ClipDataset(Dataset):
                 self.confidence.extend(data['conf_list'])
                 del data
                 gc.collect()
+                
+                
                 
                 mask_frame_list = []
                 frame_names = get_frame_names(os.path.join(args.base_video_dir, seq_name))    
