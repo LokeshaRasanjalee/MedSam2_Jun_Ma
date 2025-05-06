@@ -440,34 +440,30 @@ def validate_one_epoch(model,regression_head, loader, criterion, device, args):
     accuracy = correct / total
     
     plt.figure(figsize=(10, 6))
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    # Plot outputs using frame_idx_list as x-axis
-    ax1.plot(frame_idx_list, outputs_list, label='Model Output', color='blue', linestyle='-', marker='o')
-    ax1.set_xlabel('Frame Index')
-    ax1.set_ylabel('Model Output', color='blue')
-    ax1.tick_params(axis='y', labelcolor='blue')
+    # Plot outputs and delta L on the same Y-axis
+    ax.plot(frame_idx_list, outputs_list, label='Model Output', color='blue', linestyle='-', marker='o')
+    ax.plot(frame_idx_list, delta_l_list, label='Delta L', color='red', linestyle='--', marker='x')
+    ax.set_xlabel('Frame Index')
+    ax.set_ylabel('Values')
+    ax.tick_params(axis='y')
 
     # Set x-ticks to the values in frame_idx_list
-    ax1.set_xticks(frame_idx_list)  # Set x-ticks to the actual frame indices
-    ax1.set_xticklabels(frame_idx_list, rotation=45)  # Optionally rotate for better visibility
+    ax.set_xticks(frame_idx_list)  # Set x-ticks to the actual frame indices
+    ax.set_xticklabels(frame_idx_list, rotation=45)  # Optionally rotate for better visibility
 
-    # Create a second Y-axis sharing the same X-axis
-    ax2 = ax1.twinx()
-    ax2.plot(frame_idx_list, delta_l_list, label='Delta L', color='red', linestyle='--', marker='x')
-    ax2.set_ylabel('Delta L', color='red')
-    ax2.tick_params(axis='y', labelcolor='red')
-
-    # Title and grid
-    plt.title('Model Output vs Delta L (Two Y-Axes)')
+    # Title, legend, and grid
+    plt.title('Model Output and Delta L on Single Scale')
     fig.tight_layout()
     plt.grid(True)
+    plt.legend()
 
     # Save the figure
-    plt.savefig(os.path.join(args.output_mask_dir, 'output_vs_delta_l_dual_axis_plot.png'))
+    plt.savefig(os.path.join(args.output_mask_dir, 'output_vs_delta_l_single_axis_plot.png'))
     plt.close()
 
-    print("✅ Dual-axis plot saved as 'output_vs_delta_l_dual_axis_plot.png'")
+    print("✅ Single-axis plot saved as 'output_vs_delta_l_single_axis_plot.png'")
 
     # Calculate moving averages
     outputs_series = pd.Series(outputs_list)
@@ -477,35 +473,31 @@ def validate_one_epoch(model,regression_head, loader, criterion, device, args):
     outputs_moving_avg = custom_moving_average(outputs_series.values, window_size=8)
     delta_l_moving_avg = custom_moving_average(delta_l_series.values, window_size=8)
 
-    # Create a dual-axis plot for moving averages
-    fig, ax1 = plt.subplots(figsize=(10, 6))
+    # Create a single-axis plot for moving averages
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    # Plot the moving average of model output using frame_idx_list as x-axis
-    ax1.plot(frame_idx_list, outputs_moving_avg, label='Moving Average of Model Output', color='blue', linestyle='-', marker='o')
-    ax1.set_xlabel('Frame Index')
-    ax1.set_ylabel('Moving Average of Model Output', color='blue')
-    ax1.tick_params(axis='y', labelcolor='blue')
+    # Plot the moving average of model output and delta L on the same Y-axis
+    ax.plot(frame_idx_list, outputs_moving_avg, label='Moving Average of Model Output', color='blue', linestyle='-', marker='o')
+    ax.plot(frame_idx_list, delta_l_moving_avg, label='Moving Average of Delta L', color='red', linestyle='--', marker='x')
+    ax.set_xlabel('Frame Index')
+    ax.set_ylabel('Moving Average Values')
+    ax.tick_params(axis='y')
 
     # Set x-ticks to the values in frame_idx_list
-    ax1.set_xticks(frame_idx_list)  # Set x-ticks to the actual frame indices
-    ax1.set_xticklabels(frame_idx_list, rotation=45)  # Optionally rotate for better visibility
+    ax.set_xticks(frame_idx_list)  # Set x-ticks to the actual frame indices
+    ax.set_xticklabels(frame_idx_list, rotation=45)  # Optionally rotate for better visibility
 
-    # Create a second Y-axis sharing the same X-axis
-    ax2 = ax1.twinx()
-    ax2.plot(frame_idx_list, delta_l_moving_avg, label='Moving Average of Delta L', color='red', linestyle='--', marker='x')
-    ax2.set_ylabel('Moving Average of Delta L', color='red')
-    ax2.tick_params(axis='y', labelcolor='red')
-
-    # Title and grid
-    plt.title('Moving Average of Model Output and Delta L (8 Frames)')
+    # Title, legend, and grid
+    plt.title('Moving Average of Model Output and Delta L on Single Scale (8 Frames)')
     fig.tight_layout()  # Adjust layout to prevent overlap
     plt.grid(True)
+    plt.legend()
 
     # Save the figure
-    plt.savefig(os.path.join(args.output_mask_dir, 'moving_average_dual_axis_plot.png'))
+    plt.savefig(os.path.join(args.output_mask_dir, 'moving_average_single_axis_plot.png'))
     plt.close()
 
-    print("✅ Moving average dual-axis plot saved as 'moving_average_dual_axis_plot.png'")
+    print("✅ Moving average single-axis plot saved as 'moving_average_single_axis_plot.png'")
 
     return avg_loss, accuracy
 
@@ -1043,7 +1035,7 @@ def main():
     learning_rate = 1e-5
     #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
     
-    train_loader, val_loader = get_dataloaders(args, './media/data_3', args.output_mask_dir, batch_size=batch_size)
+    train_loader, val_loader = get_dataloaders(args, './media/data_2', args.output_mask_dir, batch_size=batch_size)
 
 
     # # Calculate the number of positive and negative samples

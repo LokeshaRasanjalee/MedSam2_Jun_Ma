@@ -72,6 +72,8 @@ class ClipDataset(Dataset):
             seq_name = file.split('/')[-1].split('_')[0].split('data')[0]
             print ("Sequence: ", seq_name)
             
+            if seq_name != 'seq14':
+                continue
             with open(file, 'rb') as f:
                 data = pickle.load(f)
                 if len(data['clips'])==0:
