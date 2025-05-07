@@ -46,8 +46,8 @@ class ClipDataset(Dataset):
         
         for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
             print ("File: ",file)
-            # if file != './media/data_2/seq3_data.pkl':
-            #     continue
+            if file != './media/data_2/seq13_data.pkl':
+                continue
             with open(file, 'rb') as f:
                 data = pickle.load(f)
                 if len(data['clips'])==0:
@@ -149,7 +149,7 @@ class ClipDataset(Dataset):
         label = self.labels[idx]
         delta_l = self.delta_Ls [idx]
         conf = self.confidence[idx]
-        return clip, torch.tensor(delta_l, dtype=torch.float32)
+        return clip, torch.tensor(label, dtype=torch.float32)
 
     def count_labels(self):
         count_1s = sum(1 for label in self.labels if label == 1)

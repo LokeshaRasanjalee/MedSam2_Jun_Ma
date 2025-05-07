@@ -34,9 +34,14 @@ import torchvision.models.video as models
 from PIL import Image
 from dataloader import get_dataloaders
 from sklearn.metrics import r2_score
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, roc_auc_score
 
 # Import VideoMAE model
 from transformers import TimesformerModel, TimesformerConfig
+from sklearn.metrics import roc_curve
+from sklearn.metrics import auc
+from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
@@ -415,82 +420,81 @@ def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val
     plt.savefig(plot_path)
     plt.close()  # Close the figure to free memory
 
-def train_one_epoch(model, regression_head, loader, criterion, optimizer, device):
+def train_one_epoch(model, classification_head, loader, criterion, optimizer, device):
     model.train()
-    regression_head.train()
+    classification_head.train()
+    
     total_loss = 0
-    total_mae = 0
-    all_preds = []
-    all_labels = []
+    total_correct = 0
+    total_samples = 0
 
     for clips_batch, labels_batch in loader:
         clips_batch = clips_batch.to(device)
-        labels_batch = labels_batch.to(device)
+        labels_batch = labels_batch.to(device).float().unsqueeze(1)
 
-        #clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
-        #clips_batch = clips_batch.permute(0, 2, 1, 3, 4)
-        outputs = model(clips_batch).last_hidden_state[:, 0]
-        outputs = regression_head(outputs).squeeze(1)
-        loss = criterion(outputs, labels_batch)
+        # Forward pass through Timesformer base model
+        with torch.set_grad_enabled(True):
+            features = model(clips_batch).last_hidden_state[:, 0]  # CLS token
+            outputs = classification_head(features)
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            # Compute loss
+            loss = criterion(outputs, labels_batch)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
         total_loss += loss.item() * clips_batch.size(0)
 
-        # Calculate MAE
-        mae = torch.abs(outputs - labels_batch).mean().item()
-        total_mae += mae * clips_batch.size(0)
+        # Compute accuracy (for classification)
+        if outputs.shape[1] == 1:  # Binary classification (logits)
+            predicted = (torch.sigmoid(outputs) > 0.5).long()
+        else:  # Multi-class classification
+            _, predicted = torch.max(outputs, 1)
 
-        # Calculate R-squared components
-        all_preds.extend(outputs.detach().cpu().numpy())
-        all_labels.extend(labels_batch.detach().cpu().numpy())
+        total_correct += (predicted.squeeze() == labels_batch).sum().item()
+        total_samples += labels_batch.size(0)
 
-    avg_loss = total_loss / len(loader.dataset)
-    avg_mae = total_mae / len(loader.dataset)
-    r2 = r2_score(all_labels, all_preds)
+    avg_loss = total_loss / total_samples
+    accuracy = total_correct / total_samples
 
-
-    return avg_loss, avg_mae, r2
+    return avg_loss, accuracy
 
 
-def validate_one_epoch(model, regression_head, loader, criterion, device):
+
+def validate_one_epoch(model, classification_head, loader, criterion, device):
     model.eval()
-    regression_head.eval()
+    classification_head.eval()
     total_loss = 0
-    total_mae = 0
-    all_preds = []
-    all_labels = []
+    total_correct = 0
+    total_samples = 0
 
     with torch.no_grad():
         for clips_batch, labels_batch in loader:
             clips_batch = clips_batch.to(device)
-            labels_batch = labels_batch.to(device)
+            labels_batch = labels_batch.to(device).float().unsqueeze(1)  # Ensure float type for BCE loss
 
-            #clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
-            outputs = model(clips_batch).last_hidden_state[:, 0]
-            outputs = regression_head(outputs).squeeze(1)
+            # Forward pass
+            features = model(clips_batch).last_hidden_state[:, 0]  # CLS token
+            outputs = classification_head(features)
+
+            # Compute loss
             loss = criterion(outputs, labels_batch)
-
             total_loss += loss.item() * clips_batch.size(0)
 
-            # Calculate MAE
-            mae = torch.abs(outputs - labels_batch).mean().item()
-            total_mae += mae * clips_batch.size(0)
+            # Binary prediction: sigmoid + threshold
+            probs = torch.sigmoid(outputs)
+            preds = (probs > 0.5).long()
+            labels = labels_batch.long()
 
-            # Calculate R-squared components
-            ss_res = torch.sum((outputs - labels_batch) ** 2).item()
-            ss_tot = torch.sum((labels_batch - labels_batch.mean()) ** 2).item()
-            # Calculate R-squared components
-            all_preds.extend(outputs.detach().cpu().numpy())
-            all_labels.extend(labels_batch.detach().cpu().numpy())
+            total_correct += (preds == labels).sum().item()
+            total_samples += labels.size(0)
 
-    avg_loss = total_loss / len(loader.dataset)
-    avg_mae = total_mae / len(loader.dataset)
-    r2 = r2_score(all_labels, all_preds)
+    avg_loss = total_loss / total_samples
+    accuracy = total_correct / total_samples
 
-    return avg_loss, avg_mae, r2
+    return avg_loss, accuracy
+
 
 
 @torch.inference_mode()
@@ -976,7 +980,66 @@ def vos_separate_inference_per_object(
             per_obj_png_file=per_obj_png_file,
             output_palette=output_palette,
         )
+        
+def plot_roc_curve(y_true, y_scores, output_dir, filename="roc_curve.png"):
+    """
+    Plot the ROC curve for a set of true labels and predicted scores, including AUC.
 
+    Parameters:
+    - y_true: array-like of shape (n_samples,) - True binary labels.
+    - y_scores: array-like of shape (n_samples,) - Predicted probabilities or scores.
+    - output_dir: str - Directory to save the plot.
+    - filename: str - File name for the saved plot.
+    """
+    fpr, tpr, _ = roc_curve(y_true, y_scores)
+    auc = roc_auc_score(y_true, y_scores)
+
+    plt.figure()
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (AUC = {auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic')
+    plt.legend(loc="lower right")
+    plt.grid(True)
+
+    os.makedirs(output_dir, exist_ok=True)
+    plt.savefig(os.path.join(output_dir, filename))
+    plt.close()
+
+def calculate_auc(y_true, y_scores):
+    """
+    Calculate the AUC for a set of true labels and predicted scores.
+
+    Parameters:
+    - y_true: array-like of shape (n_samples,) - True binary labels.
+    - y_scores: array-like of shape (n_samples,) - Target scores, can either be probability estimates of the positive class, confidence values, or non-thresholded measure of decisions.
+
+    Returns:
+    - auc_value: float - Computed area under the ROC curve.
+    """
+    fpr, tpr, _ = roc_curve(y_true, y_scores)
+    auc_value = auc(fpr, tpr)
+    return auc_value
+
+def plot_confusion_matrix(y_true, y_pred, output_dir, filename="confusion_matrix.png"):
+    """
+    Plot and save the confusion matrix for a set of true labels and predicted labels.
+
+    Parameters:
+    - y_true: array-like of shape (n_samples,) - True binary labels.
+    - y_pred: array-like of shape (n_samples,) - Predicted binary labels.
+    - output_dir: str - Directory to save the plot.
+    - filename: str - Name of the file to save the plot as.
+    """
+    cm = confusion_matrix(y_true, y_pred)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Class 0", "Class 1"])
+    disp.plot(cmap=plt.cm.Blues)
+    plt.title('Confusion Matrix')
+    plt.savefig(os.path.join(output_dir, filename))
+    plt.close()
 
 def main():
     parser = argparse.ArgumentParser()
@@ -1142,18 +1205,14 @@ def main():
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+        # 1. Load pretrained Timesformer
     config = TimesformerConfig.from_pretrained("facebook/timesformer-base-finetuned-k400")
     model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400")
-    
-        # 1. Load pretrained model
-    model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400")
 
-    # 2. Get the original patch embedding conv2d layer (Conv2d: in_channels=3 → out_channels=768)
+    # 2. Modify patch embedding to accept 4 channels (RGB + mask)
     old_conv = model.embeddings.patch_embeddings.projection
-
-    # 3. Create a new Conv2D layer with 4 input channels
     new_conv = nn.Conv2d(
-        in_channels=4,  # RGB (3) + Mask (1)
+        in_channels=4,
         out_channels=old_conv.out_channels,
         kernel_size=old_conv.kernel_size,
         stride=old_conv.stride,
@@ -1161,62 +1220,53 @@ def main():
         bias=old_conv.bias is not None
     )
 
-    # 4. Copy pretrained weights from old conv to new conv
+    # 3. Copy weights and initialize 4th channel
     with torch.no_grad():
-        new_conv.weight[:, :3, :, :] = old_conv.weight  # Copy RGB weights
-        # Option 1: duplicate red channel (or use zeros, average, or He initialization)
-        new_conv.weight[:, 3, :, :] = old_conv.weight[:, 0, :, :]  # Copy red channel weights to mask
+        new_conv.weight[:, :3] = old_conv.weight  # RGB
+        new_conv.weight[:, 3] = old_conv.weight[:, 0]  # Init mask as red channel
         if old_conv.bias is not None:
             new_conv.bias = old_conv.bias
 
-    # 5. Replace the original projection layer
     model.embeddings.patch_embeddings.projection = new_conv
+
+    # 4. Binary classification head (single logit)
+    classification_head = nn.Linear(config.hidden_size, 1)
+
+    # 5. Send to device
+    model = model.to(device)
+    classification_head = classification_head.to(device)
+
+    # 6. Dataloader and optimizer
+    train_loader, val_loader = get_dataloaders(
+        args.post_hoc_model_save_dir, args.output_mask_dir, batch_size=1
+    )
+
+    criterion = nn.BCEWithLogitsLoss()  # For binary classification
+    optimizer = torch.optim.AdamW(
+        list(model.parameters()) + list(classification_head.parameters()), lr=1e-4
+    )
     
     
-
-    # Freeze base model if needed (optional)
-    # for param in base_model.parameters():
-    #     param.requires_grad = False
-
-    # Add regression head
-    regression_head = nn.Linear(config.hidden_size, 1)
-    model=model.to(device)
-    regression_head=regression_head.to(device)
-
-    
-
-    # ----- Define Resize Transform for R(2+1)D -----
-
-    
-    batch_size = 1
-    num_epochs = 30
-    learning_rate = 1e-3
-    #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
-    
-    train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args.output_mask_dir, batch_size=batch_size)
-    criterion = nn.SmoothL1Loss()  # or nn.MSELoss()
-    optimizer = torch.optim.AdamW(list(model.parameters()) + list(regression_head.parameters()), lr=1e-4)
+    num_epochs = 2
     
     
     #--------------------------Train Model----------------------------------
     train_losses, train_r2s, val_losses, val_r2s = [], [], [], []
     for epoch in range(num_epochs):
         logging.info(f"Epoch [{epoch+1}/{num_epochs}]")
-        train_loss, train_mae, train_r2 = train_one_epoch(model,regression_head, train_loader, criterion, optimizer, device)
-        val_loss, val_mae, val_r2 = validate_one_epoch(model,regression_head, val_loader, criterion, device)
+        train_loss, train_accuracy = train_one_epoch(model, classification_head, train_loader, criterion, optimizer, device)
+        val_loss, val_accuracy = validate_one_epoch(model, classification_head, val_loader, criterion, device)
 
-        print(f"Epoch [{epoch+1}/{num_epochs}] "
+        logging.info(f"Epoch [{epoch+1}/{num_epochs}] "
               f"Train Loss: {train_loss:.4f} "
-              f"Train MAE: {train_mae:.4f} "
-              f"Train R²: {train_r2:.4f} "
+              f"Train Accuracy: {train_accuracy:.4f} "
               f"Val Loss: {val_loss:.4f} "
-              f"Val MAE: {val_mae:.4f} "
-              f"Val R²: {val_r2:.4f}")
+              f"Val Accuracy: {val_accuracy:.4f}")
         
         train_losses.append(train_loss)
-        train_r2s.append(train_r2)
+        train_r2s.append(train_accuracy)
         val_losses.append(val_loss)
-        val_r2s.append(val_r2)
+        val_r2s.append(val_accuracy)
         
         
     predictions = []
@@ -1229,27 +1279,41 @@ def main():
 
             #clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
             outputs = model(clips_batch).last_hidden_state[:, 0]
-            outputs = regression_head(outputs).squeeze(1)
+            outputs = classification_head(outputs)
             predictions.extend(outputs.cpu().numpy())
             actuals.extend(labels_batch.cpu().numpy())
 
-    # Save the predicted vs actual plot after training
-    plot_predicted_vs_actual(np.array(predictions), np.array(actuals), args.output_mask_dir)
+    # # Save the predicted vs actual plot after training
+    # plot_predicted_vs_actual(np.array(predictions), np.array(actuals), args.output_mask_dir)
     
-    # Save the residual plot after training
-    plot_residuals(np.array(predictions), np.array(actuals), args.output_mask_dir)
+    # # Save the residual plot after training
+    # plot_residuals(np.array(predictions), np.array(actuals), args.output_mask_dir)
     
     plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_r2s, val_r2s, args.output_mask_dir)
     
     
     
     
-    save_model(model,regression_head,optimizer,epoch, os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}"), "r_2_plus_1_d.pth")
+    save_model(model,classification_head,optimizer,epoch, os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}"), "r_2_plus_1_d.pth")
     
-   
+    # Calculate and plot ROC curve and AUC
+    y_true = np.array(actuals)
+    y_scores = np.array(predictions)
+    plot_roc_curve(y_true, y_scores, args.output_mask_dir)
+    auc_value = calculate_auc(y_true, y_scores)
+    logging.info(f"AUC: {auc_value:.4f}")
+    
+    # Convert predictions to binary labels for confusion matrix
+    y_pred = (y_scores > 0.5).astype(int)
 
-    print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+    # Plot and save the confusion matrix
+    plot_confusion_matrix(y_true, y_pred, args.output_mask_dir)
+    
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+    logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+
+
+
 
 
 if __name__ == "__main__":
