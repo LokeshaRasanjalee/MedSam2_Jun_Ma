@@ -418,9 +418,10 @@ def validate_one_epoch(model,regression_head, loader, criterion, device, args):
             outputs = model(clips_batch).last_hidden_state[:, 0]
             outputs = regression_head(outputs).squeeze(1)
             loss = criterion(outputs, labels_batch)
+            outputs = torch.sigmoid(outputs) 
             print (outputs, delta_l_batch)
             frame_idx_batch = frame_idx.to(device)
-            for out, delta,frame_idx in zip(outputs, delta_l_batch,frame_idx_batch):
+            for out, delta,frame_idx in zip(outputs, labels_batch,frame_idx_batch):
                 
                 outputs_list.append(out.detach().cpu().item())
                 delta_l_list.append(delta.detach().cpu().item())
@@ -988,9 +989,13 @@ def main():
     # model.fc = nn.Linear(model.fc.in_features, 1)  # Assuming binary classification
     
     
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # 1. Load pretrained Timesformer model and config
+    config = TimesformerConfig.from_pretrained("facebook/timesformer-base-finetuned-k400")
     base_model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400")
 
-    # Modify patch embedding layer (Conv2d) to accept 4 input channels (RGB + mask)
+    # 2. Modify the patch embedding Conv2D layer to accept 4 channels
     old_conv = base_model.embeddings.patch_embeddings.projection
     new_conv = nn.Conv2d(
         in_channels=4,
@@ -1001,25 +1006,28 @@ def main():
         bias=old_conv.bias is not None
     )
 
-    # Copy weights
+    # 3. Copy pretrained weights and initialize the 4th (mask) channel
     with torch.no_grad():
-        new_conv.weight[:, :3, :, :] = old_conv.weight
-        new_conv.weight[:, 3, :, :] = old_conv.weight[:, 0, :, :]
+        new_conv.weight[:, :3] = old_conv.weight  # Copy RGB weights
+        new_conv.weight[:, 3] = old_conv.weight[:, 0]  # Initialize mask channel as red
         if old_conv.bias is not None:
             new_conv.bias = nn.Parameter(old_conv.bias.clone())
 
-    # Replace projection layer
+    # 4. Replace the original conv layer
     base_model.embeddings.patch_embeddings.projection = new_conv
-    hidden_size = base_model.config.hidden_size  # Usually 768
-    regression_head = nn.Linear(hidden_size, 1)
-    
-    checkpoint = torch.load(args.post_hoc_model_save_dir, map_location="cpu")
+
+    # 5. Create the binary classification head (1 output for BCEWithLogitsLoss)
+    hidden_size = config.hidden_size  # Usually 768
+    classification_head = nn.Linear(hidden_size, 1)
+
+    # 6. Load the checkpoint
+    checkpoint = torch.load(args.post_hoc_model_save_dir, map_location=device)
     base_model.load_state_dict(checkpoint["base_model_state"])
-    regression_head.load_state_dict(checkpoint["head_state"])
-        
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model=base_model.to(device)
-    regression_head=regression_head.to(device)
+    classification_head.load_state_dict(checkpoint["head_state"])
+
+    # 7. Move models to device
+    base_model = base_model.to(device)
+    classification_head = classification_head.to(device)
 
     # Load your saved weights
     # checkpoint_path = args.post_hoc_model_save_dir  # Path to your .pth file
@@ -1047,7 +1055,7 @@ def main():
 
     # Define the criterion with pos_weight
     criterion = nn.SmoothL1Loss()  # or nn.MSELoss()
-    optimizer = torch.optim.AdamW(list(model.parameters()) + list(regression_head.parameters()), lr=1e-4)
+    optimizer = torch.optim.AdamW(list(base_model.parameters()) + list(classification_head.parameters()), lr=1e-4)
     
     
     #--------------------------Train Model----------------------------------
@@ -1055,7 +1063,7 @@ def main():
     train_losses, train_accs, val_losses, val_accs = [], [], [], []
     
         
-    val_loss, val_acc = validate_one_epoch(model,regression_head, val_loader, criterion, device,args)
+    val_loss, val_acc = validate_one_epoch(base_model,classification_head, val_loader, criterion, device,args)
 
     # train_losses.append(train_loss)
     # train_accs.append(train_acc)
