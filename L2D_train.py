@@ -260,36 +260,34 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
     predictor_logits: [batch, n_classes]
     rejector_logits: [batch, n_experts]
     """
-    batch_size, n_experts = rejector_logits.shape
-
-    # Predictor prediction
     
-    correct = acc_no_def_batch  # [batch]
-
-    # r(x, 0) = 0, r(x, j) = -rj(x)
-    # Create full logits over [0, ..., n_experts]
-    r_scores = torch.zeros(batch_size, n_experts + 1, device=rejector_logits.device)
-    r_scores[:, 1:] = -rejector_logits  # negative because paper defines r(x, j) = -rj(x)
-
-    # Softmax over [0 (predict), 1...n_experts]
-    r_probs = F.log_softmax(r_scores, dim=1)
-
-    # Compute costs
-    cost = compute_costs(acc_post_def_batch, alpha, beta)  # [B, n_experts]
-
-    # Loss term 1: when predictor is correct
-    loss_predict = -r_probs[range(batch_size), 0] * correct  # [batch]
-
-    # Loss term 2: for deferrals (cost-weighted)
+    log_probs = F.log_softmax(rejector_logits, dim=1)
+    L_h = (1-acc_no_def_batch) 
+    
+    costs=[]
+    for j, g_dice in enumerate(acc_post_def_batch):
+            L_gj = (1-g_dice)# shape: [B]
+            c_j = L_gj + alpha
+            costs.append(c_j.unsqueeze(1)) 
+            
+    costs = torch.cat(costs, dim=1) 
+    
+    # Term 1: Predict with base model (class 0)
+    total_expert_cost = costs.sum(dim=0)  # [B]
+    loss_predict = -log_probs[:, 0] * total_expert_cost  # [B]
+    
+    # Term 2: Defer to each expert
     loss_defer = 0
-    for j in range(n_experts):
-        cj = cost[:, j]
-        pj = r_probs[range(batch_size), j + 1]  # expert j has index j+1 in r_probs
-        loss_defer += -cj * pj  # [batch]
-
-    # Total loss
-    total_loss = (loss_predict + loss_defer).mean()
-    return total_loss
+    for j in range(len(acc_post_def_batch)):
+        # Compute: base model loss + cost of other experts
+        alt_costs = L_h + (costs.sum(dim=0) - costs[j,:])
+        loss_defer += -log_probs[:, j + 1] * alt_costs  # [B]
+        
+    loss = loss_predict + loss_defer  # [B]
+    loss = loss.mean()
+    
+    return loss
+    
 
 def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
     rejector.train()
@@ -302,13 +300,14 @@ def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
         no_df_dice_batch = no_df_dice_batch.to(device)
         post_df_dice_batch = post_df_dice_batch.to(device)
         
+        optimizer.zero_grad()
         
         rej_logits = rejector(clips_batch.permute(0, 2, 1, 3, 4))
         
         loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    
         # Backward pass
-        optimizer.zero_grad()
+        
         loss.backward()
         optimizer.step()
         
@@ -332,9 +331,8 @@ def validate_one_epoch(model, loader, criterion, device,logging):
             post_df_dice_batch = post_df_dice_batch.to(device)
 
             rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))
-            scores = torch.zeros(clips_batch.shape[0], rej_logits.shape[1] + 1, device=device)
-            scores[:, 1:] = -rej_logits  # negative because paper defines r(x, j) = -rj(x)
-            chosen_actions = torch.argmax(scores, dim=1)
+         
+            chosen_actions = torch.argmax(rej_logits, dim=1)
             
             # Get best actions
             all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
@@ -1151,7 +1149,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = models.r2plus1d_18(pretrained=True)
-    model.fc = nn.Linear(model.fc.in_features, 7)  # Changed to 7 classes
+    model.fc = nn.Linear(model.fc.in_features, 8)  # Changed to 7 classes
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args, batch_size=args.batch_size)
