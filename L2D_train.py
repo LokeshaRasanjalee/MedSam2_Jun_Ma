@@ -27,7 +27,7 @@ import pickle
 
 import torch
 import torch.nn as nn
-from torchvision.models.video import r2plus1d_18
+import torch.nn.functional as F
 import torchvision.transforms as T
 import torch.optim as optim
 import torchvision.models.video as models
@@ -234,64 +234,7 @@ def get_mask_img_list_with_obj(args, frame_names, video_name):
 
     return mask_img_list_with_obj
 
-def dice_score(pred_mask, true_mask, eps=1e-5):
-    #print ("dice_score")
-    pred = pred_mask.flatten()
-    true = true_mask.flatten()
-    intersection = (pred * true).sum()
-    return (2. * intersection) / (pred.sum() + true.sum() + eps)
 
-
-def compute_frame_features(curr_mask, prev_mask, logit, confidence_score):
-    #print ("compute_frame_features")
-    dice = dice_score(curr_mask, prev_mask)
-    conf_mean = logit.mean().item()
-    conf_std = logit.std().item()
-    area = curr_mask.sum().item()
-    #edge_sharpness = compute_edge_sharpness(curr_mask)
-    
-    return [dice, conf_mean, conf_std, area, confidence_score]
-
-def compute_iou(mask1, mask2, eps=1e-5):
-    #print ("compute_iou")
-    intersection = ((mask1 > 0) & (mask2 > 0)).sum()
-    union = ((mask1 > 0) | (mask2 > 0)).sum()
-    #print ("Intersection: ",intersection,"     |     Union: ", union)
-    if union == 0:
-        return 1.0 if intersection == 0 else 0.0  # Special case: both empty = perfect match
-    else:
-        return intersection / (union)
-
-
-def train_deferral_model(X, y):
-    print("train_deferral_model")
-    logging.info("train_deferral_model")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    clf = LogisticRegression()
-    clf.fit(X_train_scaled, y_train)
-    y_pred = clf.predict(X_test_scaled)
-    y_pred_prob = clf.predict_proba(X_test_scaled)
-    for i, prob in enumerate(y_pred_prob):
-        logging.info(f"Test case {i+1}: Probability of positive class = {prob[1]:.3f}")
-        print(f"Test case {i+1}: Probability of positive class = {prob[1]:.3f}")
-    logging.info(f"Model accuracy: {accuracy_score(y_test, y_pred):.3f}")
-    print(f"Model accuracy: {accuracy_score(y_test, y_pred):.3f}")
-    
-    return clf
-
-def train_regression_model(X, y):
-    from sklearn.linear_model import LinearRegression
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import mean_squared_error
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-    reg = LinearRegression()
-    reg.fit(X_train, y_train)
-    y_pred = reg.predict(X_test)
-    print("Regression Model MSE: ", mean_squared_error(y_test, y_pred))
-    return reg
 
 def save_model(model, output_path, model_name):
     if not os.path.exists(output_path):
@@ -299,109 +242,123 @@ def save_model(model, output_path, model_name):
     joblib.dump(model, os.path.join(output_path, model_name))
  
     
-def downstream_impact(fir_prom, sec_prom, pred_logits_uncorrected, pred_logits_corrected, gt_masks,score_thresh, K):
-    #consider the entire impact on the video, not just specific to a region
-    future_iou_u, future_iou_c = [], []
-    T = len(pred_logits_uncorrected)
-
-    end = min(sec_prom+K, fir_prom+T) # Correct here
-
-    for k in range(sec_prom,end):
-        mask_u = (pred_logits_uncorrected[k][1] > score_thresh).astype(float)
-        mask_c = (pred_logits_corrected[k][1] > score_thresh).astype(float)
-        gt = gt_masks[k]
-
-        future_iou_u.append(compute_iou(mask_u, gt))
-        future_iou_c.append(compute_iou(mask_c, gt))
-
-    #impact = ((np.mean(future_iou_c) - np.mean(future_iou_u))/( np.mean(future_iou_u)+  1e-5))*100
-    impact = (np.mean(future_iou_c) - np.mean(future_iou_u))
-    #print (impact)
-    return impact, np.mean(future_iou_c), np.mean(future_iou_u)
 
 
-def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
+def compute_costs(acc_post_def_batch, alpha, beta):
     """
-    Compute downstream loss for the given frame indices.
-    
-    video_segments: list of predicted masks (numpy arrays), either uncorrected or corrected
-    gt_list: list of ground truth masks (numpy arrays)
-    frame_indices_for_clip: list of frame indices to calculate IoU # PASS THE LIST OF INDICES
+    batch_expert_preds: [batch, n_experts]
+    y_true: [batch]
+    Returns: costs [batch, n_experts]
     """
-    total_iou = 0.0
-    valid_frames = 0
+    incorrect = (1-acc_post_def_batch)
+    cost = alpha * incorrect + beta  # shape [batch, n_experts]
+    return cost
+
+# Second-stage loss
+def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, beta):
+    """
+    predictor_logits: [batch, n_classes]
+    rejector_logits: [batch, n_experts]
+    """
+    batch_size, n_experts = rejector_logits.shape
+
+    # Predictor prediction
     
-    for idx in frame_indices_for_clip:
-        if idx >= len(video_segments) or idx >= len(gt_list):
-            continue  # Skip out of range indices
+    correct = acc_no_def_batch  # [batch]
 
-        pred_mask = video_segments[idx][1]  # Assuming your video_segments store (frame_index, mask) tuples
-        gt_mask = gt_list[idx][0]            # Your gt_list stores (1, H, W) numpy arrays
+    # r(x, 0) = 0, r(x, j) = -rj(x)
+    # Create full logits over [0, ..., n_experts]
+    r_scores = torch.zeros(batch_size, n_experts + 1, device=rejector_logits.device)
+    r_scores[:, 1:] = -rejector_logits  # negative because paper defines r(x, j) = -rj(x)
 
-        iou = compute_iou(pred_mask, gt_mask)
-        total_iou += iou
-        valid_frames += 1
+    # Softmax over [0 (predict), 1...n_experts]
+    r_probs = F.log_softmax(r_scores, dim=1)
 
-    assert valid_frames != 0
+    # Compute costs
+    cost = compute_costs(acc_post_def_batch, alpha, beta)  # [B, n_experts]
 
-    avg_iou = total_iou / valid_frames
-    downstream_loss = 1.0 - avg_iou
-    return downstream_loss
+    # Loss term 1: when predictor is correct
+    loss_predict = -r_probs[range(batch_size), 0] * correct  # [batch]
 
-def train_one_epoch(model, loader, criterion, optimizer, device):
-    model.train()
+    # Loss term 2: for deferrals (cost-weighted)
+    loss_defer = 0
+    for j in range(n_experts):
+        cj = cost[:, j]
+        pj = r_probs[range(batch_size), j + 1]  # expert j has index j+1 in r_probs
+        loss_defer += -cj * pj  # [batch]
+
+    # Total loss
+    total_loss = (loss_predict + loss_defer).mean()
+    return total_loss
+
+def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
+    rejector.train()
     total_loss = 0
     correct = 0
     total = 0
 
-    for clips_batch, labels_batch,delta_l_batch in loader:
+    for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
         clips_batch = clips_batch.to(device)
-        labels_batch = labels_batch.to(device)
-
-        clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
-        outputs = model(clips_batch).squeeze(1)
-        loss = criterion(outputs, labels_batch)
-
+        no_df_dice_batch = no_df_dice_batch.to(device)
+        post_df_dice_batch = post_df_dice_batch.to(device)
+        
+        
+        rej_logits = rejector(clips_batch.permute(0, 2, 1, 3, 4))
+        
+        loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
+   
+        # Backward pass
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        
+        total_loss += loss.item()
+    
+    avg_loss = total_loss / len(loader)
 
-        total_loss += loss.item() * clips_batch.size(0)
-
-        # Compute accuracy
-        preds = (torch.sigmoid(outputs) > 0.5).float()
-        correct += (preds == labels_batch).sum().item()
-        total += labels_batch.size(0)
-
-    avg_loss = total_loss / len(loader.dataset)
-    accuracy = correct / total
-    return avg_loss, accuracy
+    return avg_loss
 
 
-def validate_one_epoch(model, loader, criterion, device):
-    model.eval()
-    total_loss = 0
+def validate_one_epoch(model, loader, criterion, device,logging):
+    model.eval()  # Set model to evaluation mode
     correct = 0
-    total = 0
+    total_regret = 0.0
+    total_samples = 0
 
     with torch.no_grad():
-        for clips_batch, labels_batch, delta_l_batch in loader:
+        for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
             clips_batch = clips_batch.to(device)
-            labels_batch = labels_batch.to(device)
+            no_df_dice_batch = no_df_dice_batch.to(device)
+            post_df_dice_batch = post_df_dice_batch.to(device)
 
-            clips_batch = clips_batch.repeat(1, 3, 1, 1, 1)
-            outputs = model(clips_batch).squeeze(1)
-            loss = criterion(outputs, labels_batch)
+            rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))
+            scores = torch.zeros(clips_batch.shape[0], rej_logits.shape[1] + 1, device=device)
+            scores[:, 1:] = -rej_logits  # negative because paper defines r(x, j) = -rj(x)
+            chosen_actions = torch.argmax(scores, dim=1)
+            
+            # Get best actions
+            all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
+            best_actions = torch.argmax(all_accs, dim=1)
+            # logging.info("Best Actions:", best_actions)
+            # logging.info("Chosen Actions:", chosen_actions)
+            
+            # Calculate metrics
+            correct += (chosen_actions == best_actions).sum().item()
+            
+            # Calculate regret
+            chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
+            best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
+            regret = best_accs - chosen_accs
+            total_regret += regret.sum().item()
+            
+            total_samples += clips_batch.shape[0]
+    
+    selection_accuracy = correct / total_samples
+    mean_regret = total_regret / total_samples
+    
+    return selection_accuracy, mean_regret, best_actions, chosen_actions
 
-            total_loss += loss.item() * clips_batch.size(0)
-
-            preds = (torch.sigmoid(outputs) > 0.5).float()
-            correct += (preds == labels_batch).sum().item()
-            total += labels_batch.size(0)
-
-    avg_loss = total_loss / len(loader.dataset)
-    accuracy = correct / total
-    return avg_loss, accuracy
+            
 
 
 @torch.inference_mode()
@@ -1099,10 +1056,39 @@ def main():
         required=True,
         help="Name of the experiment for logging and identification purposes",
     )
+    # Add new arguments for training parameters
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=8,
+        help="Batch size for training (default: 8)",
+    )
+    parser.add_argument(
+        "--num_epochs",
+        type=int,
+        default=10,
+        help="Number of training epochs (default: 10)",
+    )
+    parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=1e-2,
+        help="Learning rate for training (default: 1e-2)",
+    )
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=1.0,
+        help="Alpha parameter for deferral loss (default: 1.0)",
+    )
+    parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.0,
+        help="Beta parameter for deferral loss (default: 0.0)",
+    )
     args = parser.parse_args()
 
-   
-    
     # Add timestamp to the output directory
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     args.output_mask_dir = os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}")
@@ -1110,8 +1096,7 @@ def main():
     # Ensure the directory exists
     os.makedirs(args.output_mask_dir, exist_ok=True)
 
-    
-     # Set up logging to use the output_mask_dir
+    # Set up logging to use the output_mask_dir
     logging.basicConfig(
         filename=os.path.join(args.output_mask_dir, 'output.log'),
         level=logging.INFO,
@@ -1126,7 +1111,6 @@ def main():
         logging.info(f"{arg}: {getattr(args, arg)}")
     print("\n")
 
-    
     # if we use per-object PNG files, they could possibly overlap in inputs and outputs
     hydra_overrides_extra = [
         "++model.non_overlap_masks=" + ("false" if args.per_obj_png_file else "true")
@@ -1160,86 +1144,33 @@ def main():
     # Here we are not considering this scenario : vos_separate_inference_per_object
     assert not args.track_object_appearing_later_in_video
     
-    print(f"Train on {len(video_names)} videos:\n{video_names}")
-    logging.info(f"Train on {len(video_names)} videos:\n{video_names}")
-    
+    #print(f"Train on {len(video_names)} videos:\n{video_names}")
+    #logging.info(f"Train on {len(video_names)} videos:\n{video_names}")
+
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     model = models.r2plus1d_18(pretrained=True)
-    model.fc = nn.Linear(model.fc.in_features, 1)  # Assuming binary classification (prompt vs no prompt)
+    model.fc = nn.Linear(model.fc.in_features, 7)  # Changed to 7 classes
     model = model.to(device)
 
-    
+    train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args, batch_size=args.batch_size)
 
-    # ----- Define Resize Transform for R(2+1)D -----
-    r2plus1d_transform = T.Compose([
-        T.Resize((112, 112)),    # Downsample frames to 112x112
-        T.ToTensor(),            # (H, W, C) -> (C, H, W)
-    ])
+    # For multi-class classification, we use CrossEntropyLoss instead of BCEWithLogitsLoss
+    criterion = nn.CrossEntropyLoss()
     
-    batch_size = 8
-    num_epochs = 50
-    learning_rate = 1e-5
-    #pickle_file = os.path.join(args.post_hoc_model_save_dir, 'data.pkl')
-    
-    train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args.output_mask_dir, batch_size=batch_size)
-
-
-    # Calculate the number of positive and negative samples
-    num_positive = sum(train_loader.dataset.dataset.labels)
-    num_negative = len(train_loader.dataset.dataset) - num_positive
-
-    # Calculate pos_weight
-    pos_weight = num_negative / num_positive
-
-    # Define the criterion with pos_weight
-    criterion = nn.BCEWithLogitsLoss(pos_weight=torch.tensor([pos_weight], device=device))
-    
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-    
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
     
     #--------------------------Train Model----------------------------------
     
     train_losses, train_accs, val_losses, val_accs = [], [], [], []
-    for epoch in range(num_epochs):
-        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, device)
-        val_loss, val_acc = validate_one_epoch(model, val_loader, criterion, device)
+    for epoch in range(args.num_epochs):
+        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
+        selection_accuracy, mean_regret, best_actions, chosen_actions = validate_one_epoch(model, val_loader, criterion, device, logging)
 
         train_losses.append(train_loss)
-        train_accs.append(train_acc)
-        val_losses.append(val_loss)
-        val_accs.append(val_acc)
 
-        print(f"Epoch [{epoch+1}/{num_epochs}] "
-              f"Train Loss: {train_loss:.4f} "
-              f"Train Acc: {train_acc:.4f} "
-              f"Val Loss: {val_loss:.4f} "
-              f"Val Acc: {val_acc:.4f}")
-
-    # Plotting Loss and Accuracy Curves
-    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
-
-    # Calculate AUC
-    auc = calculate_auc(model, val_loader, device)
-    logging.info(f"AUC: {auc:.4f}")
-    print(f"AUC: {auc:.4f}")
-
-    # Plot ROC curve and save it
-    plot_roc_curve(model, val_loader, device, args.output_mask_dir)
-
-    # Calculate Confusion Matrix
-    true_labels_count, predicted_labels_count, cm_df = calculate_confusion_matrix(model, val_loader, device)
-    logging.info(f"True Labels Count: {str(true_labels_count)}")
-    logging.info(f"Predicted Labels Count: {str(predicted_labels_count)}")
-    logging.info(f"Confusion Matrix:\n{cm_df}")
-    print(f"Confusion Matrix:\n{cm_df}")
-    
-    
-    
-    save_model(model, os.path.join(args.post_hoc_model_save_dir, f"{args.experiment_name}_{timestamp}"), "r_2_plus_1_d.pth")
-    
-   
+        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.4f} Selection Accuracy: {selection_accuracy:.4f} Mean Regret: {mean_regret:.4f} Best Actions: {best_actions} Chosen Actions: {chosen_actions}")
 
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")

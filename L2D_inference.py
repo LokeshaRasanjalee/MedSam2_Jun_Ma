@@ -768,8 +768,7 @@ def main():
     
     
     
-    clf = load_logistic_regression_model(args.post_hoc_model_save_dir,"random_forest_model" )
-    lambda_value = 1.8
+   
     
     #--------------------------Loop though vidoes----------------------------------
     

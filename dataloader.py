@@ -10,74 +10,96 @@ import gc
 import pickle
 import matplotlib.pyplot as plt
 import seaborn as sns
+from PIL import Image
+from torchvision import transforms
+from PIL import Image
+import torch
+import numpy as np
 
 class ClipDataset(Dataset):
-    def __init__(self, pickle_file, save_dir):
-      
-
-        self.clips = []
-        self.delta_Ls=[]
-        self.L_post_defer_full_list=[]
-        self.labels =[]
-        self.confidence = []
+    def __init__(self, pickle_file, args):
+        self.transform = transforms.Compose([
+            transforms.Resize((112, 112)),
+            transforms.ToTensor(),
+        ])
         
+        self.video_metadata = []  # list of (video_path, frame_names, no_df_dice, post_df_dice, video_name)
+        save_dir = args.post_hoc_model_save_dir
+
         for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
-            print ("File: ",file)
             with open(file, 'rb') as f:
                 data = pickle.load(f)
-                if len(data['clips'])==0:
-                    continue
-                self.clips.extend(data['clips'])
-                self.L_no_defer_full_list = data['L_no_defer_full_list']
-                self.L_post_defer_full_list = data['L_post_defer_full_list']
-                delta_L = [a - b for a, b in zip(data['L_no_defer_full_list'], data['L_post_defer_full_list'])]
-                self.delta_Ls.extend(delta_L)
-                #delta_L = data['delta_Ls']
-                self.labels.extend([1 if delta_l > 0.28 else 0 for delta_l in delta_L])
-                self.confidence.extend(data['conf_list'])
-                del data
-                del delta_L
-                gc.collect()
-                
-                
-        print ("Loaded all")
-        # Plot the distribution
-        plt.figure(figsize=(10, 6))
-        sns.histplot(self.delta_Ls, bins=30, kde=True)
-        plt.title('Distribution of delta_Ls')
-        plt.xlabel('delta_Ls')
-        plt.ylabel('Frequency')
 
-        # Save the plot
-        plt.savefig(os.path.join(save_dir, 'delta_Ls_distribution.png'))
-        plt.close() 
+                video_name = data['video_name']
+                video_path = os.path.join(args.base_video_dir, video_name)
+                frame_list = sorted(os.listdir(video_path))
+
+                self.video_metadata.append({
+                    'video_path': video_path,
+                    'frame_list': frame_list,
+                    'no_df_dice': data['L_no_defer'],
+                    'post_df_dice': data['L_post_defer_list'],
+                    'video_name': video_name
+                })
+                
+                del data
+                gc.collect()
+        
+        print("Loaded metadata only.")
 
     def __len__(self):
-        return len(self.clips)
+        return len(self.video_metadata)
 
     def __getitem__(self, idx):
-        clip = self.clips[idx]
-        label = self.labels[idx]
-        delta_l = self.delta_Ls [idx]
-        conf = self.confidence[idx]
-        return clip, torch.tensor(label, dtype=torch.float32), conf
+        info = self.video_metadata[idx]
+        video_frames = []
+        for frame_name in info['frame_list']:
+            frame_path = os.path.join(info['video_path'], frame_name)
+            frame = Image.open(frame_path)
+            video_frames.append(self.transform(frame))
 
-    def count_labels(self):
-        count_1s = sum(1 for label in self.labels if label == 1)
-        count_0s = len(self.labels) - count_1s
-        return count_1s, count_0s
+        video_tensor = torch.stack(video_frames)
+        return (
+            video_tensor,
+            torch.tensor(info['no_df_dice'], dtype=torch.float32),
+            torch.tensor(info['post_df_dice'], dtype=torch.float32),
+            info['video_name']
+        )
 
-def get_dataloaders(pickle_file_folder, save_dir, batch_size=8, split_ratio=0.8):
-    dataset = ClipDataset(pickle_file_folder, save_dir)
-    labels = [data[1] for data in dataset]  # Assuming the dataset returns (input, label)
 
-    stratified_split = StratifiedShuffleSplit(n_splits=1, test_size=1-split_ratio, random_state=42)
-    train_idx, val_idx = next(stratified_split.split(range(len(dataset)), labels))
+def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
+    dataset = ClipDataset(pickle_file_folder, args)
+
+    # Simple random split instead of stratified split
+    dataset_size = len(dataset)
+    indices = list(range(dataset_size))
+    split = int(np.floor(split_ratio * dataset_size))
+    
+    # Shuffle indices
+    np.random.seed(42)
+    np.random.shuffle(indices)
+    
+    train_idx, val_idx = indices[:split], indices[split:]
 
     train_dataset = Subset(dataset, train_idx)
     val_dataset = Subset(dataset, val_idx)
 
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    train_loader = DataLoader(
+    train_dataset,
+    batch_size=batch_size,
+    shuffle=True,
+    num_workers=4,
+    pin_memory=True,
+    persistent_workers=True
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        shuffle=False,  # no need to shuffle validation
+        num_workers=4,
+        pin_memory=True,
+        persistent_workers=True
+    )
 
     return train_loader, val_loader

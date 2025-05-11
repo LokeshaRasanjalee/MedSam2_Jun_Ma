@@ -855,30 +855,30 @@ def main():
     
     video_names.sort()
     # Calculate chunk size to get 2000 chunks
-    # num_groups = 2383
-    # total = len(video_names)
+    num_groups = 50
+    total = len(video_names)
 
-    # # Compute approximate chunk size
-    # chunked = []
-    # chunk_size = total // num_groups
-    # remainder = total % num_groups
+    # Compute approximate chunk size
+    chunked = []
+    chunk_size = total // num_groups
+    remainder = total % num_groups
 
-    # start = 0
-    # for i in range(num_groups):
-    #     end = start + chunk_size + (1 if i < remainder else 0)
-    #     chunked.append(video_names[start:end])
-    #     start = end
+    start = 0
+    for i in range(num_groups):
+        end = start + chunk_size + (1 if i < remainder else 0)
+        chunked.append(video_names[start:end])
+        start = end
 
-    # # Output number of elements in each chunk
-    # group_sizes = [len(group) for group in chunked]
-    # for i, size in enumerate(group_sizes):
-    #     print(f"Group {i+1}: {size} items")
+    # Output number of elements in each chunk
+    group_sizes = [len(group) for group in chunked]
+    for i, size in enumerate(group_sizes):
+        print(f"Group {i+1}: {size} items")
 
-    # # Output total
-    # print(f"\nTotal items across all groups: {sum(group_sizes)}")
+    # Output total
+    print(f"\nTotal items across all groups: {sum(group_sizes)}")
     
 
-    # current_chunk = chunked[0] 
+    current_chunk = chunked[0] 
     
     
     

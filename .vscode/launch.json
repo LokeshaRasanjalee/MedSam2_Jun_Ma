@@ -42,7 +42,7 @@
             "request": "launch",
             "program": "L2D_feature_generation.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./sun_dataset/dataset_2/Images/ --input_mask_dir ./sun_dataset/dataset_2/Masks/ --post_hoc_model_save_dir ./l2d_models -o ./sun_dataset/out/ --experiment_name 'suntest_run'"
+            "args": "--base_video_dir ./sun_dataset/dataset/Images/ --input_mask_dir ./sun_dataset/dataset/Masks/ --post_hoc_model_save_dir ./l2d_models -o ./sun_dataset/out/ --experiment_name 'suntest_run'"
         },
 
         {
@@ -71,7 +71,7 @@
             "request": "launch",
             "program": "L2D_train.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./media/polypgen_seq/Train_new/Images_jpg/ --input_mask_dir ./media/polypgen_seq/Train_new/Masks/ --post_hoc_model_save_dir ./media/data -o ./media/Inference -e 'debug_run'"
+            "args": "--base_video_dir ./sun_dataset/dataset/Images/ --input_mask_dir ./sun_dataset/dataset/Masks/ --post_hoc_model_save_dir ./l2d_models/data_pkl_tmp/ -o ./sun_dataset/out/ --experiment_name 'sun_classifier_run' --batch_size 3 --num_epochs 20 --learning_rate 1e-3 --alpha 1 --beta 0.001 "
         },
         {
             "name": "L2D_debug",
