@@ -4,6 +4,8 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [ 
+
+
     
     
 
@@ -35,12 +37,12 @@
         }
         ,
         {
-            "name": "L2D Inference",
+            "name": "L2D feature generation",
             "type": "debugpy",
             "request": "launch",
-            "program": "L2D_inference.py",
+            "program": "L2D_feature_generation.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./media/image/ --input_mask_dir ./media/mask/ --post_hoc_model_save_dir ./l2d_models -o ./media/Inference"
+            "args": "--base_video_dir ./sun_dataset/dataset_2/Images/ --input_mask_dir ./sun_dataset/dataset_2/Masks/ --post_hoc_model_save_dir ./l2d_models -o ./sun_dataset/out/ --experiment_name 'suntest_run'"
         },
 
         {
@@ -81,6 +83,13 @@
             "args": "--base_video_dir ./media/image/ --input_mask_dir ./media/mask/ --post_hoc_model_save_dir ./l2d_models -o ./media/Inference -e 'test_run'"
 
         },
+        {
+            "name": "Rejector Synthetic Data",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "rejector_synthetic.py",
+            "console": "integratedTerminal"
+        }
         
 
 

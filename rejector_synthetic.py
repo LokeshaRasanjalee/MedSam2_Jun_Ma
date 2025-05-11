@@ -58,7 +58,7 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
 torch.manual_seed(42)
 
 # ----- Synthetic Data Parameters -----
-num_videos = 100
+num_videos = 2000  # Number of chunks
 num_frames = 5
 feature_dim = 8
 
@@ -70,6 +70,10 @@ acc_no_def = torch.rand(num_videos) * 0.5 + 0.5
 noise = (torch.rand(num_videos, 4) - 0.5) * 0.2
 acc_post_def = acc_no_def.unsqueeze(1) + noise
 acc_post_def = torch.clamp(acc_post_def, min=0.0, max=1.0)
+
+print(f"Generated synthetic data for {num_videos} chunks")
+print(f"Feature dimension: {feature_dim}")
+print(f"Number of experts: {acc_post_def.shape[1]}")
 
 # ----- Dataset and DataLoader -----
 class SyntheticDataset(torch.utils.data.Dataset):

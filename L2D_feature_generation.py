@@ -330,18 +330,18 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
         # if idx >= len(video_segments) or idx >= len(gt_list):
         #     continue  # Skip out of range indices
 
-        pred_mask = video_segments[idx][1]  # Assuming your video_segments store (frame_index, mask) tuples
+        pred_mask = video_segments[idx]  # Assuming your video_segments store (frame_index, mask) tuples
         gt_mask = gt_list[idx][0]            # Your gt_list stores (1, H, W) numpy arrays
 
-        iou = compute_iou(pred_mask, gt_mask)
+        iou = dice_score(pred_mask, gt_mask)
         total_iou += iou
         # valid_frames += 1
 
     # assert valid_frames != 0
 
     avg_iou = total_iou / len(frame_indices_for_clip)
-    downstream_loss = 1.0 - avg_iou
-    return downstream_loss
+    #downstream_loss = 1.0 - avg_iou
+    return avg_iou
 
 
 def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
@@ -525,6 +525,8 @@ def vos_inference(
                 input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state)
                 
             else:
+                
+                raise RuntimeError("negative points")
                 if np.any(video_segments[input_frame_idx][1] == 1): 
                     print("Add negative points iteratively")
                     
@@ -561,6 +563,7 @@ def vos_inference(
                     
                               
                 else: 
+                    raise SystemExit("Exiting with error due to no mask or negative points.")
                     print("No mask or negative points")
                     return None, None
                     
@@ -850,44 +853,45 @@ def main():
     # Here we are not considering this scenario : vos_separate_inference_per_object
     assert not args.track_object_appearing_later_in_video
     
-    print(f"Train on {len(video_names)} videos:\n{video_names}")
-    logging.info(f"Train on {len(video_names)} videos:\n{video_names}")
+    video_names.sort()
+    # Calculate chunk size to get 2000 chunks
+    # num_groups = 2383
+    # total = len(video_names)
+
+    # # Compute approximate chunk size
+    # chunked = []
+    # chunk_size = total // num_groups
+    # remainder = total % num_groups
+
+    # start = 0
+    # for i in range(num_groups):
+    #     end = start + chunk_size + (1 if i < remainder else 0)
+    #     chunked.append(video_names[start:end])
+    #     start = end
+
+    # # Output number of elements in each chunk
+    # group_sizes = [len(group) for group in chunked]
+    # for i, size in enumerate(group_sizes):
+    #     print(f"Group {i+1}: {size} items")
+
+    # # Output total
+    # print(f"\nTotal items across all groups: {sum(group_sizes)}")
     
 
-    # ----- Define Resize Transform for R(2+1)D -----
-    r2plus1d_transform = T.Compose([
-        T.Resize((112, 112)),    # Downsample frames to 112x112
-        T.ToTensor(),            # (H, W, C) -> (C, H, W)
-    ])
-
+    # current_chunk = chunked[0] 
     
     
     
     #--------------------------Loop though vidoes----------------------------------
-    
-    X = []  # features per frame
-    y_tmp = []  # labels per frame
-    y=[]
-    impact_list = []
-    mean_future_iou_c_list=[] 
-    mean_future_iou_u_list =[]
-    f_names=[]
-  
+
 
     window_size = 8  # number of frames per clip
-    half_window = (window_size//2)
+
 
     for n_video, video_name in enumerate(video_names):
         
-        clips = []    # Will store sequences of frames
-        clips_without_trans = []
-        labels = []   # Will store labels: 1 (needs correction) or 0 (no correction)
-        delta_Ls = []
-        conf_list=[]
-        gt_frame_list = []
-        img_frame_list = []
-        L_no_defer_full_list = []
-        L_post_defer_full_list = []
+       
+        L_post_defer_list = []
         
         # if video_name != 'seq4':
         #     continue
@@ -901,6 +905,7 @@ def main():
         
         frame_names = get_frame_names(os.path.join(args.base_video_dir, video_name))    
         mask_img_list_with_obj = sorted(get_mask_img_list_with_obj(args, frame_names, video_name))
+        frame_indices_for_clip = mask_img_list_with_obj.copy()
         initial_prompt = int(mask_img_list_with_obj[0])
         mask_img_list_with_obj.pop(0)
         
@@ -953,7 +958,11 @@ def main():
             
         
         
-            
+        binary_masks_first = []
+        for frame_index, segment in video_segments_first.items():
+            mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
+            binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
+            binary_masks_first.append(binary_mask)
             
         img_list=[]
         for f_name in frame_names:
@@ -963,20 +972,21 @@ def main():
                 img_list.append(input_f)
         
         # Uncorrected downstream loss
-        L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
+        #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
 
-                
+        # Uncorrected downstream loss
+        L_no_defer = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
         
         # -------------------Correction Prompts -------------------------------------
         
         for second_prompt in range (initial_prompt+1, len(frame_names)):
             
-            if (second_prompt >= initial_prompt + half_window) and (second_prompt < len(frame_names) - half_window):
-                # GOOD → continue normal processing
-                pass
-            else:
-                continue  # Skip this second_promptsecond_prompt >=initial_prompt+half_window)) or (second_prompt < (len(frame_names)-half_window)):
+            # if (second_prompt >= initial_prompt + half_window) and (second_prompt < len(frame_names) - half_window):
+            #     # GOOD → continue normal processing
+            #     pass
+            # else:
+            #     continue  # Skip this second_promptsecond_prompt >=initial_prompt+half_window)) or (second_prompt < (len(frame_names)-half_window)):
                 
             
             # if second_prompt >6:
@@ -1018,101 +1028,18 @@ def main():
                 
                 
             
-            
-            start_idx = max(0, second_prompt - half_window)
-            end_idx = min(len(frame_names), second_prompt + half_window)
-            frame_indices_for_clip = list(range(start_idx, end_idx))
-                            
-            
-            # assert len(frame_indices_for_clip) == window_size-1
-            # #center_frame = frame_indices_for_clip[half_window]
-            # frame_indices_for_clip.insert(half_window-1, second_prompt)  # Duplicate center [0, 1, 2, 3, 3, 4, 5, 6]
-            assert len(frame_indices_for_clip) == window_size #[0, 1, 2, 3, 4, 5, 6, 7]
-            
-            
-            #Get frames of the frame_indices_for_clip range
-            clip_frames = []
-            for idx in frame_indices_for_clip:
-                frame_mask = video_segments_first[idx][1]
-                frame_mask = np.squeeze(frame_mask)  
-                frame_mask = Image.fromarray(frame_mask)
-                frame_mask = r2plus1d_transform(frame_mask)
-                clip_frames.append(frame_mask)
-                                    
-            clip = torch.stack(clip_frames, dim=1)
-            clips.append(clip)
-            
-            
-            #Get original_pred masks in the frame_indices_for_clip range
-            clip_frames_without_trans = []
-            for idx in frame_indices_for_clip:
-                frame_mask = video_segments_first[idx][1]
-                frame_mask = np.squeeze(frame_mask)  
-                frame_mask = Image.fromarray(frame_mask)
-                #frame_mask = r2plus1d_transform(frame_mask)
-                clip_frames_without_trans.append(frame_mask)
-                                    
-            clip_without_trans = torch.stack([torch.from_numpy(np.array(frame)) for frame in clip_frames_without_trans], dim=1)
-            clips_without_trans.append(clip_without_trans)
-                            
-            
-            #Get ground truths of the frame_indices_for_clip range
-            gt_tmp=[]
-            for idx in frame_indices_for_clip:
-                gt_tmp.append (gt_list[idx])
-                
-            gt_frame_list.append(gt_tmp)
-                            
-            
-            #get original images of the frame_indices_for_clip range
-            img_tmp=[]
-            for idx in frame_indices_for_clip:
-                img_tmp.append (img_list[idx])
-                
-            img_frame_list.append(img_tmp)
-                            
-                            
-            #get confidence scores for the frame_indices_for_clip range
-            conf_tmp = []
-            for idx in frame_indices_for_clip:
-                conf = confidence_scores_first[idx]
-                conf_tmp.append(conf)
-                
-            conf_list.append(conf_tmp)
-                
-                    
-        
-            
-            
-            # Uncorrected downstream loss
-            L_no_defer = compute_downstream_loss(video_segments_first, gt_list, frame_indices_for_clip)
+            binary_masks_cor = []
+            for frame_index, segment in video_segments_cor.items():
+                mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
+                binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
+                binary_masks_cor.append(binary_mask)
 
             # Corrected downstream loss
-            L_post_defer = compute_downstream_loss(video_segments_cor, gt_list, frame_indices_for_clip)
-
-            # Delta Loss
-            delta_L = L_no_defer - L_post_defer
-
-            # Make the label: if delta_L > threshold, say 1 (worth prompting)
-            loss_threshold = 0.01  # You choose based on experiments
-            label = 1 if delta_L > loss_threshold else 0
-            
-            labels.append(label)
-            delta_Ls.append(delta_L)
-            
-            # #Save meta data
-            # f_name = f"{video_name}_{initial_prompt}_{second_prompt}"
-            # f_names.append(f_name)
+            L_post_defer = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
             
             
+            L_post_defer_list.append(L_post_defer)
             
-            #for the full sequnce
-            
-            # Corrected downstream loss
-            L_post_defer_full = compute_downstream_loss(video_segments_cor, gt_list, frame_indices)
-            
-            L_no_defer_full_list.append(L_no_defer_full)
-            L_post_defer_full_list.append(L_post_defer_full)
 
              
             
@@ -1137,10 +1064,10 @@ def main():
                 
                 
         # Save all lists in a single file
-        data_pkl_folder = os.path.join(args.output_mask_dir, "data_pkl")
+        data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
-            pickle.dump({'clips': clips, 'labels': labels, 'delta_Ls': delta_Ls, 'clips_without_trans': clips_without_trans, 'conf_list':conf_list, 'gt_frame_list':gt_frame_list, 'img_frame_list':img_frame_list, 'L_no_defer_full_list':L_no_defer_full_list, 'L_post_defer_full_list':L_post_defer_full_list}, f)
+            pickle.dump({'video_name':video_name, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list}, f)
    
                 
     
