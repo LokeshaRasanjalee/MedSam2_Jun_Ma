@@ -861,7 +861,7 @@ def main():
     
     video_names.sort()
     # Calculate chunk size to get 2000 chunks
-    num_groups = 50
+    num_groups = 6
     total = len(video_names)
 
     # Compute approximate chunk size
@@ -886,6 +886,11 @@ def main():
 
     current_chunk = chunked[args.array_id] 
     
+        # ----- Define Resize Transform for R(2+1)D -----
+    r2plus1d_transform = T.Compose([
+        T.Resize((112, 112)),    # Downsample frames to 112x112
+        T.ToTensor(),            # (H, W, C) -> (C, H, W)
+    ])
     
     
     #--------------------------Loop though vidoes----------------------------------
@@ -898,6 +903,7 @@ def main():
         
        
         L_post_defer_list = []
+        clips = []
         
         # if video_name != 'seq4':
         #     continue
@@ -983,6 +989,17 @@ def main():
         # Uncorrected downstream loss
         L_no_defer = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
+        clip_frames = []
+        for idx in frame_indices_for_clip:
+            frame_mask = video_segments_first[idx][1]
+            frame_mask = np.squeeze(frame_mask)  
+            frame_mask = Image.fromarray(frame_mask)
+            frame_mask = r2plus1d_transform(frame_mask)
+            clip_frames.append(frame_mask)
+                                
+        clip = torch.stack(clip_frames, dim=1)
+        
+        
         
         # -------------------Correction Prompts -------------------------------------
         
@@ -1046,6 +1063,8 @@ def main():
             
             L_post_defer_list.append(L_post_defer)
             
+            
+            
 
              
             
@@ -1073,7 +1092,7 @@ def main():
         data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
-            pickle.dump({'video_name':video_name, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list}, f)
+            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list}, f)
    
                 
     
