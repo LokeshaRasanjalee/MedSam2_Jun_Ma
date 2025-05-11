@@ -261,6 +261,8 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
     rejector_logits: [batch, n_experts]
     """
     
+    B, n_experts = acc_post_def_batch.shape 
+    
     log_probs = F.log_softmax(rejector_logits, dim=1)
     L_h = (1-acc_no_def_batch) 
     
@@ -268,19 +270,19 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
     for j, g_dice in enumerate(acc_post_def_batch):
             L_gj = (1-g_dice)# shape: [B]
             c_j = L_gj + alpha
-            costs.append(c_j.unsqueeze(1)) 
+            costs.append(c_j) 
             
-    costs = torch.cat(costs, dim=1) 
+    costs = torch.stack(costs) 
     
     # Term 1: Predict with base model (class 0)
-    total_expert_cost = costs.sum(dim=0)  # [B]
+    total_expert_cost = costs.sum(dim=1)  # [B]
     loss_predict = -log_probs[:, 0] * total_expert_cost  # [B]
     
     # Term 2: Defer to each expert
     loss_defer = 0
-    for j in range(len(acc_post_def_batch)):
+    for j in range(n_experts):
         # Compute: base model loss + cost of other experts
-        alt_costs = L_h + (costs.sum(dim=0) - costs[j,:])
+        alt_costs = L_h + (costs.sum(dim=1) - costs[:,j])
         loss_defer += -log_probs[:, j + 1] * alt_costs  # [B]
         
     loss = loss_predict + loss_defer  # [B]
@@ -1149,7 +1151,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
-    model = models.video.r2plus1d_18(pretrained=True)
+    model = models.r2plus1d_18(pretrained=True)
 
     # Update input layer to accept 4 channels (instead of 3)
     # Original shape: (out_channels=64, in_channels=3, kernel_t=3, kernel_h=7, kernel_w=7)
@@ -1196,6 +1198,7 @@ def main():
         train_losses.append(train_loss)
 
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.4f} Selection Accuracy: {selection_accuracy:.4f} Mean Regret: {mean_regret:.4f} Best Actions: {best_actions} Chosen Actions: {chosen_actions}")
+        print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.4f} Selection Accuracy: {selection_accuracy:.4f} Mean Regret: {mean_regret:.4f} Best Actions: {best_actions} Chosen Actions: {chosen_actions}")
 
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")

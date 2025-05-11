@@ -63,8 +63,16 @@ class ClipDataset(Dataset):
             video_frames.append(self.transform(frame))
 
         video_tensor = torch.stack(video_frames)
+        masks = info['masks']
+        masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
+        
+        
+        
+        combined_clip = torch.cat([video_tensor, masks], dim=1)
+        
+        
         return (
-            video_tensor,
+            combined_clip,
             torch.tensor(info['no_df_dice'], dtype=torch.float32),
             torch.tensor(info['post_df_dice'], dtype=torch.float32),
             info['video_name']
