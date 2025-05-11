@@ -30,7 +30,7 @@ class ClipDataset(Dataset):
             with open(file, 'rb') as f:
                 data = pickle.load(f)
                 
-                if len(data['L_post_defer_list']) != 7:
+                if len(data['L_post_defer_list']) != 4:
                     continue
 
                 video_name = data['video_name']
@@ -42,7 +42,8 @@ class ClipDataset(Dataset):
                     'frame_list': frame_list,
                     'no_df_dice': data['L_no_defer'],
                     'post_df_dice': data['L_post_defer_list'],
-                    'video_name': video_name
+                    'video_name': video_name,
+                    'masks': data['Masks']
                 })
                 
                 del data

@@ -1148,8 +1148,35 @@ def main():
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    model = models.r2plus1d_18(pretrained=True)
-    model.fc = nn.Linear(model.fc.in_features, 8)  # Changed to 7 classes
+    # Load pretrained R(2+1)D model
+    model = models.video.r2plus1d_18(pretrained=True)
+
+    # Update input layer to accept 4 channels (instead of 3)
+    # Original shape: (out_channels=64, in_channels=3, kernel_t=3, kernel_h=7, kernel_w=7)
+    original_conv = model.stem[0]
+    new_conv = nn.Conv3d(
+        in_channels=4,
+        out_channels=original_conv.out_channels,
+        kernel_size=original_conv.kernel_size,
+        stride=original_conv.stride,
+        padding=original_conv.padding,
+        bias=(original_conv.bias is not None)
+    )
+
+    # Copy pretrained weights for the first 3 channels
+    with torch.no_grad():
+        new_conv.weight[:, :3, :, :, :] = original_conv.weight
+        new_conv.weight[:, 3:, :, :, :] = original_conv.weight[:, :1, :, :, :]  # duplicate 1st channel
+        if original_conv.bias is not None:
+            new_conv.bias.copy_(original_conv.bias)
+
+    # Replace the conv layer
+    model.stem[0] = new_conv
+
+    # Update final fully connected layer to output 4 classes
+    model.fc = nn.Linear(model.fc.in_features, 5)
+
+    # Send to device
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args, batch_size=args.batch_size)
