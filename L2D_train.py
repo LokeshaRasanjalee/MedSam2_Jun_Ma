@@ -1214,6 +1214,12 @@ def main():
 
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+    
+    # Save the model
+    model_path = os.path.join(args.post_hoc_model_save_dir, f"model_{args.experiment_name}_{timestamp}.pth")
+    torch.save(model.state_dict(), model_path)
+    print(f"Model saved to {model_path}")
+    logging.info(f"Model saved to {model_path}")
 
 
 if __name__ == "__main__":
