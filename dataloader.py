@@ -21,6 +21,8 @@ class ClipDataset(Dataset):
         self.transform = transforms.Compose([
             transforms.Resize((112, 112)),
             transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],  # RGB means
+                         std=[0.229, 0.224, 0.225]) 
         ])
         
         self.video_metadata = []  # list of (video_path, frame_names, no_df_dice, post_df_dice, video_name)
@@ -36,6 +38,11 @@ class ClipDataset(Dataset):
                 video_name = data['video_name']
                 video_path = os.path.join(args.base_video_dir, video_name)
                 frame_list = sorted(os.listdir(video_path))
+                
+                min_vals = data['Masks'].amin(dim=[-2, -1], keepdim=True)
+                max_vals = data['Masks'].amax(dim=[-2, -1], keepdim=True)
+                normalized = (data['Masks'] - min_vals) / (max_vals - min_vals + 1e-6)
+                data['Masks'] = normalized
 
                 self.video_metadata.append({
                     'video_path': video_path,
