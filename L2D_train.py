@@ -263,7 +263,8 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
     
     B, n_experts = acc_post_def_batch.shape 
     
-    log_probs = F.log_softmax(rejector_logits, dim=1)
+    temperature=0.5
+    log_probs = F.log_softmax(rejector_logits/temperature, dim=1)
     L_h = (1-acc_no_def_batch) 
     
     costs=[]
@@ -273,6 +274,13 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
             costs.append(c_j) 
             
     costs = torch.stack(costs) 
+
+
+    # DEBUG: print first few values for inspection
+    print("L(h):", L_h[:5])
+    for j in range(n_experts):
+        print(f"L(g{j+1}) + alpha:", costs[:5, j])
+        print(f"Logit: {rejector_logits[:5,j]}, Logit Prob: {log_probs[:5,j]}")
     
     # Term 1: Predict with base model (class 0)
     total_expert_cost = costs.sum(dim=1)  # [B]
@@ -287,6 +295,10 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
         
     loss = loss_predict + loss_defer  # [B]
     loss = loss.mean()
+
+    print("Loss_predict:", loss_predict.mean().item())
+    print("Loss_defer:", loss_defer.mean().item())
+    print("Total loss:", loss.item())
     
     return loss
     
