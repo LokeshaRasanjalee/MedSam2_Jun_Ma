@@ -261,43 +261,37 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
     rejector_logits: [batch, n_experts]
     """
     
-    B, n_experts = acc_post_def_batch.shape 
-    
-    temperature=0.5
-    log_probs = F.log_softmax(rejector_logits/temperature, dim=1)
-    L_h = (1-acc_no_def_batch) 
-    
-    costs=[]
-    for j, g_dice in enumerate(acc_post_def_batch):
-            L_gj = (1-g_dice)# shape: [B]
-            c_j = L_gj + alpha
-            costs.append(c_j) 
-            
-    costs = torch.stack(costs) 
+    # Convert list of [B] tensors to a [B, n_frames] tensor
+    #acc_post_def_batch = torch.stack(acc_post_def_batch, dim=1)  # [B, n_frames]
+    B, n_frames = acc_post_def_batch.shape
 
-
-    # DEBUG: print first few values for inspection
-    print("L(h):", L_h[:5])
-    for j in range(n_experts):
-        print(f"L(g{j+1}) + alpha:", costs[:5, j])
-        print(f"Logit: {rejector_logits[:5,j]}, Logit Prob: {log_probs[:5,j]}")
-    
-    # Term 1: Predict with base model (class 0)
-    total_expert_cost = costs.sum(dim=1)  # [B]
-    loss_predict = -log_probs[:, 0] * total_expert_cost  # [B]
-    
-    # Term 2: Defer to each expert
-    loss_defer = 0
-    for j in range(n_experts):
-        # Compute: base model loss + cost of other experts
-        alt_costs = L_h + (costs.sum(dim=1) - costs[:,j])
-        loss_defer += -log_probs[:, j + 1] * alt_costs  # [B]
+    assert rejector_logits.shape[1] == 1 + n_frames, \
+        f"Rejector logits must have shape [B, 1 + n_frames]; got {rejector_logits.shape}"
         
-    loss = loss_predict + loss_defer  # [B]
-    loss = loss.mean()
+    log_probs = F.log_softmax(rejector_logits, dim=1)
 
-    print("Loss_predict:", loss_predict.mean().item())
-    print("Loss_defer:", loss_defer.mean().item())
+
+    # Base model cost
+    c0 = 1 - acc_no_def_batch  # [B]
+
+    # Expert/frame costs
+    cf = (1 - acc_post_def_batch) + alpha  # [B, n_frames]
+
+    # ℓ(r, 0): loss for predicting
+    loss_predict = c0 * (-log_probs[:, 0])  # [B]
+
+    # ℓ(r, f): losses for deferring to frames
+    loss_defer = (cf * (-log_probs[:, 1:])).sum(dim=1)  # [B]
+
+    # Total loss
+    loss = (loss_predict + loss_defer).mean()
+
+    # Debug prints
+    print("c0 (1 - acc_no_def):", c0[:5])
+    print("cf (1 - acc_post_def + alpha):", cf[:5])
+    print("Log probs (first 5):", log_probs[:5])
+    print("Loss_predict mean:", loss_predict.mean().item())
+    print("Loss_defer mean:", loss_defer.mean().item())
     print("Total loss:", loss.item())
     
     return loss
