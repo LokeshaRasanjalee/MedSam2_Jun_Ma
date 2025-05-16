@@ -287,12 +287,12 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
     loss = (loss_predict + loss_defer).mean()
 
     # Debug prints
-    print("c0 (1 - acc_no_def):", c0[:5])
-    print("cf (1 - acc_post_def + alpha):", cf[:5])
-    print("Log probs (first 5):", log_probs[:5])
-    print("Loss_predict mean:", loss_predict.mean().item())
-    print("Loss_defer mean:", loss_defer.mean().item())
-    print("Total loss:", loss.item())
+    # print("c0 (1 - acc_no_def):", c0[:5])
+    # print("cf (1 - acc_post_def + alpha):", cf[:5])
+    # print("Log probs (first 5):", log_probs[:5])
+    # print("Loss_predict mean:", loss_predict.mean().item())
+    # print("Loss_defer mean:", loss_defer.mean().item())
+    # print("Total loss:", loss.item())
     
     return loss
     
@@ -315,9 +315,14 @@ def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
         loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    
         # Backward pass
-        
         loss.backward()
         optimizer.step()
+        
+        for name, param in rejector.named_parameters():
+            if param.grad is not None:
+                print (f"{name} has gradient with mean: {param.grad.abs().mean()}")
+            else:
+                print (f"{name} has no gradient")
         
         total_loss += loss.item()
     
@@ -1094,15 +1099,15 @@ def main():
         help="Beta parameter for deferral loss (default: 0.0)",
     )
     args = parser.parse_args()
-
+    
     # Add timestamp to the output directory
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     args.output_mask_dir = os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}")
     
     # Ensure the directory exists
     os.makedirs(args.output_mask_dir, exist_ok=True)
-
-    # Set up logging to use the output_mask_dir
+    
+     # Set up logging to use the output_mask_dir
     logging.basicConfig(
         filename=os.path.join(args.output_mask_dir, 'output.log'),
         level=logging.INFO,
@@ -1116,7 +1121,7 @@ def main():
         print(f"{arg}: {getattr(args, arg)}")
         logging.info(f"{arg}: {getattr(args, arg)}")
     print("\n")
-
+    
     # if we use per-object PNG files, they could possibly overlap in inputs and outputs
     hydra_overrides_extra = [
         "++model.non_overlap_masks=" + ("false" if args.per_obj_png_file else "true")
@@ -1152,34 +1157,34 @@ def main():
     
     #print(f"Train on {len(video_names)} videos:\n{video_names}")
     #logging.info(f"Train on {len(video_names)} videos:\n{video_names}")
-
+    
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
     model = models.r2plus1d_18(pretrained=True)
 
-    # Update input layer to accept 4 channels (instead of 3)
-    # Original shape: (out_channels=64, in_channels=3, kernel_t=3, kernel_h=7, kernel_w=7)
-    original_conv = model.stem[0]
-    new_conv = nn.Conv3d(
-        in_channels=4,
-        out_channels=original_conv.out_channels,
-        kernel_size=original_conv.kernel_size,
-        stride=original_conv.stride,
-        padding=original_conv.padding,
-        bias=(original_conv.bias is not None)
-    )
+    # # Update input layer to accept 4 channels (instead of 3)
+    # # Original shape: (out_channels=64, in_channels=3, kernel_t=3, kernel_h=7, kernel_w=7)
+    # original_conv = model.stem[0]
+    # new_conv = nn.Conv3d(
+    #     in_channels=4,
+    #     out_channels=original_conv.out_channels,
+    #     kernel_size=original_conv.kernel_size,
+    #     stride=original_conv.stride,
+    #     padding=original_conv.padding,
+    #     bias=(original_conv.bias is not None)
+    # )
 
-    # Copy pretrained weights for the first 3 channels
-    with torch.no_grad():
-        new_conv.weight[:, :3, :, :, :] = original_conv.weight
-        new_conv.weight[:, 3:, :, :, :] = original_conv.weight[:, :1, :, :, :]  # duplicate 1st channel
-        if original_conv.bias is not None:
-            new_conv.bias.copy_(original_conv.bias)
+    # # Copy pretrained weights for the first 3 channels
+    # with torch.no_grad():
+    #     new_conv.weight[:, :3, :, :, :] = original_conv.weight
+    #     new_conv.weight[:, 3:, :, :, :] = original_conv.weight[:, :1, :, :, :]  # duplicate 1st channel
+    #     if original_conv.bias is not None:
+    #         new_conv.bias.copy_(original_conv.bias)
 
-    # Replace the conv layer
-    model.stem[0] = new_conv
+    # # Replace the conv layer
+    # model.stem[0] = new_conv
 
     # Update final fully connected layer to output 4 classes
     model.fc = nn.Linear(model.fc.in_features, 5)

@@ -71,15 +71,20 @@ class ClipDataset(Dataset):
 
         video_tensor = torch.stack(video_frames)
         masks = info['masks']
+
+        
+        # Repeat single channel 3 times to create 3-channel mask
+        masks = masks.repeat(3, 1, 1, 1)  # Repeat channel dimension 3 times
+        
         masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
         
         
         
-        combined_clip = torch.cat([video_tensor, masks], dim=1)
+        #combined_clip = torch.cat([video_tensor, masks], dim=1)
         
         
         return (
-            combined_clip,
+            masks,
             torch.tensor(info['no_df_dice'], dtype=torch.float32),
             torch.tensor(info['post_df_dice'], dtype=torch.float32),
             info['video_name']
