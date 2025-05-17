@@ -37,6 +37,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import confusion_matrix
 from collections import Counter
+from transformers import TimesformerModel, TimesformerConfig
 
 
 # the PNG palette for DAVIS 2017 dataset
@@ -287,18 +288,20 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
     loss = (loss_predict + loss_defer).mean()
 
     # Debug prints
-    # print("c0 (1 - acc_no_def):", c0[:5])
-    # print("cf (1 - acc_post_def + alpha):", cf[:5])
-    # print("Log probs (first 5):", log_probs[:5])
-    # print("Loss_predict mean:", loss_predict.mean().item())
-    # print("Loss_defer mean:", loss_defer.mean().item())
-    # print("Total loss:", loss.item())
+    print("c0 (1 - acc_no_def):", c0[:5])
+    print("(1 - acc_post_def_batch):", (1 - acc_post_def_batch)[:5])
+    print("cf (1 - acc_post_def + alpha):", cf[:5])
+    print("Log probs (first 5):", log_probs[:5])
+    print("Loss_predict mean:", loss_predict.mean().item())
+    print("Loss_defer mean:", loss_defer.mean().item())
+    print("Total loss:", loss.item())
     
     return loss
     
 
-def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
+def train_one_epoch(rejector,classification_head, loader, criterion, optimizer,alpha, beta, device):
     rejector.train()
+    classification_head.train()
     total_loss = 0
     correct = 0
     total = 0
@@ -310,19 +313,21 @@ def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
         
         optimizer.zero_grad()
         
-        rej_logits = rejector(clips_batch.permute(0, 2, 1, 3, 4))
-        
+        # rej_logits = rejector(clips_batch.permute(0, 2, 1, 3, 4))
+        outputs = rejector(clips_batch).last_hidden_state[:, 0]
+        rej_logits = classification_head(outputs).squeeze(1)
+        #rej_logits = rejector(clips_batch)
         loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    
         # Backward pass
         loss.backward()
         optimizer.step()
         
-        for name, param in rejector.named_parameters():
-            if param.grad is not None:
-                print (f"{name} has gradient with mean: {param.grad.abs().mean()}")
-            else:
-                print (f"{name} has no gradient")
+        # for name, param in rejector.named_parameters():
+        #     if param.grad is not None:
+        #         print (f"{name} has gradient with mean: {param.grad.abs().mean()}")
+        #     else:
+        #         print (f"{name} has no gradient")
         
         total_loss += loss.item()
     
@@ -331,8 +336,9 @@ def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
     return avg_loss
 
 
-def validate_one_epoch(model, loader, criterion, device,logging):
-    model.eval()  # Set model to evaluation mode
+def validate_one_epoch(rejector,classification_head, loader, criterion, device,logging):
+    rejector.eval()  # Set model to evaluation mode
+    classification_head.eval()
     correct = 0
     total_regret = 0.0
     total_samples = 0
@@ -343,7 +349,10 @@ def validate_one_epoch(model, loader, criterion, device,logging):
             no_df_dice_batch = no_df_dice_batch.to(device)
             post_df_dice_batch = post_df_dice_batch.to(device)
 
-            rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))
+            # rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))
+            
+            outputs = rejector(clips_batch).last_hidden_state[:, 0]
+            rej_logits = classification_head(outputs).squeeze(1)
          
             chosen_actions = torch.argmax(rej_logits, dim=1)
             
@@ -1161,36 +1170,47 @@ def main():
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Load pretrained R(2+1)D model
-    model = models.r2plus1d_18(pretrained=True)
+    # Step 1: Load the pretrained model as-is
+    model = TimesformerModel.from_pretrained("facebook/timesformer-base-finetuned-k400")
 
-    # # Update input layer to accept 4 channels (instead of 3)
-    # # Original shape: (out_channels=64, in_channels=3, kernel_t=3, kernel_h=7, kernel_w=7)
-    # original_conv = model.stem[0]
-    # new_conv = nn.Conv3d(
-    #     in_channels=4,
-    #     out_channels=original_conv.out_channels,
-    #     kernel_size=original_conv.kernel_size,
-    #     stride=original_conv.stride,
-    #     padding=original_conv.padding,
-    #     bias=(original_conv.bias is not None)
-    # )
+    # Step 2: Modify number of frames in config AFTER loading
+    model.config.num_frames = 5  # This only affects inference/training downstream
 
-    # # Copy pretrained weights for the first 3 channels
-    # with torch.no_grad():
-    #     new_conv.weight[:, :3, :, :, :] = original_conv.weight
-    #     new_conv.weight[:, 3:, :, :, :] = original_conv.weight[:, :1, :, :, :]  # duplicate 1st channel
-    #     if original_conv.bias is not None:
-    #         new_conv.bias.copy_(original_conv.bias)
+    # Step 3: Resize time embeddings to 5 frames (from 8 → 5)
+    with torch.no_grad():
+        pretrained_time_embed = model.embeddings.time_embeddings  # Shape: [1, 8, 768]
+        new_time_embed = pretrained_time_embed[:, :5].clone()     # Slice first 5 frames
+        model.embeddings.time_embeddings = nn.Parameter(new_time_embed)  # Assign
 
-    # # Replace the conv layer
-    # model.stem[0] = new_conv
+    # Step 4: Modify patch embedding to accept 4 channels (RGB + mask)
+    old_conv = model.embeddings.patch_embeddings.projection
+    new_conv = nn.Conv2d(
+        in_channels=4,
+        out_channels=old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        bias=old_conv.bias is not None
+    )
 
-    # Update final fully connected layer to output 4 classes
-    model.fc = nn.Linear(model.fc.in_features, 5)
+    # Copy pretrained weights and initialize 4th channel (e.g., like red channel)
+    with torch.no_grad():
+        new_conv.weight[:, :3] = old_conv.weight
+        new_conv.weight[:, 3] = old_conv.weight[:, 0]  # Init mask channel
+        if old_conv.bias is not None:
+            new_conv.bias = old_conv.bias
 
-    # Send to device
+    model.embeddings.patch_embeddings.projection = new_conv
+
+    # Step 5: Replace classification head if needed (e.g., 5 classes)
+    num_classes = 5
+    classification_head = nn.Linear(model.config.hidden_size, num_classes)
+
+    # Step 6: Send to device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
+    classification_head = classification_head.to(device)
+    
 
     train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args, batch_size=args.batch_size)
 
@@ -1203,8 +1223,8 @@ def main():
     
     train_losses, train_accs, val_losses, val_accs = [], [], [], []
     for epoch in range(args.num_epochs):
-        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
-        selection_accuracy, mean_regret, best_actions, chosen_actions = validate_one_epoch(model, val_loader, criterion, device, logging)
+        train_loss = train_one_epoch(model, classification_head, train_loader, criterion, optimizer, args.alpha, args.beta, device)
+        selection_accuracy, mean_regret, best_actions, chosen_actions = validate_one_epoch(model, classification_head, val_loader, criterion, device, logging)
 
         train_losses.append(train_loss)
 

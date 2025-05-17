@@ -71,8 +71,16 @@
             "request": "launch",
             "program": "L2D_train.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./sun_dataset/dataset_4/Images/ --input_mask_dir ./sun_dataset/dataset_4/Masks/ --post_hoc_model_save_dir ./l2d_models/data_pkl_5_mask_5/data_pkl/ -o ./sun_dataset/out/ --experiment_name 'sun_4_classifier_run' --batch_size 3 --num_epochs 20 --learning_rate 1e-3 --alpha 1 --beta 0.001 "
+            "args": "--base_video_dir ./sun_dataset/dataset_4/Images/ --input_mask_dir ./sun_dataset/dataset_4/Masks/ --post_hoc_model_save_dir ./l2d_models/data_pkl_tmp_5_4_transformer/ -o ./sun_dataset/out/ --experiment_name 'sun_4_classifier_run' --batch_size 3 --num_epochs 20 --learning_rate 1e-3 --alpha 1 --beta 0.001 "
         },
+        // {
+        //     "name": "L2D Train r(2+1)D Classifier",
+        //     "type": "debugpy",
+        //     "request": "launch",
+        //     "program": "L2D_train.py",
+        //     "console": "integratedTerminal",
+        //     "args": "--base_video_dir ./sun_dataset/dataset_4/Images/ --input_mask_dir ./sun_dataset/dataset_4/Masks/ --post_hoc_model_save_dir ./l2d_models/data_pkl_5_mask_5/data_pkl/ -o ./sun_dataset/out/ --experiment_name 'sun_4_classifier_run' --batch_size 3 --num_epochs 20 --learning_rate 1e-3 --alpha 1 --beta 0.001 "
+        // },
         {
             "name": "L2D_debug",
             "type": "debugpy",

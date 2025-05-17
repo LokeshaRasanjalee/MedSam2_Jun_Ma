@@ -19,7 +19,7 @@ import numpy as np
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, args):
         self.transform = transforms.Compose([
-            transforms.Resize((112, 112)),
+            transforms.Resize((224, 224)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],  # RGB means
                          std=[0.229, 0.224, 0.225]) 
@@ -74,17 +74,17 @@ class ClipDataset(Dataset):
 
         
         # Repeat single channel 3 times to create 3-channel mask
-        masks = masks.repeat(3, 1, 1, 1)  # Repeat channel dimension 3 times
+        # masks = masks.repeat(3, 1, 1, 1)  # Repeat channel dimension 3 times
         
         masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
         
         
         
-        #combined_clip = torch.cat([video_tensor, masks], dim=1)
+        combined_clip = torch.cat([video_tensor, masks], dim=1)
         
         
         return (
-            masks,
+            combined_clip,
             torch.tensor(info['no_df_dice'], dtype=torch.float32),
             torch.tensor(info['post_df_dice'], dtype=torch.float32),
             info['video_name']

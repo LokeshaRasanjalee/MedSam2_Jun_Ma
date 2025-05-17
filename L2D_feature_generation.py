@@ -8,6 +8,7 @@ import argparse
 import os
 from collections import defaultdict
 import datetime
+import torch.nn.functional as F
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -229,6 +230,30 @@ def get_mask_img_list_with_obj(args, frame_names, video_name):
 
     return mask_img_list_with_obj
 
+def compute_focal_loss(pred_mask, true_mask, alpha=0.25, gamma=2.0, eps=1e-6):
+    if isinstance(pred_mask, np.ndarray):
+        pred_mask = torch.from_numpy(pred_mask)
+    if isinstance(true_mask, np.ndarray):
+        true_mask = torch.from_numpy(true_mask)
+
+    pred_mask = pred_mask.float()
+    true_mask = true_mask.float()
+
+    if true_mask.ndim == 2:
+        true_mask = true_mask.unsqueeze(0)  # match shape: [1, H, W]
+
+    prob = torch.sigmoid(pred_mask)
+    prob = prob.clamp(min=eps, max=1. - eps)
+
+    ce_loss = F.binary_cross_entropy_with_logits(pred_mask, true_mask, reduction='none')
+    p_t = prob * true_mask + (1 - prob) * (1 - true_mask)
+    alpha_t = alpha * true_mask + (1 - alpha) * (1 - true_mask)
+    focal_weight = (1 - p_t) ** gamma
+
+    loss = alpha_t * focal_weight * ce_loss
+    return loss.mean()
+
+
 def dice_score(pred_mask, true_mask, eps=1e-5):
     #print ("dice_score")
     pred = pred_mask.flatten()
@@ -323,7 +348,8 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     gt_list: list of ground truth masks (numpy arrays)
     frame_indices_for_clip: list of frame indices to calculate IoU # PASS THE LIST OF INDICES
     """
-    total_iou = 0.0
+    total_dice = 0.0
+    total_sam_loss = 0.0
     # valid_frames = 0
     
     for idx in frame_indices_for_clip:
@@ -333,15 +359,24 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
         pred_mask = video_segments[idx]  # Assuming your video_segments store (frame_index, mask) tuples
         gt_mask = gt_list[idx][0]            # Your gt_list stores (1, H, W) numpy arrays
 
-        iou = dice_score(pred_mask, gt_mask)
-        total_iou += iou
+        
+        dice = dice_score(pred_mask, gt_mask)
+        focal_loss = compute_focal_loss(pred_mask, gt_mask)
+        total_dice += dice
+        
+        dice_loss = 1-dice
+        #focal_loss = 1-focal_loss
+        sam_loss = dice_loss + 20*focal_loss
+        total_sam_loss += sam_loss
         # valid_frames += 1
+        
 
     # assert valid_frames != 0
 
-    avg_iou = total_iou / len(frame_indices_for_clip)
+    avg_dice = total_dice / len(frame_indices_for_clip)
+    avg_sam_loss = total_sam_loss / len(frame_indices_for_clip)
     #downstream_loss = 1.0 - avg_iou
-    return avg_iou
+    return avg_dice, avg_sam_loss
 
 
 def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
@@ -881,9 +916,10 @@ def main():
     current_chunk = chunked[0] 
     
       # ----- Define Resize Transform for R(2+1)D -----
-    r2plus1d_transform = T.Compose([
-        T.Resize((112, 112)),    # Downsample frames to 112x112
-        T.ToTensor(),            # (H, W, C) -> (C, H, W)
+    timesformer_transform = T.Compose([
+        T.Resize((224, 224)),          # Resize frames to 224x224
+        T.ToTensor()            # Convert HWC -> CHW, float in [0, 1]
+        
     ])
     
     
@@ -898,6 +934,7 @@ def main():
         
        
         L_post_defer_list = []
+        L_post_defer_sam_loss_list = []
         clips = []
         
         # if video_name != 'seq4':
@@ -982,14 +1019,14 @@ def main():
         #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
 
         # Uncorrected downstream loss
-        L_no_defer = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        L_no_defer, L_no_defer_sam_loss = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
         clip_frames = []
         for idx in frame_indices_for_clip:
             frame_mask = video_segments_first[idx][1]
             frame_mask = np.squeeze(frame_mask)  
             frame_mask = Image.fromarray(frame_mask)
-            frame_mask = r2plus1d_transform(frame_mask)
+            frame_mask = timesformer_transform(frame_mask)
             clip_frames.append(frame_mask)
                                 
         clip = torch.stack(clip_frames, dim=1)
@@ -1053,11 +1090,11 @@ def main():
                 binary_masks_cor.append(binary_mask)
 
             # Corrected downstream loss
-            L_post_defer = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
+            L_post_defer, L_post_defer_sam_loss = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
             
             
             L_post_defer_list.append(L_post_defer)
-            
+            L_post_defer_sam_loss_list.append(L_post_defer_sam_loss)
             
             
 
@@ -1087,7 +1124,7 @@ def main():
         data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
-            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list}, f)
+            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss}, f)
    
                 
     
