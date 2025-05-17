@@ -256,7 +256,7 @@ def compute_costs(acc_post_def_batch, alpha, beta):
     return cost
 
 # Second-stage loss
-def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, beta):
+def deferral_loss(no_df_sam_loss, rejector_logits, post_df_sam_loss, alpha, beta):
     """
     predictor_logits: [batch, n_classes]
     rejector_logits: [batch, n_experts]
@@ -264,7 +264,7 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
     
     # Convert list of [B] tensors to a [B, n_frames] tensor
     #acc_post_def_batch = torch.stack(acc_post_def_batch, dim=1)  # [B, n_frames]
-    B, n_frames = acc_post_def_batch.shape
+    B, n_frames = post_df_sam_loss.shape
 
     assert rejector_logits.shape[1] == 1 + n_frames, \
         f"Rejector logits must have shape [B, 1 + n_frames]; got {rejector_logits.shape}"
@@ -273,10 +273,10 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
 
 
     # Base model cost
-    c0 = 1 - acc_no_def_batch  # [B]
+    c0 = no_df_sam_loss  # [B]
 
     # Expert/frame costs
-    cf = (1 - acc_post_def_batch) + alpha  # [B, n_frames]
+    cf = post_df_sam_loss + alpha  # [B, n_frames]
 
     # ℓ(r, 0): loss for predicting
     loss_predict = c0 * (-log_probs[:, 0])  # [B]
@@ -288,9 +288,9 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, 
     loss = (loss_predict + loss_defer).mean()
 
     # Debug prints
-    print("c0 (1 - acc_no_def):", c0[:5])
-    print("(1 - acc_post_def_batch):", (1 - acc_post_def_batch)[:5])
-    print("cf (1 - acc_post_def + alpha):", cf[:5])
+    print("c0 (no_df_sam_loss):", c0[:5])
+    print("post_df_sam_loss:", post_df_sam_loss[:5])
+    print("cf (post_df_sam_loss + alpha):", cf[:5])
     print("Log probs (first 5):", log_probs[:5])
     print("Loss_predict mean:", loss_predict.mean().item())
     print("Loss_defer mean:", loss_defer.mean().item())
@@ -306,10 +306,10 @@ def train_one_epoch(rejector,classification_head, loader, criterion, optimizer,a
     correct = 0
     total = 0
 
-    for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
+    for clips_batch, no_df_sam_loss, post_df_sam_loss, video_name_batch in loader:
         clips_batch = clips_batch.to(device)
-        no_df_dice_batch = no_df_dice_batch.to(device)
-        post_df_dice_batch = post_df_dice_batch.to(device)
+        no_df_sam_loss = no_df_sam_loss.to(device)
+        post_df_sam_loss = post_df_sam_loss.to(device)
         
         optimizer.zero_grad()
         
@@ -317,7 +317,7 @@ def train_one_epoch(rejector,classification_head, loader, criterion, optimizer,a
         outputs = rejector(clips_batch).last_hidden_state[:, 0]
         rej_logits = classification_head(outputs).squeeze(1)
         #rej_logits = rejector(clips_batch)
-        loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
+        loss = deferral_loss(no_df_sam_loss, rej_logits, post_df_sam_loss, alpha, beta)
    
         # Backward pass
         loss.backward()
@@ -358,7 +358,7 @@ def validate_one_epoch(rejector,classification_head, loader, criterion, device,l
             
             # Get best actions
             all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
-            best_actions = torch.argmax(all_accs, dim=1)
+            best_actions = torch.argmin(all_accs, dim=1)
             # logging.info("Best Actions:", best_actions)
             # logging.info("Chosen Actions:", chosen_actions)
             

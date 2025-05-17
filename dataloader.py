@@ -32,7 +32,7 @@ class ClipDataset(Dataset):
             with open(file, 'rb') as f:
                 data = pickle.load(f)
                 
-                if len(data['L_post_defer_list']) != 4:
+                if len(data['L_post_defer_sam_loss_list']) != 4:
                     continue
 
                 video_name = data['video_name']
@@ -47,8 +47,8 @@ class ClipDataset(Dataset):
                 self.video_metadata.append({
                     'video_path': video_path,
                     'frame_list': frame_list,
-                    'no_df_dice': data['L_no_defer'],
-                    'post_df_dice': data['L_post_defer_list'],
+                    'no_df_sam_loss': data['L_no_defer_sam_loss'],
+                    'post_df_sam_loss': data['L_post_defer_sam_loss_list'],
                     'video_name': video_name,
                     'masks': data['Masks']
                 })
@@ -85,8 +85,8 @@ class ClipDataset(Dataset):
         
         return (
             combined_clip,
-            torch.tensor(info['no_df_dice'], dtype=torch.float32),
-            torch.tensor(info['post_df_dice'], dtype=torch.float32),
+            torch.tensor(info['no_df_sam_loss'], dtype=torch.float32),
+            torch.tensor(info['post_df_sam_loss'], dtype=torch.float32),
             info['video_name']
         )
 
