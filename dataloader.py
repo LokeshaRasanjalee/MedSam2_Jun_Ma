@@ -15,18 +15,25 @@ from torchvision import transforms
 from PIL import Image
 import torch
 import numpy as np
+from torchvision.transforms import InterpolationMode
 
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, args):
         self.transform = transforms.Compose([
-            transforms.Resize((112, 112)),
+            transforms.Resize((512, 512)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],  # RGB means
                          std=[0.229, 0.224, 0.225]) 
         ])
+        self.mask_transform = transforms.Compose([
+            transforms.Resize((512, 512), interpolation=InterpolationMode.NEAREST),  # preserve class labels
+            
+        ])
         
         self.video_metadata = []  # list of (video_path, frame_names, no_df_dice, post_df_dice, video_name)
-        save_dir = args.post_hoc_model_save_dir
+        
+        self.loss_min = 1
+        self.loss_max = 0
 
         for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
             with open(file, 'rb') as f:
@@ -38,6 +45,7 @@ class ClipDataset(Dataset):
                 video_name = data['video_name']
                 video_path = os.path.join(args.base_video_dir, video_name)
                 frame_list = sorted(os.listdir(video_path))
+                data['Masks'] = self.mask_transform(data['Masks'])
                 
                 min_vals = data['Masks'].amin(dim=[-2, -1], keepdim=True)
                 max_vals = data['Masks'].amax(dim=[-2, -1], keepdim=True)
@@ -52,11 +60,24 @@ class ClipDataset(Dataset):
                     'video_name': video_name,
                     'masks': data['Masks']
                 })
+                # print(f"video: {video_name}, {data['L_no_defer']}, {data['L_post_defer_list']}")
+                all_losses = [data['L_no_defer']] + data['L_post_defer_list']
+                all_losses = np.array(all_losses)
+                #all_losses = torch.cat(all_losses, dim=0)
+                if all_losses.min() < self.loss_min:
+                    self.loss_min = all_losses.min()
+                if all_losses.max() > self.loss_max:
+                    self.loss_max = all_losses.max()
+                    # print(f"video: {video_name}, Loss max: {self.loss_max}")
+                    
+                # if all_losses.max() > 1:
+                #     print(f"video: {video_name}, Loss greater than 1: {all_losses.max()}")
                 
                 del data
                 gc.collect()
         
         print("Loaded metadata only.")
+        print(f"Loss min: {self.loss_min}, Loss max: {self.loss_max}")
 
     def __len__(self):
         return len(self.video_metadata)
@@ -77,11 +98,21 @@ class ClipDataset(Dataset):
         
         combined_clip = torch.cat([video_tensor, masks], dim=1)
         
+        no_df_dice = torch.tensor(info['no_df_dice'], dtype=torch.float32)
+        post_df_dice = torch.tensor(info['post_df_dice'], dtype=torch.float32)
+
+        # Min-max normalization: (x - min) / (max - min)
+        denom = self.loss_max - self.loss_min
+        no_df_dice_norm = (no_df_dice - self.loss_min) / denom
+        post_df_dice_norm = (post_df_dice - self.loss_min) / denom
+        
+        # print(f"no_df_dice: {no_df_dice_norm}, post_df_dice: {post_df_dice_norm}")
+        
         
         return (
             combined_clip,
-            torch.tensor(info['no_df_dice'], dtype=torch.float32),
-            torch.tensor(info['post_df_dice'], dtype=torch.float32),
+            no_df_dice_norm,
+            post_df_dice_norm,
             info['video_name']
         )
 

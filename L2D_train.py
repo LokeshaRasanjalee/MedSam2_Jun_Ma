@@ -254,47 +254,97 @@ def compute_costs(acc_post_def_batch, alpha, beta):
     cost = alpha * incorrect + beta  # shape [batch, n_experts]
     return cost
 
-# Second-stage loss
-def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, beta):
-    """
-    predictor_logits: [batch, n_classes]
-    rejector_logits: [batch, n_experts]
-    """
-    
-    # Convert list of [B] tensors to a [B, n_frames] tensor
-    #acc_post_def_batch = torch.stack(acc_post_def_batch, dim=1)  # [B, n_frames]
-    B, n_frames = acc_post_def_batch.shape
 
-    assert rejector_logits.shape[1] == 1 + n_frames, \
-        f"Rejector logits must have shape [B, 1 + n_frames]; got {rejector_logits.shape}"
+def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0):
+    """
+    Surrogate deferral loss adapted from Mao et al. (2023), L_exp in predictor-rejector setting.
+
+    Args:
+        acc_no_def_batch: [B] - segmentation accuracy from base model (no deferral), like 1_{h(x) == y}
+        rejector_logits:  [B, n_e] - logits from rejector model (one per candidate frame)
+        acc_post_def_batch: [B, n_e] - accuracy if frame j is chosen (complement of cost)
+        alpha, beta: weights to balance no-deferral and deferral components
+
+    Returns:
+        scalar loss
+    """
+    B, n_e = rejector_logits.shape
+
+    # First term: alpha * acc_no_def_batch * sum_i e^{-r_i}
+    exp_neg_r = torch.exp(-rejector_logits)           # [B, n_e]
+    term1 = torch.sum(exp_neg_r, dim=1)               # [B]
+    loss_term1 = acc_no_def_batch * term1     # [B]
+
+    # Second term: beta * sum_j acc_post_def * [sum_{i≠j} e^{r_j - r_i} + e^{r_j}]
+    loss_term2 = torch.zeros_like(loss_term1)         # [B]
+    for j in range(n_e):
+        r_j = rejector_logits[:, j].unsqueeze(1)      # [B, 1]
+        r_diff = r_j - rejector_logits                # [B, n_e]
+        mask = torch.ones(n_e, dtype=torch.bool, device=rejector_logits.device)
+        mask[j] = False
+        exp_diff = torch.sum(torch.exp(r_diff[:, mask]), dim=1)  # [B]
+        exp_rj = torch.exp(r_j.squeeze(1))            # [B]
+        penalty = exp_diff + (n_e-1)*exp_rj                   # [B]
+
+        c_bar = 1-(alpha*(1-acc_post_def_batch[:, j])+beta)
+
+        loss_term2 += c_bar * penalty  # [B]
+
+    # Combine both terms
+    total_loss = loss_term1 + loss_term2              # [B]
+    
+    
+    print("=== DEBUG LOGS ===")
+    print("Rejector logits:\n", rejector_logits[:3])
+    print("acc_no_def_batch:\n", acc_no_def_batch[:3])
+    print("acc_post_def_batch:\n", acc_post_def_batch[:3])
+    print("loss_term1:\n", loss_term1[:3])
+    print("loss_term2:\n", loss_term2[:3])
+    print("total_loss:\n", total_loss[:3])
+    
+    return torch.mean(total_loss)
+
+# # Second-stage loss
+# def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, beta):
+#     """
+#     predictor_logits: [batch, n_classes]
+#     rejector_logits: [batch, n_experts]
+#     """
+    
+#     # Convert list of [B] tensors to a [B, n_frames] tensor
+#     #acc_post_def_batch = torch.stack(acc_post_def_batch, dim=1)  # [B, n_frames]
+#     B, n_frames = acc_post_def_batch.shape
+
+#     assert rejector_logits.shape[1] == 1 + n_frames, \
+#         f"Rejector logits must have shape [B, 1 + n_frames]; got {rejector_logits.shape}"
         
-    log_probs = F.log_softmax(rejector_logits, dim=1)
+#     log_probs = F.log_softmax(rejector_logits, dim=1)
 
 
-    # Base model cost
-    c0 = 1 - acc_no_def_batch  # [B]
+#     # Base model cost
+#     c0 = 1 - acc_no_def_batch  # [B]
 
-    # Expert/frame costs
-    cf = (1 - acc_post_def_batch) + alpha  # [B, n_frames]
+#     # Expert/frame costs
+#     cf = (1 - acc_post_def_batch) + alpha  # [B, n_frames]
 
-    # ℓ(r, 0): loss for predicting
-    loss_predict = c0 * (-log_probs[:, 0])  # [B]
+#     # ℓ(r, 0): loss for predicting
+#     loss_predict = c0 * (-log_probs[:, 0])  # [B]
 
-    # ℓ(r, f): losses for deferring to frames
-    loss_defer = (cf * (-log_probs[:, 1:])).sum(dim=1)  # [B]
+#     # ℓ(r, f): losses for deferring to frames
+#     loss_defer = (cf * (-log_probs[:, 1:])).sum(dim=1)  # [B]
 
-    # Total loss
-    loss = (loss_predict + loss_defer).mean()
+#     # Total loss
+#     loss = (loss_predict + loss_defer).mean()
 
-    # Debug prints
-    print("c0 (1 - acc_no_def):", c0[:5])
-    print("cf (1 - acc_post_def + alpha):", cf[:5])
-    print("Log probs (first 5):", log_probs[:5])
-    print("Loss_predict mean:", loss_predict.mean().item())
-    print("Loss_defer mean:", loss_defer.mean().item())
-    print("Total loss:", loss.item())
+#     # Debug prints
+#     print("c0 (1 - acc_no_def):", c0[:5])
+#     print("cf (1 - acc_post_def + alpha):", cf[:5])
+#     print("Log probs (first 5):", log_probs[:5])
+#     print("Loss_predict mean:", loss_predict.mean().item())
+#     print("Loss_defer mean:", loss_defer.mean().item())
+#     print("Total loss:", loss.item())
     
-    return loss
+#     return loss
     
 
 def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
@@ -325,44 +375,120 @@ def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
 
     return avg_loss
 
+def infer_deferral_action(rejector_logits):
+    """
+    Implements inference rule from Mao et al. (2023) predictor-rejector setting:
+    - Defer to expert j if r_j <= 0 and r_j < all other r_i.
+    - Else, use base model (no deferral).
+    
+    Args:
+        rejector_logits: [B, n_e] logits from rejector model
 
-def validate_one_epoch(model, loader, criterion, device,logging):
-    model.eval()  # Set model to evaluation mode
-    correct = 0
-    total_regret = 0.0
+    Returns:
+        actions: [B] where 0 = no deferral, 1...n_e = defer to expert j = action - 1
+    """
+    B, n_e = rejector_logits.shape
+    actions = torch.zeros(B, dtype=torch.long, device=rejector_logits.device)
+
+    for b in range(B):
+        r = rejector_logits[b]
+        eligible = (r <= 0)
+        if eligible.any():
+            eligible_indices = torch.arange(n_e, device=r.device)[eligible]
+            chosen_idx = eligible_indices[torch.argmin(r[eligible])]
+            actions[b] = chosen_idx + 1  # offset for base = 0
+        else:
+            actions[b] = 0
+
+    return actions
+
+
+def validate_one_epoch(model, loader, criterion, device, logging=None):
+    model.eval()
     total_samples = 0
+    total_regret = 0.0
+    correct = 0
+
+    all_best_actions = []
+    all_chosen_actions = []
 
     with torch.no_grad():
         for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
-            clips_batch = clips_batch.to(device)
-            no_df_dice_batch = no_df_dice_batch.to(device)
-            post_df_dice_batch = post_df_dice_batch.to(device)
+            clips_batch = clips_batch.to(device)                        # [B, T, C, H, W]
+            no_df_dice_batch = no_df_dice_batch.to(device)              # [B]
+            post_df_dice_batch = post_df_dice_batch.to(device)          # [B, n_e]
 
-            rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))
-         
-            chosen_actions = torch.argmax(rej_logits, dim=1)
-            
-            # Get best actions
-            all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
-            best_actions = torch.argmax(all_accs, dim=1)
-            # logging.info("Best Actions:", best_actions)
-            # logging.info("Chosen Actions:", chosen_actions)
-            
-            # Calculate metrics
+            # Predict deferral logits
+            rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))      # [B, n_e]
+
+            # Inference based on rule: defer or not
+            chosen_actions = infer_deferral_action(rej_logits)          # [B], 0 = no def, 1... = defer to frame j-1
+
+            # All possible accuracies: base + n_e frames
+            all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)  # [B, 1+n_e]
+
+            # Accuracy from chosen action
+            chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)   # [B]
+
+            # Best accuracy (oracle)
+            best_actions = torch.argmax(all_accs, dim=1)                                     # [B]
+            best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)      # [B]
+
+            # Compute metrics
             correct += (chosen_actions == best_actions).sum().item()
-            
-            # Calculate regret
-            chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
-            best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
             regret = best_accs - chosen_accs
             total_regret += regret.sum().item()
-            
-            total_samples += clips_batch.shape[0]
-    
+            total_samples += clips_batch.size(0)
+
+            # Store results
+            all_best_actions.append(best_actions.cpu())
+            all_chosen_actions.append(chosen_actions.cpu())
+
     selection_accuracy = correct / total_samples
     mean_regret = total_regret / total_samples
+    all_best_actions = torch.cat(all_best_actions)
+    all_chosen_actions = torch.cat(all_chosen_actions)
+
+    return selection_accuracy, mean_regret, all_best_actions, all_chosen_actions
+
+
+# def validate_one_epoch(model, loader, criterion, device,logging):
+#     model.eval()  # Set model to evaluation mode
+#     correct = 0
+#     total_regret = 0.0
+#     total_samples = 0
+
+#     with torch.no_grad():
+#         for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
+#             clips_batch = clips_batch.to(device)
+#             no_df_dice_batch = no_df_dice_batch.to(device)
+#             post_df_dice_batch = post_df_dice_batch.to(device)
+
+#             rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))
+         
+#             chosen_actions = torch.argmax(rej_logits, dim=1)
+            
+#             # Get best actions
+#             all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
+#             best_actions = torch.argmax(all_accs, dim=1)
+#             # logging.info("Best Actions:", best_actions)
+#             # logging.info("Chosen Actions:", chosen_actions)
+            
+#             # Calculate metrics
+#             correct += (chosen_actions == best_actions).sum().item()
+            
+#             # Calculate regret
+#             chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
+#             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
+#             regret = best_accs - chosen_accs
+#             total_regret += regret.sum().item()
+            
+#             total_samples += clips_batch.shape[0]
     
-    return selection_accuracy, mean_regret, best_actions, chosen_actions
+#     selection_accuracy = correct / total_samples
+#     mean_regret = total_regret / total_samples
+    
+#     return selection_accuracy, mean_regret, best_actions, chosen_actions
 
             
 
@@ -1182,7 +1308,7 @@ def main():
     model.stem[0] = new_conv
 
     # Update final fully connected layer to output 4 classes
-    model.fc = nn.Linear(model.fc.in_features, 5)
+    model.fc = nn.Linear(model.fc.in_features, 4)
 
     # Send to device
     model = model.to(device)
@@ -1203,8 +1329,8 @@ def main():
 
         train_losses.append(train_loss)
 
-        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.4f} Selection Accuracy: {selection_accuracy:.4f} Mean Regret: {mean_regret:.4f} Best Actions: {best_actions} Chosen Actions: {chosen_actions}")
-        print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.4f} Selection Accuracy: {selection_accuracy:.4f} Mean Regret: {mean_regret:.4f} Best Actions: {best_actions} Chosen Actions: {chosen_actions}")
+        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Selection Accuracy: {selection_accuracy:.4f} Mean Regret: {mean_regret:.4f} Best Actions: {best_actions} Chosen Actions: {chosen_actions}")
+        print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Selection Accuracy: {selection_accuracy:.4f} Mean Regret: {mean_regret:.4f} Best Actions: {best_actions} Chosen Actions: {chosen_actions}")
 
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")

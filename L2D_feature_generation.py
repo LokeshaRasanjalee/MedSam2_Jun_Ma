@@ -882,7 +882,6 @@ def main():
     
       # ----- Define Resize Transform for R(2+1)D -----
     r2plus1d_transform = T.Compose([
-        T.Resize((112, 112)),    # Downsample frames to 112x112
         T.ToTensor(),            # (H, W, C) -> (C, H, W)
     ])
     
@@ -892,6 +891,7 @@ def main():
 
 
     window_size = 8  # number of frames per clip
+    video_names = video_names[:1000]
 
 
     for n_video, video_name in enumerate(video_names):
@@ -900,8 +900,6 @@ def main():
         L_post_defer_list = []
         clips = []
         
-        # if video_name != 'seq4':
-        #     continue
         
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         logging.info(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
