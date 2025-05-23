@@ -8,6 +8,7 @@ import argparse
 import os
 from collections import defaultdict
 import datetime
+import subprocess
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -37,6 +38,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import confusion_matrix
 from collections import Counter
+from cnn_3d import Simple3DCNN
 
 
 # the PNG palette for DAVIS 2017 dataset
@@ -286,13 +288,14 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
         exp_rj = torch.exp(r_j.squeeze(1))            # [B]
         penalty = exp_diff + (n_e-1)*exp_rj                   # [B]
 
-        c_bar = 1-(alpha*(1-acc_post_def_batch[:, j])+beta)
+        # Cost calculation with clamping to prevent negative losses
+        cost = torch.clamp(alpha * (1 - acc_post_def_batch[:, j]) + beta, max=1.0)
+        c_bar = 1 - cost  # This will now always be >= 0
 
         loss_term2 += c_bar * penalty  # [B]
 
     # Combine both terms
     total_loss = loss_term1 + loss_term2              # [B]
-    
     
     print("=== DEBUG LOGS ===")
     print("Rejector logits:\n", rejector_logits[:3])
@@ -347,11 +350,15 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
 #     return loss
     
 
-def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
+def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device):
     rejector.train()
     total_loss = 0
     correct = 0
-    total = 0
+    total_samples = 0
+    total_regret = 0.0
+
+    all_best_actions = []
+    all_chosen_actions = []
 
     for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
         clips_batch = clips_batch.to(device)
@@ -365,15 +372,41 @@ def train_one_epoch(rejector, loader, criterion, optimizer,alpha, beta, device):
         loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    
         # Backward pass
-        
         loss.backward()
         optimizer.step()
         
         total_loss += loss.item()
+
+        # Calculate accuracy metrics
+        chosen_actions = infer_deferral_action(rej_logits)
+        
+        # All possible accuracies: base + n_e frames
+        all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
+
+        # Accuracy from chosen action
+        chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
+
+        # Best accuracy (oracle)
+        best_actions = torch.argmax(all_accs, dim=1)
+        best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
+
+        # Compute metrics
+        correct += (chosen_actions == best_actions).sum().item()
+        regret = best_accs - chosen_accs
+        total_regret += regret.sum().item()
+        total_samples += clips_batch.size(0)
+
+        # Store results
+        all_best_actions.append(best_actions.cpu())
+        all_chosen_actions.append(chosen_actions.cpu())
     
     avg_loss = total_loss / len(loader)
+    selection_accuracy = correct / total_samples
+    mean_regret = total_regret / total_samples
+    all_best_actions = torch.cat(all_best_actions)
+    all_chosen_actions = torch.cat(all_chosen_actions)
 
-    return avg_loss
+    return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions
 
 def infer_deferral_action(rejector_logits):
     """
@@ -408,6 +441,7 @@ def validate_one_epoch(model, loader, criterion, device, logging=None):
     total_samples = 0
     total_regret = 0.0
     correct = 0
+    total_val_loss = 0.0
 
     all_best_actions = []
     all_chosen_actions = []
@@ -420,6 +454,10 @@ def validate_one_epoch(model, loader, criterion, device, logging=None):
 
             # Predict deferral logits
             rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))      # [B, n_e]
+
+            # Calculate validation loss using deferral_loss
+            val_loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha=1.0, beta=1.0)
+            total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
             chosen_actions = infer_deferral_action(rej_logits)          # [B], 0 = no def, 1... = defer to frame j-1
@@ -446,10 +484,11 @@ def validate_one_epoch(model, loader, criterion, device, logging=None):
 
     selection_accuracy = correct / total_samples
     mean_regret = total_regret / total_samples
+    avg_val_loss = total_val_loss / len(loader)
     all_best_actions = torch.cat(all_best_actions)
     all_chosen_actions = torch.cat(all_chosen_actions)
 
-    return selection_accuracy, mean_regret, all_best_actions, all_chosen_actions
+    return selection_accuracy, mean_regret, avg_val_loss, all_best_actions, all_chosen_actions
 
 
 # def validate_one_epoch(model, loader, criterion, device,logging):
@@ -1091,6 +1130,17 @@ def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val
     plt.savefig(plot_path)
     plt.close()  # Close the figure to free memory
 
+def get_last_commit_hash():
+    """Get the last commit hash from git."""
+    try:
+        result = subprocess.run(['git', 'rev-parse', 'HEAD'], 
+                              capture_output=True, 
+                              text=True, 
+                              check=True)
+        return result.stdout.strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return "Unknown (not a git repository or git command failed)"
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -1235,6 +1285,11 @@ def main():
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
+    # Log the git commit hash
+    commit_hash = get_last_commit_hash()
+    logging.info(f"Git commit hash: {commit_hash}")
+    print(f"Git commit hash: {commit_hash}")
+
     # Print all arguments
     print("\nArguments:")
     logging.info("\nArguments:")
@@ -1242,6 +1297,8 @@ def main():
         print(f"{arg}: {getattr(args, arg)}")
         logging.info(f"{arg}: {getattr(args, arg)}")
     print("\n")
+    
+    
 
     # if we use per-object PNG files, they could possibly overlap in inputs and outputs
     hydra_overrides_extra = [
@@ -1282,35 +1339,8 @@ def main():
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Load pretrained R(2+1)D model
-    model = models.r2plus1d_18(pretrained=True)
-
-    # Update input layer to accept 4 channels (instead of 3)
-    # Original shape: (out_channels=64, in_channels=3, kernel_t=3, kernel_h=7, kernel_w=7)
-    original_conv = model.stem[0]
-    new_conv = nn.Conv3d(
-        in_channels=4,
-        out_channels=original_conv.out_channels,
-        kernel_size=original_conv.kernel_size,
-        stride=original_conv.stride,
-        padding=original_conv.padding,
-        bias=(original_conv.bias is not None)
-    )
-
-    # Copy pretrained weights for the first 3 channels
-    with torch.no_grad():
-        new_conv.weight[:, :3, :, :, :] = original_conv.weight
-        new_conv.weight[:, 3:, :, :, :] = original_conv.weight[:, :1, :, :, :]  # duplicate 1st channel
-        if original_conv.bias is not None:
-            new_conv.bias.copy_(original_conv.bias)
-
-    # Replace the conv layer
-    model.stem[0] = new_conv
-
-    # Update final fully connected layer to output 4 classes
-    model.fc = nn.Linear(model.fc.in_features, 4)
-
-    # Send to device
+    # Initialize Simple3DCNN model
+    model = Simple3DCNN(in_channels=4, num_classes=4)
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args, batch_size=args.batch_size)
@@ -1324,13 +1354,16 @@ def main():
     
     train_losses, train_accs, val_losses, val_accs = [], [], [], []
     for epoch in range(args.num_epochs):
-        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
-        selection_accuracy, mean_regret, best_actions, chosen_actions = validate_one_epoch(model, val_loader, criterion, device, logging)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
+        selection_accuracy, mean_regret, val_loss, best_actions, chosen_actions = validate_one_epoch(model, val_loader, criterion, device, logging)
 
         train_losses.append(train_loss)
+        val_losses.append(val_loss)
+        train_accs.append(train_acc)
+        val_accs.append(selection_accuracy)
 
-        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Selection Accuracy: {selection_accuracy:.4f} Mean Regret: {mean_regret:.4f} Best Actions: {best_actions} Chosen Actions: {chosen_actions}")
-        print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Selection Accuracy: {selection_accuracy:.4f} Mean Regret: {mean_regret:.4f} Best Actions: {best_actions} Chosen Actions: {chosen_actions}")
+        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {selection_accuracy:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+        print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {selection_accuracy:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
 
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
@@ -1340,6 +1373,9 @@ def main():
     torch.save(model.state_dict(), model_path)
     print(f"Model saved to {model_path}")
     logging.info(f"Model saved to {model_path}")
+
+    # Plot and save loss and accuracy curves
+    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
 
 
 if __name__ == "__main__":
