@@ -230,47 +230,160 @@ def get_mask_img_list_with_obj(args, frame_names, video_name):
 
     return mask_img_list_with_obj
 
-def compute_focal_loss(pred_mask, true_mask, alpha=0.25, gamma=2.0, eps=1e-6):
-    if isinstance(pred_mask, np.ndarray):
-        pred_mask = torch.from_numpy(pred_mask)
-    if isinstance(true_mask, np.ndarray):
-        true_mask = torch.from_numpy(true_mask)
 
-    pred_mask = pred_mask.float()
-    true_mask = true_mask.float()
+# def compute_focal_loss(pred_mask, true_mask, alpha=0.25, gamma=2.0, eps=1e-6):
+#     if isinstance(pred_mask, np.ndarray):
+#         pred_mask = torch.from_numpy(pred_mask)
+#     if isinstance(true_mask, np.ndarray):
+#         true_mask = torch.from_numpy(true_mask)
 
-    if true_mask.ndim == 2:
-        true_mask = true_mask.unsqueeze(0)  # match shape: [1, H, W]
+#     pred_mask = pred_mask.float()
+#     true_mask = true_mask.float()
 
-    prob = torch.sigmoid(pred_mask)
-    prob = prob.clamp(min=eps, max=1. - eps)
+#     if true_mask.ndim == 2:
+#         true_mask = true_mask.unsqueeze(0)  # match shape: [1, H, W]
 
-    ce_loss = F.binary_cross_entropy_with_logits(pred_mask, true_mask, reduction='none')
-    p_t = prob * true_mask + (1 - prob) * (1 - true_mask)
-    alpha_t = alpha * true_mask + (1 - alpha) * (1 - true_mask)
-    focal_weight = (1 - p_t) ** gamma
+#     prob = torch.sigmoid(pred_mask)
+#     prob = prob.clamp(min=eps, max=1. - eps)
 
-    loss = alpha_t * focal_weight * ce_loss
-    return loss.mean()
+#     ce_loss = F.binary_cross_entropy_with_logits(pred_mask, true_mask, reduction='none')
+#     p_t = prob * true_mask + (1 - prob) * (1 - true_mask)
+#     alpha_t = alpha * true_mask + (1 - alpha) * (1 - true_mask)
+#     focal_weight = (1 - p_t) ** gamma
+
+#     loss = alpha_t * focal_weight * ce_loss
+#     return loss.mean()
 
 
-def dice_score(pred_mask, true_mask, eps=1e-5):
-    #print ("dice_score")
-    pred = pred_mask.flatten()
-    true = true_mask.flatten()
-    intersection = (pred * true).sum()
-    return (2. * intersection) / (pred.sum() + true.sum() + eps)
+# def dice_score(pred_mask, true_mask, eps=1e-5):
+#     #print ("dice_score")
+#     pred = pred_mask.flatten()
+#     true = true_mask.flatten()
+#     intersection = (pred * true).sum()
+#     return (2. * intersection) / (pred.sum() + true.sum() + eps)
+
+def dice_loss_calc(inputs, targets, num_objects, loss_on_multimask=False):
+    """
+    Compute the DICE loss, similar to generalized IOU for masks
+    Args:
+        inputs: A float tensor of arbitrary shape.
+                The predictions for each example.
+        targets: A float tensor with the same shape as inputs. Stores the binary
+                 classification label for each element in inputs
+                (0 for the negative class and 1 for the positive class).
+        num_objects: Number of objects in the batch
+        loss_on_multimask: True if multimask prediction is enabled
+    Returns:
+        Dice loss tensor
+    """
+    # Convert inputs to PyTorch tensor if it's a NumPy array
+    if isinstance(inputs, np.ndarray):
+        inputs = torch.from_numpy(inputs).float()
+    if isinstance(targets, np.ndarray):
+        targets = torch.from_numpy(targets).float()
+        
+    if inputs.shape != targets.shape:
+        # If targets is 1D and inputs is 2D, expand targets
+        if targets.dim() == 1 and inputs.dim() == 2:
+            targets = targets.unsqueeze(0)
+        # If targets is 2D and inputs is 3D, expand targets
+        elif targets.dim() == 2 and inputs.dim() == 3:
+            targets = targets.unsqueeze(0)
+        # If targets is 3D and inputs is 4D, expand targets
+        elif targets.dim() == 3 and inputs.dim() == 4:
+            targets = targets.unsqueeze(0)
+        
+    #inputs = inputs.sigmoid() # Remove sigmoid for dice loss since it's already applied in the model
+    if loss_on_multimask:
+        # inputs and targets are [N, M, H, W] where M corresponds to multiple predicted masks
+        assert inputs.dim() == 4 and targets.dim() == 4
+        # flatten spatial dimension while keeping multimask channel dimension
+        inputs = inputs.flatten(2)
+        targets = targets.flatten(2)
+        numerator = 2 * (inputs * targets).sum(-1)
+    else:
+        inputs = inputs.flatten(1)
+        targets = targets.flatten(1)
+        numerator = 2 * (inputs * targets).sum(1)
+    denominator = inputs.sum(-1) + targets.sum(-1)
+    loss = 1 - (numerator + 1) / (denominator + 1)
+    if loss_on_multimask:
+        return loss / num_objects
+    return loss.sum() / num_objects
+
+
+def sigmoid_focal_loss_calc(
+    inputs,
+    targets,
+    num_objects,
+    alpha: float = 0.25,
+    gamma: float = 2,
+    loss_on_multimask=False,
+):
+    """
+    Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
+    Args:
+        inputs: A float tensor of arbitrary shape.
+                The predictions for each example.
+        targets: A float tensor with the same shape as inputs. Stores the binary
+                 classification label for each element in inputs
+                (0 for the negative class and 1 for the positive class).
+        num_objects: Number of objects in the batch
+        alpha: (optional) Weighting factor in range (0,1) to balance
+                positive vs negative examples. Default = -1 (no weighting).
+        gamma: Exponent of the modulating factor (1 - p_t) to
+               balance easy vs hard examples.
+        loss_on_multimask: True if multimask prediction is enabled
+    Returns:
+        focal loss tensor
+    """
+    # Convert inputs to PyTorch tensor if it's a NumPy array
+    if isinstance(inputs, np.ndarray):
+        inputs = torch.from_numpy(inputs).float()
+    if isinstance(targets, np.ndarray):
+        targets = torch.from_numpy(targets).float()
+    
+    # Ensure inputs and targets have the same shape
+    if inputs.shape != targets.shape:
+        # If targets is 2D and inputs is 3D, expand targets
+        if targets.dim() == 2 and inputs.dim() == 3:
+            targets = targets.unsqueeze(0)
+        # If targets is 3D and inputs is 4D, expand targets
+        elif targets.dim() == 3 and inputs.dim() == 4:
+            targets = targets.unsqueeze(0)
+        # If targets has extra dimension, squeeze it
+        elif targets.dim() > inputs.dim():
+            targets = targets.squeeze(0)
+            
+    # prob = inputs.sigmoid()
+    # ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
+    # Use inputs directly since they're already between 0 and 1
+ 
+    prob = inputs
+    ce_loss = F.binary_cross_entropy(prob, targets, reduction="none")
+    p_t = prob * targets + (1 - prob) * (1 - targets)
+    loss = ce_loss * ((1 - p_t) ** gamma)
+
+    if alpha >= 0:
+        alpha_t = alpha * targets + (1 - alpha) * (1 - targets)
+        loss = alpha_t * loss
+
+    if loss_on_multimask:
+        # loss is [N, M, H, W] where M corresponds to multiple predicted masks
+        assert loss.dim() == 4
+        return loss.flatten(2).mean(-1) / num_objects  # average over spatial dims
+    return loss.mean(1).sum() / num_objects
 
 
 def compute_frame_features(curr_mask, prev_mask, logit, confidence_score):
     #print ("compute_frame_features")
-    dice = dice_score(curr_mask, prev_mask)
+    dice_loss = dice_loss_calc(curr_mask, prev_mask, 1, loss_on_multimask=False)
     conf_mean = logit.mean().item()
     conf_std = logit.std().item()
     area = curr_mask.sum().item()
     #edge_sharpness = compute_edge_sharpness(curr_mask)
     
-    return [dice, conf_mean, conf_std, area, confidence_score]
+    return [dice_loss, conf_mean, conf_std, area, confidence_score]
 
 def compute_iou(mask1, mask2, eps=1e-5):
     #print ("compute_iou")
@@ -348,8 +461,9 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     gt_list: list of ground truth masks (numpy arrays)
     frame_indices_for_clip: list of frame indices to calculate IoU # PASS THE LIST OF INDICES
     """
-    total_dice = 0.0
+    total_dice_loss = 0.0
     total_sam_loss = 0.0
+    total_focal_loss = 0.0
     # valid_frames = 0
     
     for idx in frame_indices_for_clip:
@@ -360,11 +474,11 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
         gt_mask = gt_list[idx][0]            # Your gt_list stores (1, H, W) numpy arrays
 
         
-        dice = dice_score(pred_mask, gt_mask)
-        focal_loss = compute_focal_loss(pred_mask, gt_mask)
-        total_dice += dice
-        
-        dice_loss = 1-dice
+        dice_loss = dice_loss_calc(pred_mask, gt_mask, 1, loss_on_multimask=False)  # inputs, targets, num_objects, loss_on_multimask=False
+        focal_loss = sigmoid_focal_loss_calc(pred_mask, gt_mask, 1, loss_on_multimask=False)
+        total_dice_loss += dice_loss
+        total_focal_loss += focal_loss
+        #dice_loss = 1-dice
         #focal_loss = 1-focal_loss
         sam_loss = dice_loss + 20*focal_loss
         total_sam_loss += sam_loss
@@ -373,10 +487,11 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
 
     # assert valid_frames != 0
 
-    avg_dice = total_dice / len(frame_indices_for_clip)
+    avg_dice_loss = total_dice_loss / len(frame_indices_for_clip)
     avg_sam_loss = total_sam_loss / len(frame_indices_for_clip)
+    avg_focal_loss = total_focal_loss / len(frame_indices_for_clip)
     #downstream_loss = 1.0 - avg_iou
-    return avg_dice, avg_sam_loss
+    return avg_dice_loss, avg_sam_loss, avg_focal_loss  
 
 
 def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
@@ -917,7 +1032,6 @@ def main():
     
       # ----- Define Resize Transform for R(2+1)D -----
     timesformer_transform = T.Compose([
-        T.Resize((224, 224)),          # Resize frames to 224x224
         T.ToTensor()            # Convert HWC -> CHW, float in [0, 1]
         
     ])
@@ -935,6 +1049,7 @@ def main():
        
         L_post_defer_list = []
         L_post_defer_sam_loss_list = []
+        L_post_defer_focal_loss_list = []
         clips = []
         
         # if video_name != 'seq4':
@@ -1019,7 +1134,7 @@ def main():
         #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
 
         # Uncorrected downstream loss
-        L_no_defer, L_no_defer_sam_loss = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        L_no_defer, L_no_defer_sam_loss, L_no_defer_focal_loss = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
         clip_frames = []
         for idx in frame_indices_for_clip:
@@ -1090,12 +1205,12 @@ def main():
                 binary_masks_cor.append(binary_mask)
 
             # Corrected downstream loss
-            L_post_defer, L_post_defer_sam_loss = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
+            L_post_defer, L_post_defer_sam_loss, L_post_defer_focal_loss = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
             
             
             L_post_defer_list.append(L_post_defer)
             L_post_defer_sam_loss_list.append(L_post_defer_sam_loss)
-            
+            L_post_defer_focal_loss_list.append(L_post_defer_focal_loss)
             
 
              
@@ -1124,7 +1239,9 @@ def main():
         data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
-            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss}, f)
+            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss, 'L_no_defer_focal_loss':L_no_defer_focal_loss, 'L_post_defer_focal_loss_list':L_post_defer_focal_loss_list}, f)
+            
+        #break
    
                 
     
