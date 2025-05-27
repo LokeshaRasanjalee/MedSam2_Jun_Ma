@@ -1340,7 +1340,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Initialize Simple3DCNN model
-    model = Simple3DCNN(in_channels=4, num_classes=4)
+    model = Simple3DCNN(in_channels=1, num_classes=4)
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args, batch_size=args.batch_size)
