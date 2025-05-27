@@ -117,8 +117,8 @@ class ClipDataset(Dataset):
         
         #combined_clip = torch.cat([video_tensor, masks], dim=1)
         
-        L_no_defer_sam_loss = torch.tensor(info['L_no_defer_sam_loss'], dtype=torch.float32)
-        L_post_defer_sam_loss_list = torch.tensor(info['L_post_defer_sam_loss_list'], dtype=torch.float32)
+        L_no_defer_sam_loss = info['L_no_defer_sam_loss'].clone().detach().float()
+        L_post_defer_sam_loss_list = torch.as_tensor(info['L_post_defer_sam_loss_list'], dtype=torch.float32).clone().detach()
 
         # Min-max normalization: (x - min) / (max - min)
         denom = self.loss_max_sam_loss

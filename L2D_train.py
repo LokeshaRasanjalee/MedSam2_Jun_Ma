@@ -1346,6 +1346,7 @@ def main():
 
     # Initialize Simple3DCNN model with proper weight initialization
     model = Simple3DCNN(in_channels=5, num_classes=4)
+    model.count_parameters()
     # model.apply(init_weights)  # Apply weight initialization
     model = model.to(device)
 
