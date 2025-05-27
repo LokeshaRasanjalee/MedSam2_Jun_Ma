@@ -330,7 +330,7 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         optimizer.zero_grad()
         
         input= clips_batch.permute(0, 2, 1, 3, 4)
-        rej_logits = rejector(input.squeeze(1))
+        rej_logits = rejector(input)
         
         loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    
@@ -426,7 +426,7 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
 
             # Predict deferral logits
             input= clips_batch.permute(0, 2, 1, 3, 4)
-            rej_logits = model(input.squeeze(1))
+            rej_logits = model(input)
 
             # Calculate validation loss using deferral_loss
             val_loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
@@ -1345,7 +1345,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Initialize Simple3DCNN model with proper weight initialization
-    model = Simple3DCNN(in_channels=5, num_classes=4)
+    model = Simple3DCNN(in_channels=1, num_classes=4)
     model.count_parameters()
     # model.apply(init_weights)  # Apply weight initialization
     model = model.to(device)
