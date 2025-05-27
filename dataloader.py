@@ -90,8 +90,8 @@ class ClipDataset(Dataset):
                 
                 del data
                 gc.collect()
-                if len(self.video_metadata) >= 64:
-                    break
+                # if len(self.video_metadata) >= 64:
+                #     break
         
         print("Loaded metadata only.")
         print(f"Loss min: {self.loss_min_sam_loss}, Loss max: {self.loss_max_sam_loss}")
