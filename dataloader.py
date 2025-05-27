@@ -32,10 +32,10 @@ class ClipDataset(Dataset):
         
         self.video_metadata = []  # list of (video_path, frame_names, no_df_dice, post_df_dice, video_name)
         
-        self.loss_min_focal = 1
-        self.loss_max_focal = 0
-        self.loss_min_dice = 1
-        self.loss_max_dice = 0
+        self.loss_min_sam_loss = 1
+        self.loss_max_sam_loss = 0
+        # self.loss_min_dice = 1
+        # self.loss_max_dice = 0
 
         for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
             with open(file, 'rb') as f:
@@ -67,20 +67,20 @@ class ClipDataset(Dataset):
                     'masks': data['Masks']
                 })
                 # print(f"video: {video_name}, {data['L_no_defer']}, {data['L_post_defer_list']}")
-                all_losses_focal = [data['L_no_defer_focal_loss']] + data['L_post_defer_focal_loss_list']
-                all_losses_dice = [data['L_no_defer']] + data['L_post_defer_list']
-                all_losses_focal = np.array(all_losses_focal)
-                all_losses_dice = np.array(all_losses_dice)
+                all_losses_sam_loss = [data['L_no_defer_sam_loss']] + data['L_post_defer_sam_loss_list']
+                #all_losses_dice = [data['L_no_defer']] + data['L_post_defer_list']
+                all_losses_sam_loss = np.array(all_losses_sam_loss)
+                #all_losses_dice = np.array(all_losses_dice)
                 #all_losses = torch.cat(all_losses, dim=0)
-                if all_losses_focal.min() < self.loss_min_focal:
-                    self.loss_min_focal = all_losses_focal.min()
-                if all_losses_focal.max() > self.loss_max_focal:
-                    self.loss_max_focal = all_losses_focal.max()
+                if all_losses_sam_loss.min() < self.loss_min_sam_loss:
+                    self.loss_min_sam_loss = all_losses_sam_loss.min()
+                if all_losses_sam_loss.max() > self.loss_max_sam_loss:
+                    self.loss_max_sam_loss = all_losses_sam_loss.max()
                     # print(f"video: {video_name}, Loss max: {self.loss_max}")
-                if all_losses_dice.min() < self.loss_min_dice:
-                    self.loss_min_dice = all_losses_dice.min()
-                if all_losses_dice.max() > self.loss_max_dice:
-                    self.loss_max_dice = all_losses_dice.max()
+                # if all_losses_dice.min() < self.loss_min_dice:
+                #     self.loss_min_dice = all_losses_dice.min()
+                # if all_losses_dice.max() > self.loss_max_dice:
+                #     self.loss_max_dice = all_losses_dice.max()
                     
                 # if all_losses.max() > 1:
                 #     print(f"video: {video_name}, Loss greater than 1: {all_losses.max()}")
@@ -90,12 +90,12 @@ class ClipDataset(Dataset):
                 
                 del data
                 gc.collect()
-                # if len(self.video_metadata) >= 8:
-                #     break
+                if len(self.video_metadata) >= 64:
+                    break
         
         print("Loaded metadata only.")
-        print(f"Loss min: {self.loss_min_focal}, Loss max: {self.loss_max_focal}")
-        print(f"Loss min: {self.loss_min_dice}, Loss max: {self.loss_max_dice}")
+        print(f"Loss min: {self.loss_min_sam_loss}, Loss max: {self.loss_max_sam_loss}")
+        # print(f"Loss min: {self.loss_min_dice}, Loss max: {self.loss_max_dice}")
 
     def __len__(self):
         return len(self.video_metadata)
@@ -121,7 +121,7 @@ class ClipDataset(Dataset):
         L_post_defer_sam_loss_list = torch.tensor(info['L_post_defer_sam_loss_list'], dtype=torch.float32)
 
         # Min-max normalization: (x - min) / (max - min)
-        denom = 20*self.loss_max_focal+self.loss_max_dice
+        denom = self.loss_max_sam_loss
         no_df_sam_loss_norm = (L_no_defer_sam_loss) / denom
         post_df_sam_loss_norm = (L_post_defer_sam_loss_list) / denom
         

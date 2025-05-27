@@ -292,7 +292,8 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
         penalty = exp_diff + (n_e-1)*exp_rj                   # [B]
 
         # Cost calculation with clamping to prevent negative losses
-        cost = torch.clamp(alpha * (1 - acc_post_def_batch[:, j]) + beta, max=1.0)
+        # cost = torch.clamp(alpha * (1 - acc_post_def_batch[:, j]) + beta, max=1.0)
+        cost = alpha * (1 - acc_post_def_batch[:, j]) + beta
         c_bar = 1 - cost  # This will now always be >= 0
 
         loss_term2 += c_bar * penalty  # [B]
@@ -309,48 +310,6 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     # print("total_loss:\n", total_loss[:3])
     
     return torch.mean(total_loss)
-
-# # Second-stage loss
-# def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, beta):
-#     """
-#     predictor_logits: [batch, n_classes]
-#     rejector_logits: [batch, n_experts]
-#     """
-    
-#     # Convert list of [B] tensors to a [B, n_frames] tensor
-#     #acc_post_def_batch = torch.stack(acc_post_def_batch, dim=1)  # [B, n_frames]
-#     B, n_frames = acc_post_def_batch.shape
-
-#     assert rejector_logits.shape[1] == 1 + n_frames, \
-#         f"Rejector logits must have shape [B, 1 + n_frames]; got {rejector_logits.shape}"
-        
-#     log_probs = F.log_softmax(rejector_logits, dim=1)
-
-
-#     # Base model cost
-#     c0 = 1 - acc_no_def_batch  # [B]
-
-#     # Expert/frame costs
-#     cf = (1 - acc_post_def_batch) + alpha  # [B, n_frames]
-
-#     # ℓ(r, 0): loss for predicting
-#     loss_predict = c0 * (-log_probs[:, 0])  # [B]
-
-#     # ℓ(r, f): losses for deferring to frames
-#     loss_defer = (cf * (-log_probs[:, 1:])).sum(dim=1)  # [B]
-
-#     # Total loss
-#     loss = (loss_predict + loss_defer).mean()
-
-#     # Debug prints
-#     print("c0 (1 - acc_no_def):", c0[:5])
-#     print("cf (1 - acc_post_def + alpha):", cf[:5])
-#     print("Log probs (first 5):", log_probs[:5])
-#     print("Loss_predict mean:", loss_predict.mean().item())
-#     print("Loss_defer mean:", loss_defer.mean().item())
-#     print("Total loss:", loss.item())
-    
-#     return loss
     
 
 def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device):
@@ -370,13 +329,23 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         
         optimizer.zero_grad()
         
-        rej_logits = rejector(clips_batch.permute(0, 2, 1, 3, 4))
+        input= clips_batch.permute(0, 2, 1, 3, 4)
+        rej_logits = rejector(input.squeeze(1))
         
         loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    
         # Backward pass
         loss.backward()
+        
+        for name, param in rejector.named_parameters():
+            if param.grad is not None:
+                print(f"{name} has gradient with mean  {param.grad.abs().mean()}")
+            else:
+                print(f"{name} has no gradient")
+        
         optimizer.step()
+        
+        
         
         total_loss += loss.item()
 
@@ -439,7 +408,7 @@ def infer_deferral_action(rejector_logits):
     return actions
 
 
-def validate_one_epoch(model, loader, criterion, device, logging=None):
+def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=None):
     model.eval()
     total_samples = 0
     total_regret = 0.0
@@ -456,10 +425,11 @@ def validate_one_epoch(model, loader, criterion, device, logging=None):
             post_df_dice_batch = post_df_dice_batch.to(device)          # [B, n_e]
 
             # Predict deferral logits
-            rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))      # [B, n_e]
+            input= clips_batch.permute(0, 2, 1, 3, 4)
+            rej_logits = model(input.squeeze(1))
 
             # Calculate validation loss using deferral_loss
-            val_loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha=1.0, beta=1.0)
+            val_loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
@@ -1375,7 +1345,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Initialize Simple3DCNN model with proper weight initialization
-    model = Simple3DCNN(in_channels=1, num_classes=4)
+    model = Simple3DCNN(in_channels=5, num_classes=4)
     # model.apply(init_weights)  # Apply weight initialization
     model = model.to(device)
 
@@ -1391,7 +1361,7 @@ def main():
     train_losses, train_accs, val_losses, val_accs = [], [], [], []
     for epoch in range(args.num_epochs):
         train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
-        selection_accuracy, mean_regret, val_loss, best_actions, chosen_actions = validate_one_epoch(model, val_loader, criterion, device, logging)
+        selection_accuracy, mean_regret, val_loss, best_actions, chosen_actions = validate_one_epoch(model, val_loader, criterion,args.alpha, args.beta, device, logging)
 
         train_losses.append(train_loss)
         val_losses.append(val_loss)
