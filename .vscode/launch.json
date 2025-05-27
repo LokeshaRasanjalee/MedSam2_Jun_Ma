@@ -42,7 +42,7 @@
             "request": "launch",
             "program": "L2D_feature_generation.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./sun_dataset/dataset/Images/ --input_mask_dir ./sun_dataset/dataset/Masks/ --post_hoc_model_save_dir ./l2d_models -o ./sun_dataset/out/ --experiment_name 'suntest_run'"
+            "args": "--base_video_dir ./sun_dataset/dataset_len-5_frameinterval-5_interclipstride-3_train/Images/ --input_mask_dir ./sun_dataset/dataset_len-5_frameinterval-5_interclipstride-3_train/Masks/ --post_hoc_model_save_dir ./l2d_models -o ./sun_dataset/out/ --experiment_name 'suntest_run'"
         },
 
         {
