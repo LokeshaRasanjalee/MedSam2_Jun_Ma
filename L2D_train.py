@@ -1355,7 +1355,7 @@ def main():
     # For multi-class classification, we use CrossEntropyLoss instead of BCEWithLogitsLoss
     criterion = nn.CrossEntropyLoss()
     
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0001)
     
     #--------------------------Train Model----------------------------------
     
