@@ -337,11 +337,11 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         # Backward pass
         loss.backward()
         
-        for name, param in rejector.named_parameters():
-            if param.grad is not None:
-                print(f"{name} has gradient with mean  {param.grad.abs().mean()}")
-            else:
-                print(f"{name} has no gradient")
+        # for name, param in rejector.named_parameters():
+        #     if param.grad is not None:
+        #         print(f"{name} has gradient with mean  {param.grad.abs().mean()}")
+        #     else:
+        #         print(f"{name} has no gradient")
         
         optimizer.step()
         
