@@ -9,6 +9,7 @@ import os
 from collections import defaultdict
 import datetime
 import subprocess
+import random
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -271,6 +272,8 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
         scalar loss
     """
     B, n_e = rejector_logits.shape
+    #rejector_logits = torch.clamp(rejector_logits, min=-10, max=10) # extra addition my me
+
 
     # First term: alpha * acc_no_def_batch * sum_i e^{-r_i}
     exp_neg_r = torch.exp(-rejector_logits)           # [B, n_e]
@@ -297,13 +300,13 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     # Combine both terms
     total_loss = loss_term1 + loss_term2              # [B]
     
-    print("=== DEBUG LOGS ===")
-    print("Rejector logits:\n", rejector_logits[:3])
-    print("acc_no_def_batch:\n", acc_no_def_batch[:3])
-    print("acc_post_def_batch:\n", acc_post_def_batch[:3])
-    print("loss_term1:\n", loss_term1[:3])
-    print("loss_term2:\n", loss_term2[:3])
-    print("total_loss:\n", total_loss[:3])
+    # print("=== DEBUG LOGS ===")
+    # print("Rejector logits:\n", rejector_logits[:3])
+    # print("acc_no_def_batch:\n", acc_no_def_batch[:3])
+    # print("acc_post_def_batch:\n", acc_post_def_batch[:3])
+    # print("loss_term1:\n", loss_term1[:3])
+    # print("loss_term2:\n", loss_term2[:3])
+    # print("total_loss:\n", total_loss[:3])
     
     return torch.mean(total_loss)
 
@@ -1141,6 +1144,29 @@ def get_last_commit_hash():
     except (subprocess.SubprocessError, FileNotFoundError):
         return "Unknown (not a git repository or git command failed)"
 
+def set_seed(seed=42):
+    """
+    Set random seed for reproducibility.
+    """
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    random.seed(seed)
+
+def init_weights(m):
+    """
+    Initialize weights for the model using Kaiming initialization.
+    """
+    if isinstance(m, nn.Conv3d) or isinstance(m, nn.Linear):
+        nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+        if m.bias is not None:
+            nn.init.constant_(m.bias, 0)
+    elif isinstance(m, nn.BatchNorm3d):
+        nn.init.constant_(m.weight, 1)
+        nn.init.constant_(m.bias, 0)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -1269,8 +1295,17 @@ def main():
         default=0.0,
         help="Beta parameter for deferral loss (default: 0.0)",
     )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for reproducibility (default: 42)",
+    )
     args = parser.parse_args()
 
+    # Set random seed for reproducibility
+    # set_seed(args.seed)
+    
     # Add timestamp to the output directory
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     args.output_mask_dir = os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}")
@@ -1339,8 +1374,9 @@ def main():
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Initialize Simple3DCNN model
+    # Initialize Simple3DCNN model with proper weight initialization
     model = Simple3DCNN(in_channels=1, num_classes=4)
+    # model.apply(init_weights)  # Apply weight initialization
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args, batch_size=args.batch_size)
@@ -1363,6 +1399,13 @@ def main():
         val_accs.append(selection_accuracy)
 
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {selection_accuracy:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+        # Log training best action and chosen action for 10 samples
+        logging.info(f"Training Best Actions: {train_best_actions[:10]}")
+        logging.info(f"Training Chosen Actions: {train_chosen_actions[:10]}")
+
+        # Log validation best action and chosen action for 10 samples
+        logging.info(f"Validation Best Actions: {best_actions[:10]}")
+        logging.info(f"Validation Chosen Actions: {chosen_actions[:10]}")
         print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {selection_accuracy:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
 
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
