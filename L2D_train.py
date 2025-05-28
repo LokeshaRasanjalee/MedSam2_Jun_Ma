@@ -310,6 +310,50 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     print("total_loss:\n", total_loss[:3])
     
     return torch.mean(total_loss)
+
+def deferral_mae_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0):
+    """
+    MAE-style deferral loss adapted from Mao et al. (2023), L_mae in predictor-rejector setting.
+
+    Args:
+        acc_no_def_batch: [B] - accuracy with no deferral (1 if correct)
+        rejector_logits:  [B, n_e] - logits from rejector model (rejection scores)
+        acc_post_def_batch: [B, n_e] - accuracy if deferring to frame j
+        alpha, beta: weights to construct the cost for each expert
+
+    Returns:
+        scalar loss
+    """
+    B, n_e = rejector_logits.shape
+
+    # Compute exp(-r_i) and denominator (same for both terms)
+    exp_neg_r = torch.exp(-rejector_logits)               # [B, n_e]
+    denom = 1 + torch.sum(exp_neg_r, dim=1, keepdim=True)  # [B, 1]
+
+    # ---- Term 1: model’s own confidence loss ----
+    model_loss = 1 - (1 / denom).squeeze(1)                # [B]
+    loss_term1 = acc_no_def_batch * model_loss            # [B]
+
+    # ---- Term 2: deferral cost penalty ----
+    # Compute normalized cost (1 - (α(1 - acc_post_def) + β))
+    cost = alpha * (1 - acc_post_def_batch) + beta        # [B, n_e]
+    c_bar = 1 - cost                                       # [B, n_e]
+
+    # Compute each deferral term
+    expert_term = 1 - (exp_neg_r / denom)                 # [B, n_e]
+    loss_term2 = torch.sum(c_bar * expert_term, dim=1)    # [B]
+
+    # Combine terms
+    total_loss = loss_term1 + loss_term2                  # [B]
+    
+    # Optional debug logging
+    print("Rejector logits:\n", rejector_logits[:3])
+    print("Model term:\n", loss_term1[:3])
+    print("Expert term:\n", loss_term2[:3])
+    print("Total loss:\n", total_loss[:3])
+
+    return torch.mean(total_loss)
+
     
 
 def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device):
@@ -332,7 +376,7 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(input.squeeze(1))
         
-        loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
+        loss = deferral_mae_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    
         # Backward pass
         loss.backward()
@@ -429,7 +473,7 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
             rej_logits = model(input.squeeze(1))
 
             # Calculate validation loss using deferral_loss
-            val_loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
+            val_loss = deferral_mae_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
