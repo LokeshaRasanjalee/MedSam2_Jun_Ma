@@ -302,12 +302,12 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     total_loss = loss_term1 + loss_term2              # [B]
     
     # print("=== DEBUG LOGS ===")
-    # print("Rejector logits:\n", rejector_logits[:3])
-    # print("acc_no_def_batch:\n", acc_no_def_batch[:3])
-    # print("acc_post_def_batch:\n", acc_post_def_batch[:3])
-    # print("loss_term1:\n", loss_term1[:3])
-    # print("loss_term2:\n", loss_term2[:3])
-    # print("total_loss:\n", total_loss[:3])
+    print("Rejector logits:\n", rejector_logits[:3])
+    print("acc_no_def_batch:\n", acc_no_def_batch[:3])
+    print("acc_post_def_batch:\n", acc_post_def_batch[:3])
+    print("loss_term1:\n", loss_term1[:3])
+    print("loss_term2:\n", loss_term2[:3])
+    print("total_loss:\n", total_loss[:3])
     
     return torch.mean(total_loss)
     
@@ -1114,6 +1114,17 @@ def get_last_commit_hash():
     except (subprocess.SubprocessError, FileNotFoundError):
         return "Unknown (not a git repository or git command failed)"
 
+def get_current_branch():
+    """Get the current git branch name."""
+    try:
+        result = subprocess.run(['git', 'branch', '--show-current'], 
+                              capture_output=True, 
+                              text=True, 
+                              check=True)
+        return result.stdout.strip()
+    except (subprocess.SubprocessError, FileNotFoundError):
+        return "Unknown (not a git repository or git command failed)"
+
 def set_seed(seed=42):
     """
     Set random seed for reproducibility.
@@ -1290,9 +1301,12 @@ def main():
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
 
-    # Log the git commit hash
+    # Log the git commit hash and branch
     commit_hash = get_last_commit_hash()
+    branch_name = get_current_branch()
+    logging.info(f"Git branch: {branch_name}")
     logging.info(f"Git commit hash: {commit_hash}")
+    print(f"Git branch: {branch_name}")
     print(f"Git commit hash: {commit_hash}")
 
     # Print all arguments
