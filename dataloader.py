@@ -20,12 +20,12 @@ from functools import lru_cache
 
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, args):
-        self.transform = transforms.Compose([
-            transforms.Resize((512, 512)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],  # RGB means
-                         std=[0.229, 0.224, 0.225]) 
-        ])
+        # self.transform = transforms.Compose([
+        #     transforms.Resize((512, 512)),
+        #     transforms.ToTensor(),
+        #     transforms.Normalize(mean=[0.485, 0.456, 0.406],  # RGB means
+        #                  std=[0.229, 0.224, 0.225]) 
+        # ])
         self.mask_transform = transforms.Compose([
             transforms.Resize((512, 512), interpolation=InterpolationMode.NEAREST),  # preserve class labels
         ])
@@ -45,42 +45,48 @@ class ClipDataset(Dataset):
                 video_name = data['video_name']
                 video_path = os.path.join(args.base_video_dir, video_name)
                 
+                # Pre-compute normalized losses and complements
+                L_no_defer_sam_loss = torch.tensor(data['L_no_defer_sam_loss'], dtype=torch.float32)
+                L_post_defer_sam_loss_list = torch.tensor(data['L_post_defer_sam_loss_list'], dtype=torch.float32)
+                
+                # Normalize losses
+                all_losses = torch.cat([L_no_defer_sam_loss.unsqueeze(0), L_post_defer_sam_loss_list])
+                min_loss = all_losses.min()
+                max_loss = all_losses.max()
+                normalized = (all_losses - min_loss) / (max_loss - min_loss + 1e-6)
+                
+                no_df_sam_loss_norm = normalized[0]
+                post_df_sam_loss_norm = normalized[1:]
+                
+                no_df_sam_complement = 1 - no_df_sam_loss_norm
+                post_df_sam_complement = 1 - post_df_sam_loss_norm
+                
+                # Pre-compute normalized and permuted masks
+                masks = self.mask_transform(data['Masks'])
+                min_vals = masks.amin(dim=[-2, -1], keepdim=True)
+                max_vals = masks.amax(dim=[-2, -1], keepdim=True)
+                masks = (masks - min_vals) / (max_vals - min_vals + 1e-6)
+                masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
+                
                 self.video_metadata.append({
                     'pickle_file': file,
                     'video_path': video_path,
-                    'video_name': video_name
+                    'video_name': video_name,
+                    'no_df_sam_complement': no_df_sam_complement,
+                    'post_df_sam_complement': post_df_sam_complement,
+                    'masks': masks
                 })
-                
-                if len(self.video_metadata) >= 64:
-                    break
                 
                 del data
                 gc.collect()
                 
-            
-        
         print(f"Loaded metadata for {len(self.video_metadata)} videos.")
 
-    @lru_cache(maxsize=1000)  # Keep last 1000 files in cache for maximum speed
-    def load_pickle_data(self, pickle_file):
-        """Cache the pickle file data to avoid repeated disk reads."""
-        with open(pickle_file, 'rb') as f:
-            return pickle.load(f)
-
-    def normalize_sample_losses(self, no_defer_loss, post_defer_losses):
-        """Normalize losses within a single sample."""
-        # Combine all losses for this sample
-        all_losses = torch.cat([no_defer_loss.unsqueeze(0), post_defer_losses])
-        
-        # Get min and max for this sample
-        min_loss = all_losses.min()
-        max_loss = all_losses.max()
-        
-        # Normalize all losses
-        normalized = (all_losses - min_loss) / (max_loss - min_loss + 1e-6)
-        
-        # Split back into no_defer and post_defer
-        return normalized[0], normalized[1:]
+    # @lru_cache(maxsize=1000)  # Keep last 1000 files in cache for maximum speed
+    # def load_pickle_data(self, pickle_file):
+    #     """Cache the pickle file data to avoid repeated disk reads."""
+    #     with open(pickle_file, 'rb') as f:
+    #         return pickle.load(f)
 
     def __len__(self):
         return len(self.video_metadata)
@@ -88,33 +94,10 @@ class ClipDataset(Dataset):
     def __getitem__(self, idx):
         info = self.video_metadata[idx]
         
-        # Load data using cache
-        data = self.load_pickle_data(info['pickle_file'])
-        
-        # Get masks and losses
-        masks = self.mask_transform(data['Masks'])
-        L_no_defer_sam_loss = data['L_no_defer_sam_loss'].clone().detach().float()
-        L_post_defer_sam_loss_list = torch.as_tensor(data['L_post_defer_sam_loss_list'], dtype=torch.float32).clone().detach()
-        
-        # Normalize masks
-        min_vals = masks.amin(dim=[-2, -1], keepdim=True)
-        max_vals = masks.amax(dim=[-2, -1], keepdim=True)
-        masks = (masks - min_vals) / (max_vals - min_vals + 1e-6)
-        masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
-        
-        # Normalize losses within this sample
-        no_df_sam_loss_norm, post_df_sam_loss_norm = self.normalize_sample_losses(
-            L_no_defer_sam_loss, 
-            L_post_defer_sam_loss_list
-        )
-        
-        no_df_sam_complement = 1-no_df_sam_loss_norm
-        post_df_sam_complement = 1-post_df_sam_loss_norm
-        
         return (
-            masks,
-            no_df_sam_complement,
-            post_df_sam_complement,
+            info['masks'],
+            info['no_df_sam_complement'],
+            info['post_df_sam_complement'],
             info['video_name']
         )
 
@@ -141,7 +124,7 @@ def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=8,  # Increased workers for faster loading
+        num_workers=4,  # Increased workers for faster loading
         pin_memory=True,
         persistent_workers=True,
         prefetch_factor=3,  # Increased prefetch for better throughput
@@ -152,7 +135,7 @@ def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
-        num_workers=8,
+        num_workers=4,
         pin_memory=True,
         persistent_workers=True,
         prefetch_factor=3
