@@ -27,109 +27,85 @@ class ClipDataset(Dataset):
         ])
         self.mask_transform = transforms.Compose([
             transforms.Resize((512, 512), interpolation=InterpolationMode.NEAREST),  # preserve class labels
-            
         ])
         
-        self.video_metadata = []  # list of (video_path, frame_names, no_df_dice, post_df_dice, video_name)
+        self.pickle_file = pickle_file
+        self.args = args
+        self.pickle_files = sorted(glob.glob(os.path.join(pickle_file, '*.pkl')))
         
-        self.loss_min_sam_loss = 1
-        self.loss_max_sam_loss = 0
-        # self.loss_min_dice = 1
-        # self.loss_max_dice = 0
-
-        for file in glob.glob(os.path.join(pickle_file, '*.pkl')):
+        # Store only file paths and video names
+        self.video_metadata = []
+        for file in self.pickle_files:
             with open(file, 'rb') as f:
-                #print(f"Loading {file}")
                 data = pickle.load(f)
-                
                 if len(data['L_post_defer_sam_loss_list']) != 4:
                     continue
-
+                    
                 video_name = data['video_name']
                 video_path = os.path.join(args.base_video_dir, video_name)
-                frame_list = sorted(os.listdir(video_path))
-                data['Masks'] = self.mask_transform(data['Masks'])
                 
-                min_vals = data['Masks'].amin(dim=[-2, -1], keepdim=True)
-                max_vals = data['Masks'].amax(dim=[-2, -1], keepdim=True)
-                normalized = (data['Masks'] - min_vals) / (max_vals - min_vals + 1e-6)
-                data['Masks'] = normalized
-                
-                # data['L_no_defer'] = 1-data['L_no_defer']
-                # data['L_post_defer_list'] = [1-x for x in data['L_post_defer_list']]
-
                 self.video_metadata.append({
+                    'pickle_file': file,
                     'video_path': video_path,
-                    'frame_list': frame_list,
-                    'L_no_defer_sam_loss': data['L_no_defer_sam_loss'],
-                    'L_post_defer_sam_loss_list': data['L_post_defer_sam_loss_list'],
-                    'video_name': video_name,
-                    'masks': data['Masks']
+                    'video_name': video_name
                 })
-                # print(f"video: {video_name}, {data['L_no_defer']}, {data['L_post_defer_list']}")
-                all_losses_sam_loss = [data['L_no_defer_sam_loss']] + data['L_post_defer_sam_loss_list']
-                #all_losses_dice = [data['L_no_defer']] + data['L_post_defer_list']
-                all_losses_sam_loss = np.array(all_losses_sam_loss)
-                #all_losses_dice = np.array(all_losses_dice)
-                #all_losses = torch.cat(all_losses, dim=0)
-                if all_losses_sam_loss.min() < self.loss_min_sam_loss:
-                    self.loss_min_sam_loss = all_losses_sam_loss.min()
-                if all_losses_sam_loss.max() > self.loss_max_sam_loss:
-                    self.loss_max_sam_loss = all_losses_sam_loss.max()
-                    # print(f"video: {video_name}, Loss max: {self.loss_max}")
-                # if all_losses_dice.min() < self.loss_min_dice:
-                #     self.loss_min_dice = all_losses_dice.min()
-                # if all_losses_dice.max() > self.loss_max_dice:
-                #     self.loss_max_dice = all_losses_dice.max()
-                    
-                # if all_losses.max() > 1:
-                #     print(f"video: {video_name}, Loss greater than 1: {all_losses.max()}")
-                
-                
-                
-                
+                                
                 del data
                 gc.collect()
-                if len(self.video_metadata) >= 64:
-                    break
+                # if len(self.video_metadata) >= 64:
+                #     break
+                
+            
         
-        print("Loaded metadata only.")
-        print(f"Loss min: {self.loss_min_sam_loss}, Loss max: {self.loss_max_sam_loss}")
-        # print(f"Loss min: {self.loss_min_dice}, Loss max: {self.loss_max_dice}")
+        print(f"Loaded metadata for {len(self.video_metadata)} videos.")
+
+    def normalize_sample_losses(self, no_defer_loss, post_defer_losses):
+        """Normalize losses within a single sample."""
+        # Combine all losses for this sample
+        all_losses = torch.cat([no_defer_loss.unsqueeze(0), post_defer_losses])
+        
+        # Get min and max for this sample
+        min_loss = all_losses.min()
+        max_loss = all_losses.max()
+        
+        # Normalize all losses
+        normalized = (all_losses - min_loss) / (max_loss - min_loss + 1e-6)
+        
+        # Split back into no_defer and post_defer
+        return normalized[0], normalized[1:]
 
     def __len__(self):
         return len(self.video_metadata)
 
     def __getitem__(self, idx):
         info = self.video_metadata[idx]
-        # video_frames = []
-        # for frame_name in info['frame_list']:
-        #     frame_path = os.path.join(info['video_path'], frame_name)
-        #     frame = Image.open(frame_path)
-        #     video_frames.append(self.transform(frame))
-
-        # video_tensor = torch.stack(video_frames)
         
-        masks = info['masks']
+        # Load data on-demand
+        with open(info['pickle_file'], 'rb') as f:
+            data = pickle.load(f)
+            
+            # Get masks and losses
+            masks = self.mask_transform(data['Masks'])
+            L_no_defer_sam_loss = data['L_no_defer_sam_loss'].clone().detach().float()
+            L_post_defer_sam_loss_list = torch.as_tensor(data['L_post_defer_sam_loss_list'], dtype=torch.float32).clone().detach()
+            
+            del data
+            gc.collect()
+        
+        # Normalize masks
+        min_vals = masks.amin(dim=[-2, -1], keepdim=True)
+        max_vals = masks.amax(dim=[-2, -1], keepdim=True)
+        masks = (masks - min_vals) / (max_vals - min_vals + 1e-6)
         masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
         
-        
-        
-        #combined_clip = torch.cat([video_tensor, masks], dim=1)
-        
-        L_no_defer_sam_loss = info['L_no_defer_sam_loss'].clone().detach().float()
-        L_post_defer_sam_loss_list = torch.as_tensor(info['L_post_defer_sam_loss_list'], dtype=torch.float32).clone().detach()
-
-        # Min-max normalization: (x - min) / (max - min)
-        denom = self.loss_max_sam_loss
-        no_df_sam_loss_norm = (L_no_defer_sam_loss) / denom
-        post_df_sam_loss_norm = (L_post_defer_sam_loss_list) / denom
+        # Normalize losses within this sample
+        no_df_sam_loss_norm, post_df_sam_loss_norm = self.normalize_sample_losses(
+            L_no_defer_sam_loss, 
+            L_post_defer_sam_loss_list
+        )
         
         no_df_sam_complement = 1-no_df_sam_loss_norm
         post_df_sam_complement = 1-post_df_sam_loss_norm
-        
-        # print(f"no_df_dice: {no_df_dice_norm}, post_df_dice: {post_df_dice_norm}")
-        
         
         return (
             masks,
