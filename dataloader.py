@@ -80,6 +80,9 @@ class ClipDataset(Dataset):
                 del data
                 gc.collect()
                 
+                # if len(self.video_metadata) >= 64:
+                #     break
+                
         print(f"Loaded metadata for {len(self.video_metadata)} videos.")
 
     # @lru_cache(maxsize=1000)  # Keep last 1000 files in cache for maximum speed
@@ -127,7 +130,7 @@ def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
         num_workers=4,  # Increased workers for faster loading
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=3,  # Increased prefetch for better throughput
+        prefetch_factor=2,  # Increased prefetch for better throughput
         drop_last=True
     )
 
@@ -138,7 +141,7 @@ def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
         num_workers=4,
         pin_memory=True,
         persistent_workers=True,
-        prefetch_factor=3
+        prefetch_factor=2
     )
 
     return train_loader, val_loader
