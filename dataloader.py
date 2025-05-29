@@ -16,6 +16,7 @@ from PIL import Image
 import torch
 import numpy as np
 from torchvision.transforms import InterpolationMode
+from functools import lru_cache
 
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, args):
@@ -49,15 +50,22 @@ class ClipDataset(Dataset):
                     'video_path': video_path,
                     'video_name': video_name
                 })
-                                
+                
+                if len(self.video_metadata) >= 64:
+                    break
+                
                 del data
                 gc.collect()
-                # if len(self.video_metadata) >= 64:
-                #     break
                 
             
         
         print(f"Loaded metadata for {len(self.video_metadata)} videos.")
+
+    @lru_cache(maxsize=1000)  # Keep last 1000 files in cache for maximum speed
+    def load_pickle_data(self, pickle_file):
+        """Cache the pickle file data to avoid repeated disk reads."""
+        with open(pickle_file, 'rb') as f:
+            return pickle.load(f)
 
     def normalize_sample_losses(self, no_defer_loss, post_defer_losses):
         """Normalize losses within a single sample."""
@@ -80,17 +88,13 @@ class ClipDataset(Dataset):
     def __getitem__(self, idx):
         info = self.video_metadata[idx]
         
-        # Load data on-demand
-        with open(info['pickle_file'], 'rb') as f:
-            data = pickle.load(f)
-            
-            # Get masks and losses
-            masks = self.mask_transform(data['Masks'])
-            L_no_defer_sam_loss = data['L_no_defer_sam_loss'].clone().detach().float()
-            L_post_defer_sam_loss_list = torch.as_tensor(data['L_post_defer_sam_loss_list'], dtype=torch.float32).clone().detach()
-            
-            del data
-            gc.collect()
+        # Load data using cache
+        data = self.load_pickle_data(info['pickle_file'])
+        
+        # Get masks and losses
+        masks = self.mask_transform(data['Masks'])
+        L_no_defer_sam_loss = data['L_no_defer_sam_loss'].clone().detach().float()
+        L_post_defer_sam_loss_list = torch.as_tensor(data['L_post_defer_sam_loss_list'], dtype=torch.float32).clone().detach()
         
         # Normalize masks
         min_vals = masks.amin(dim=[-2, -1], keepdim=True)
@@ -132,22 +136,26 @@ def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
     train_dataset = Subset(dataset, train_idx)
     val_dataset = Subset(dataset, val_idx)
 
+    # Optimized DataLoader configuration for speed
     train_loader = DataLoader(
-    train_dataset,
-    batch_size=batch_size,
-    shuffle=True,
-    num_workers=4,
-    pin_memory=True,
-    persistent_workers=True
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=8,  # Increased workers for faster loading
+        pin_memory=True,
+        persistent_workers=True,
+        prefetch_factor=3,  # Increased prefetch for better throughput
+        drop_last=True
     )
 
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
-        shuffle=False,  # no need to shuffle validation
-        num_workers=4,
+        shuffle=False,
+        num_workers=8,
         pin_memory=True,
-        persistent_workers=True
+        persistent_workers=True,
+        prefetch_factor=3
     )
 
     return train_loader, val_loader
