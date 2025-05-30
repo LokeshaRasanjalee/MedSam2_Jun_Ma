@@ -10,7 +10,6 @@ from collections import defaultdict
 import datetime
 import subprocess
 import random
-import wandb
 import time  # Add time module import
 import json
 from collections import deque
@@ -23,6 +22,7 @@ from PIL import Image
 from sam2.build_sam import build_sam2_video_predictor
 import csv
 import logging
+from torch.utils.tensorboard import SummaryWriter
 
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
@@ -1375,10 +1375,10 @@ def main():
         help="Run the full training process (default: False)",
     )
     parser.add_argument(
-        "--wandb_status",
+        "--tensorboard_status",
         type=bool,
         default=False,
-        help="wandb status (default: False)",
+        help="tensorboard status (default: False)",
     )
     parser.add_argument(
         "--save_model",
@@ -1406,6 +1406,14 @@ def main():
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
+
+    # Initialize TensorBoard writer if enabled
+    if args.tensorboard_status:
+        tensorboard_dir = os.path.join(args.output_mask_dir, 'tensorboard')
+        run_name = f"{args.experiment_name}_{timestamp}"
+        writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, run_name))
+        logging.info(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
+        print(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
 
     # Log the git commit hash and branch
     commit_hash = get_last_commit_hash()
@@ -1458,18 +1466,15 @@ def main():
     
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0001)
     
-    if args.wandb_status:
-        wandb.init(
-            # set the wandb project where this run will be logged
-            project="L2D-Video",
-            name=args.experiment_name,
-            # track hyperparameters and run metadata
-            config={
-                "learning_rate": args.learning_rate,
-                "architecture": args.experiment_name,
-                "epochs": args.num_epochs,
-            }
-        )
+    # if args.tensorboard_status:
+    #     writer.add_scalar('Loss/train', 0, 0)
+    #     writer.add_scalar('Loss/val', 0, 0)
+    #     writer.add_scalar('Accuracy/train', 0, 0)
+    #     writer.add_scalar('Accuracy/val', 0, 0)
+    #     writer.add_scalar('Accuracy/val_moving_avg', 0, 0)
+    #     writer.add_scalar('Regret/train', 0, 0)
+    #     writer.add_scalar('Regret/val', 0, 0)
+    #     writer.add_scalar('Time/epoch_runtime', 0, 0)
     
    
     
@@ -1506,14 +1511,15 @@ def main():
         val_acc_ma_queue.append(val_acc)
         current_ma_val_acc = sum(val_acc_ma_queue) / len(val_acc_ma_queue)
         
-        if args.wandb_status:
-            wandb.log({
-                "train/acc": train_acc, 
-                "train/loss": train_loss,
-                "val/acc": val_acc, 
-                "val/loss": val_loss,
-                "val/ma_acc": current_ma_val_acc
-            })
+        if args.tensorboard_status:
+            writer.add_scalar('Loss/train', train_loss, epoch)
+            writer.add_scalar('Loss/val', val_loss, epoch)
+            writer.add_scalar('Accuracy/train', train_acc, epoch)
+            writer.add_scalar('Accuracy/val', val_acc, epoch)
+            writer.add_scalar('Accuracy/val_moving_avg', current_ma_val_acc, epoch)
+            writer.add_scalar('Regret/train', train_regret, epoch)
+            writer.add_scalar('Regret/val', mean_regret, epoch)
+            writer.add_scalar('Time/epoch_runtime', epoch_runtime, epoch)
 
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
@@ -1562,6 +1568,10 @@ def main():
 
     # Plot and save loss and accuracy curves
     plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
+
+    # Close TensorBoard writer
+    if args.tensorboard_status:
+        writer.close()
 
 
 if __name__ == "__main__":
