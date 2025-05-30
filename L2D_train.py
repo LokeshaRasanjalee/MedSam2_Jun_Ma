@@ -40,6 +40,7 @@ from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import confusion_matrix
 from collections import Counter
 from cnn_3d import Simple3DCNN
+from torchvision.models.video import r2plus1d_18, R2Plus1D_18_Weights
 
 def check_cuda():
     """Check if CUDA is available and print device information."""
@@ -1368,10 +1369,15 @@ def main():
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    # Initialize Simple3DCNN model with proper weight initialization
-    model = Simple3DCNN(in_channels=5, num_classes=4)
-    model.count_parameters()
-    # model.apply(init_weights)  # Apply weight initialization
+    # Load pretrained R(2+1)D model
+    model = r2plus1d_18(weights=R2Plus1D_18_Weights.KINETICS400_V1)
+    
+    # Modify the first layer to accept single channel input
+    model.stem[0] = nn.Conv3d(1, 45, kernel_size=(1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
+    
+    # Modify the final layer for 4 classes
+    model.fc = nn.Linear(model.fc.in_features, 4)
+    
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args, batch_size=args.batch_size)
