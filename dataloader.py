@@ -80,8 +80,8 @@ class ClipDataset(Dataset):
                 del data
                 gc.collect()
                 
-                # if len(self.video_metadata) >= 64:
-                #     break
+                if not self.args.full_run and len(self.video_metadata) >= 64:
+                    break   
                 
         print(f"Loaded metadata for {len(self.video_metadata)} videos.")
 
