@@ -1006,6 +1006,8 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
     print(f"Saved new best model with moving average validation accuracy: {current_ma_val_acc:.4f}")
 
 def main():
+    # Start total runtime tracking
+    total_start_time = time.time()
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--sam2_cfg",
@@ -1273,8 +1275,7 @@ def main():
     
     #--------------------------Train Model----------------------------------
     
-    # Start total runtime tracking
-    total_start_time = time.time()
+
     
     train_losses, train_accs, val_losses, val_accs = [], [], [], []
     # Initialize moving average queue for validation accuracy
