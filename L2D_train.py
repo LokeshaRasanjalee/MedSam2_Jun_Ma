@@ -344,7 +344,7 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         optimizer.zero_grad()
         
         input= clips_batch.permute(0, 2, 1, 3, 4)
-        rej_logits = rejector(input.squeeze(1))
+        rej_logits = rejector(input)
         
         loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    
@@ -440,7 +440,7 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
 
             # Predict deferral logits
             input= clips_batch.permute(0, 2, 1, 3, 4)
-            rej_logits = model(input.squeeze(1))
+            rej_logits = model(input)
 
             # Calculate validation loss using deferral_loss
             val_loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
@@ -724,284 +724,6 @@ def vos_inference(
     
     return video_segments_logits, confidence_scores
 
-
-@torch.inference_mode()
-@torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-def vos_inference_old(
-    predictor,
-    base_video_dir,
-    input_mask_dir,
-    output_mask_dir,
-    video_name,
-    input_frame_inds,
-    score_thresh=0.0,
-    use_all_masks=False,
-    per_obj_png_file=False,
-    save_palette_png=False,
-):
-    """Run inference on a single video with the given predictor."""
-    # load the video frames and initialize the inference state on this video
-    video_dir = os.path.join(base_video_dir, video_name)
-    frame_names = [
-        os.path.splitext(p)[0]
-        for p in os.listdir(video_dir)
-        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
-    ]
-    frame_names = list(sorted(frame_names))
-    inference_state = predictor.init_state(
-        video_path=video_dir, async_loading_frames=False
-    )
-    predictor.reset_state(inference_state)
-    height = inference_state["video_height"]
-    width = inference_state["video_width"]
-    input_palette = None
-    
-        
-    # check and make sure we got at least one input frame
-    if len(input_frame_inds) == 0:
-        raise RuntimeError(
-            f"In {video_name=}, got no input masks in {input_mask_dir=}. "
-            "Please make sure the input masks are available in the correct format."
-        )
-    input_frame_inds = sorted(set(input_frame_inds))
-
-    # add those input masks to SAM 2 inference state before propagation
-    #os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
-    object_ids_set = None
-    for input_frame_idx in input_frame_inds:
-        try:
-            per_obj_input_mask, input_palette = load_masks_from_dir(
-                input_mask_dir=input_mask_dir,
-                video_name=video_name,
-                frame_name=frame_names[input_frame_idx],
-                per_obj_png_file=per_obj_png_file,
-            )
-        except FileNotFoundError as e:
-            raise RuntimeError(
-                f"In {video_name=}, failed to load input mask for frame {input_frame_idx=}. "
-                "Please add the `--track_object_appearing_later_in_video` flag "
-                "for VOS datasets that don't have all objects to track appearing "
-                "in the first frame (such as LVOS or YouTube-VOS)."
-            ) from e
-        
-        # get the list of object ids to track from the first input frame
-        if object_ids_set is None:
-            object_ids_set = set(per_obj_input_mask)
-        for object_id, object_mask in per_obj_input_mask.items():
-            # check and make sure no new object ids appear only in later frames
-            if object_id not in object_ids_set:
-                raise RuntimeError(
-                    f"In {video_name=}, got a new {object_id=} appearing only in a "
-                    f"later {input_frame_idx=} (but not appearing in the first frame). "
-                    "Please add the `--track_object_appearing_later_in_video` flag "
-                    "for VOS datasets that don't have all objects to track appearing "
-                    "in the first frame (such as LVOS or YouTube-VOS)."
-                )
-            _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
-                inference_state=inference_state,
-                frame_idx=input_frame_idx,
-                obj_id=object_id,
-                mask=object_mask,
-            )
-            
-            # plt.figure(figsize=(9, 6))
-            # plt.title(f"frame {input_frame_idx}")
-            # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
-            # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-            # print(out_mask_logits.shape)
-            
-            # # Save the visualization image
-            # vis_path = os.path.join(output_mask_dir, video_name, f"vis_{frame_names[input_frame_idx]}.png")
-            # plt.savefig(vis_path)
-            # plt.close()  # Close the figure to free memory
-
-    # check and make sure we have at least one object to track
-    if object_ids_set is None or len(object_ids_set) == 0:
-        raise RuntimeError(
-            f"In {video_name=}, got no object ids on {input_frame_inds=}. "
-            "Please add the `--track_object_appearing_later_in_video` flag "
-            "for VOS datasets that don't have all objects to track appearing "
-            "in the first frame (such as LVOS or YouTube-VOS)."
-        )
-    
-    # run propagation throughout the video and collect the results in a dict
-    output_palette = input_palette or DAVIS_PALETTE
-    video_segments = {}  # video_segments contains the per-frame segmentation results
-    confidence_scores = {}
-    video_segments_logits = {}
-
-    for out_frame_idx, out_obj_ids, out_mask_logits, object_score_logits in predictor.propagate_in_video(
-        inference_state
-    ):
-        per_obj_output_mask = {
-            out_obj_id: (out_mask_logits[i] > score_thresh).cpu().numpy()
-            for i, out_obj_id in enumerate(out_obj_ids)
-        }
-        
-        per_obj_output_mask_logits = {
-            out_obj_id: (out_mask_logits[i]).cpu().numpy()
-            for i, out_obj_id in enumerate(out_obj_ids)
-        }
-        
-        video_segments_logits[out_frame_idx] = per_obj_output_mask_logits
-        video_segments[out_frame_idx] = per_obj_output_mask
-        confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
-        
-    predictor.reset_state(inference_state)
-
-    # # write the output masks as palette PNG files to output_mask_dir
-    # for out_frame_idx, per_obj_output_mask in video_segments.items():
-    #     if save_palette_png:
-    #         # save palette PNG prediction results
-    #         save_palette_masks_to_dir(
-    #             output_mask_dir=output_mask_dir,
-    #             video_name=video_name,
-    #             frame_name=frame_names[out_frame_idx],
-    #             per_obj_output_mask=per_obj_output_mask,
-    #             height=height,
-    #             width=width,
-    #             per_obj_png_file=per_obj_png_file,
-    #             output_palette=output_palette,
-    #             confidence_scores=confidence_scores[out_frame_idx][0],
-    #         )
-    #     else:
-    #         # save raw prediction results
-    #         save_masks_to_dir(
-    #             output_mask_dir=output_mask_dir,
-    #             video_name=video_name,
-    #             frame_name=frame_names[out_frame_idx],
-    #             per_obj_output_mask=per_obj_output_mask,
-    #             height=height,
-    #             width=width,
-    #             per_obj_png_file=per_obj_png_file,
-    #             confidence_scores=confidence_scores[out_frame_idx][0],
-    #         )
-        
-    #     print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
-    
-    return video_segments_logits, confidence_scores
-    
-
-@torch.inference_mode()
-@torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-def vos_separate_inference_per_object(
-    predictor,
-    base_video_dir,
-    input_mask_dir,
-    output_mask_dir,
-    video_name,
-    score_thresh=0.0,
-    use_all_masks=False,
-    per_obj_png_file=False,
-):
-    """
-    Run inference on a single video with the given predictor.
-
-    Unlike `vos_inference`, this function run inference separately for each object
-    in a video, which could be applied to datasets like LVOS or YouTube-VOS that
-    don't have all objects to track appearing in the first frame (i.e. some objects
-    might appear only later in the video).
-    """
-    # load the video frames and initialize the inference state on this video
-    video_dir = os.path.join(base_video_dir, video_name)
-    frame_names = [
-        os.path.splitext(p)[0]
-        for p in os.listdir(video_dir)
-        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
-    ]
-    frame_names = list(sorted(frame_names))
-    inference_state = predictor.init_state(
-        video_path=video_dir, async_loading_frames=False
-    )
-    height = inference_state["video_height"]
-    width = inference_state["video_width"]
-    input_palette = None
-
-    # collect all the object ids and their input masks
-    inputs_per_object = defaultdict(dict)
-    for idx, name in enumerate(frame_names):
-        if per_obj_png_file or os.path.exists(
-            os.path.join(input_mask_dir, video_name, f"{name}.png")
-        ):
-            per_obj_input_mask, input_palette = load_masks_from_dir(
-                input_mask_dir=input_mask_dir,
-                video_name=video_name,
-                frame_name=frame_names[idx],
-                per_obj_png_file=per_obj_png_file,
-                allow_missing=True,
-            )
-            for object_id, object_mask in per_obj_input_mask.items():
-                # skip empty masks
-                if not np.any(object_mask):
-                    continue
-                # if `use_all_masks=False`, we only use the first mask for each object
-                if len(inputs_per_object[object_id]) > 0 and not use_all_masks:
-                    continue
-                print(f"adding mask from frame {idx} as input for {object_id=}")
-                inputs_per_object[object_id][idx] = object_mask
-
-
-    # run inference separately for each object in the video
-    object_ids = sorted(inputs_per_object)
-    output_scores_per_object = defaultdict(dict)
-    for object_id in object_ids:
-        # add those input masks to SAM 2 inference state before propagation
-        input_frame_inds = sorted(inputs_per_object[object_id])
-        predictor.reset_state(inference_state)
-        for input_frame_idx in input_frame_inds:
-            predictor.add_new_mask(
-                inference_state=inference_state,
-                frame_idx=input_frame_idx,
-                obj_id=object_id,
-                mask=inputs_per_object[object_id][input_frame_idx],
-            )
-
-        # run propagation throughout the video and collect the results in a dict
-        for out_frame_idx, _, out_mask_logits in predictor.propagate_in_video(
-            inference_state,
-            start_frame_idx=min(input_frame_inds),
-            reverse=False,
-        ):
-            obj_scores = out_mask_logits.cpu().numpy()
-            output_scores_per_object[object_id][out_frame_idx] = obj_scores
-
-    # post-processing: consolidate the per-object scores into per-frame masks
-    os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
-    output_palette = input_palette or DAVIS_PALETTE
-
-    video_segments = {}  # video_segments contains the per-frame segmentation results
-    for frame_idx in range(len(frame_names)):
-        scores = torch.full(
-            size=(len(object_ids), 1, height, width),
-            fill_value=-1024.0,
-            dtype=torch.float32,
-        )
-        for i, object_id in enumerate(object_ids):
-            if frame_idx in output_scores_per_object[object_id]:
-                scores[i] = torch.from_numpy(
-                    output_scores_per_object[object_id][frame_idx]
-                )
-
-        if not per_obj_png_file:
-            scores = predictor._apply_non_overlapping_constraints(scores)
-        per_obj_output_mask = {
-            object_id: (scores[i] > score_thresh).cpu().numpy()
-            for i, object_id in enumerate(object_ids)
-        }
-        video_segments[frame_idx] = per_obj_output_mask
-
-    # write the output masks as palette PNG files to output_mask_dir
-    for frame_idx, per_obj_output_mask in video_segments.items():
-        save_palette_masks_to_dir(
-            output_mask_dir=output_mask_dir,
-            video_name=video_name,
-            frame_name=frame_names[frame_idx],
-            per_obj_output_mask=per_obj_output_mask,
-            height=height,
-            width=width,
-            per_obj_png_file=per_obj_png_file,
-            output_palette=output_palette,
-        )
         
 def calculate_auc(model, data_loader, device):
     model.eval()  # Set the model to evaluation mode
@@ -1505,9 +1227,23 @@ def main():
     # Load pretrained R(2+1)D model
     model = r2plus1d_18(weights=R2Plus1D_18_Weights.KINETICS400_V1)
     
-    # Modify the first layer to accept single channel input
-    model.stem[0] = nn.Conv3d(1, 45, kernel_size=(1, 7, 7), stride=(1, 2, 2), padding=(0, 3, 3), bias=False)
-    
+    # Modify first convolutional layer: from (3, 3, 7, 7) to (1, 3, 7, 7)
+    old_conv = model.stem[0]
+    new_conv = nn.Conv3d(
+        in_channels=1,
+        out_channels=old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        bias=(old_conv.bias is not None)
+    )
+
+    # Copy and average pretrained weights across the input channel dimension
+    with torch.no_grad():
+        new_conv.weight[:] = old_conv.weight.mean(dim=1, keepdim=True)
+        if old_conv.bias is not None:
+            new_conv.bias[:] = old_conv.bias
+    model.stem[0] = new_conv
     # Modify the final layer for 4 classes
     model.fc = nn.Linear(model.fc.in_features, 4)
     
