@@ -1160,6 +1160,54 @@ def init_weights(m):
     elif isinstance(m, nn.BatchNorm2d):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)
+        
+import torch
+import psutil
+
+def log_memory_usage(device, epoch=None, logger=None, writer=None):
+    """
+    Logs GPU and CPU memory usage.
+
+    Args:
+        device: torch.device (usually 'cuda' or 'cuda:0')
+        epoch: current epoch (for logging purposes)
+        logger: optional logging module
+        writer: optional TensorBoard writer
+    """
+    if torch.cuda.is_available():
+        gpu_memory_allocated = torch.cuda.memory_allocated(device) / (1024 ** 2)
+        gpu_memory_reserved = torch.cuda.memory_reserved(device) / (1024 ** 2)
+        gpu_max_allocated = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
+        gpu_max_reserved = torch.cuda.max_memory_reserved(device) / (1024 ** 2)
+    else:
+        gpu_memory_allocated = gpu_memory_reserved = gpu_max_allocated = gpu_max_reserved = 0.0
+
+    cpu_memory_used = psutil.Process().memory_info().rss / (1024 ** 2)
+
+    msg = (
+        f"Memory Usage [Epoch {epoch+1 if epoch is not None else '-'}]: "
+        f"GPU Allocated: {gpu_memory_allocated:.2f}MB | "
+        f"GPU Reserved: {gpu_memory_reserved:.2f}MB | "
+        f"GPU Max Allocated: {gpu_max_allocated:.2f}MB | "
+        f"GPU Max Reserved: {gpu_max_reserved:.2f}MB | "
+        f"CPU Used: {cpu_memory_used:.2f}MB"
+    )
+
+    print(msg)
+    if logger:
+        logger.info(msg)
+
+    if writer and epoch is not None:
+        writer.add_scalar('Memory/GPU_Allocated_MB', gpu_memory_allocated, epoch)
+        writer.add_scalar('Memory/GPU_Reserved_MB', gpu_memory_reserved, epoch)
+        writer.add_scalar('Memory/GPU_MaxAllocated_MB', gpu_max_allocated, epoch)
+        writer.add_scalar('Memory/GPU_MaxReserved_MB', gpu_max_reserved, epoch)
+        writer.add_scalar('Memory/CPU_MB', cpu_memory_used, epoch)
+
+    # Reset peak stats for next epoch
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+
 
 def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_accs, val_accs, 
                     current_ma_val_acc, args, timestamp, save_dir, experiment_name):
@@ -1535,6 +1583,9 @@ def main():
         print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
         print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
         print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
+        
+        # Log memory usage
+        log_memory_usage(device, epoch=epoch, logger=logging, writer=writer if args.tensorboard_status else None)
 
         # Save model if current moving average is better than previous best
         if args.save_model:
