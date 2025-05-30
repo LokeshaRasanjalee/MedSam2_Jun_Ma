@@ -439,8 +439,8 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
             post_df_dice_batch = post_df_dice_batch.to(device)          # [B, n_e]
 
             # Predict deferral logits
-            input= clips_batch.permute(0, 2, 1, 3, 4)
-            rej_logits = model(input)
+            #input= clips_batch.permute(0, 2, 1, 3, 4)
+            rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
             val_loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
