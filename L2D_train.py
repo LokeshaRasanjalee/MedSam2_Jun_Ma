@@ -10,6 +10,10 @@ from collections import defaultdict
 import datetime
 import subprocess
 import random
+import time  # Add time module import
+import json
+from collections import deque
+import glob
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,6 +22,7 @@ from PIL import Image
 from sam2.build_sam import build_sam2_video_predictor
 import csv
 import logging
+from torch.utils.tensorboard import SummaryWriter
 
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
@@ -470,7 +475,7 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
     all_best_actions = torch.cat(all_best_actions)
     all_chosen_actions = torch.cat(all_chosen_actions)
 
-    return selection_accuracy, mean_regret, avg_val_loss, all_best_actions, all_chosen_actions
+    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions
 
 
 # def validate_one_epoch(model, loader, criterion, device,logging):
@@ -1149,13 +1154,134 @@ def init_weights(m):
     """
     Initialize weights for the model using Kaiming initialization.
     """
-    if isinstance(m, nn.Conv3d) or isinstance(m, nn.Linear):
-        nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+    if isinstance(m, (nn.Conv2d, nn.Linear)):
+        nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
         if m.bias is not None:
             nn.init.constant_(m.bias, 0)
-    elif isinstance(m, nn.BatchNorm3d):
+    elif isinstance(m, nn.BatchNorm2d):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)
+        
+import torch
+import psutil
+
+def log_memory_usage(device, epoch=None, logger=None, writer=None):
+    """
+    Logs GPU and CPU memory usage.
+
+    Args:
+        device: torch.device (usually 'cuda' or 'cuda:0')
+        epoch: current epoch (for logging purposes)
+        logger: optional logging module
+        writer: optional TensorBoard writer
+    """
+    if torch.cuda.is_available():
+        gpu_memory_allocated = torch.cuda.memory_allocated(device) / (1024 ** 2)
+        gpu_memory_reserved = torch.cuda.memory_reserved(device) / (1024 ** 2)
+        gpu_max_allocated = torch.cuda.max_memory_allocated(device) / (1024 ** 2)
+        gpu_max_reserved = torch.cuda.max_memory_reserved(device) / (1024 ** 2)
+    else:
+        gpu_memory_allocated = gpu_memory_reserved = gpu_max_allocated = gpu_max_reserved = 0.0
+
+    cpu_memory_used = psutil.Process().memory_info().rss / (1024 ** 2)
+
+    msg = (
+        f"Memory Usage [Epoch {epoch+1 if epoch is not None else '-'}]: "
+        f"GPU Allocated: {gpu_memory_allocated:.2f}MB | "
+        f"GPU Reserved: {gpu_memory_reserved:.2f}MB | "
+        f"GPU Max Allocated: {gpu_max_allocated:.2f}MB | "
+        f"GPU Max Reserved: {gpu_max_reserved:.2f}MB | "
+        f"CPU Used: {cpu_memory_used:.2f}MB"
+    )
+
+    print(msg)
+    if logger:
+        logger.info(msg)
+
+    if writer and epoch is not None:
+        writer.add_scalar('Memory/GPU_Allocated_MB', gpu_memory_allocated, epoch)
+        writer.add_scalar('Memory/GPU_Reserved_MB', gpu_memory_reserved, epoch)
+        writer.add_scalar('Memory/GPU_MaxAllocated_MB', gpu_max_allocated, epoch)
+        writer.add_scalar('Memory/GPU_MaxReserved_MB', gpu_max_reserved, epoch)
+        writer.add_scalar('Memory/CPU_MB', cpu_memory_used, epoch)
+
+    # Reset peak stats for next epoch
+    if torch.cuda.is_available():
+        torch.cuda.reset_peak_memory_stats(device)
+
+
+def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_accs, val_accs, 
+                    current_ma_val_acc, args, timestamp, save_dir, experiment_name):
+    """
+    Save model checkpoint and training history.
+    
+    Args:
+        model: The model to save
+        optimizer: The optimizer state to save
+        epoch: Current epoch number
+        train_losses: List of training losses
+        val_losses: List of validation losses
+        train_accs: List of training accuracies
+        val_accs: List of validation accuracies
+        current_ma_val_acc: Current moving average validation accuracy
+        args: Training arguments
+        timestamp: Timestamp for the run
+        save_dir: Directory to save the checkpoint
+        experiment_name: Name of the experiment
+    """
+    # Save model checkpoint with all necessary information
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict()
+    }
+    
+    # Delete existing checkpoint file with the same experiment name
+    old_checkpoint = os.path.join(save_dir, f"model_{experiment_name}_*.pth")
+    try:
+        existing_files = glob.glob(old_checkpoint)
+        if existing_files:
+            os.remove(existing_files[0])
+            logging.info(f"Deleted old checkpoint: {existing_files[0]}")
+            print(f"Deleted old checkpoint: {existing_files[0]}")
+    except Exception as e:
+        logging.warning(f"Failed to delete old checkpoint: {str(e)}")
+        print(f"Failed to delete old checkpoint: {str(e)}")
+    
+    
+    # Save new checkpoint
+    checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_epoch_{epoch}_ma_acc_{current_ma_val_acc:.4f}.pth")
+    torch.save(checkpoint, checkpoint_path)
+    
+    # Save training history
+    history = {
+        'train_losses': train_losses,
+        'val_losses': val_losses,
+        'train_accs': train_accs,
+        'val_accs': val_accs,
+        'val_acc_ma': current_ma_val_acc,
+        'best_epoch': epoch,
+        'args': vars(args),
+        'timestamp': timestamp
+    }
+     # Delete existing history file with the same experiment name
+    old_history = os.path.join(save_dir, f"history_{experiment_name}_*.json")
+    try:
+        existing_files = glob.glob(old_history)
+        if existing_files:
+            os.remove(existing_files[0])
+            logging.info(f"Deleted old history: {existing_files[0]}")
+            print(f"Deleted old history: {existing_files[0]}")
+    except Exception as e:
+        logging.warning(f"Failed to delete old history: {str(e)}")
+        print(f"Failed to delete old history: {str(e)}")
+        
+    history_path = os.path.join(save_dir, f"history_{experiment_name}_epoch_{epoch}.json")
+    with open(history_path, 'w') as f:
+        json.dump(history, f, indent=4)
+    
+    logging.info(f"Saved new best model with moving average validation accuracy: {current_ma_val_acc:.4f}")
+    print(f"Saved new best model with moving average validation accuracy: {current_ma_val_acc:.4f}")
 
 def main():
     parser = argparse.ArgumentParser()
@@ -1199,10 +1325,10 @@ def main():
         help="directory to save the output masks (as PNG files)",
     )
     parser.add_argument(
-        "--post_hoc_model_save_dir",
+        "--data_pkl_dir",
         type=str,
         required=True,
-        help="directory to save the post hoc model",
+        help="directory to save the data pkl",
     )
     parser.add_argument(
         "--score_thresh",
@@ -1291,12 +1417,30 @@ def main():
         default=42,
         help="Random seed for reproducibility (default: 42)",
     )
+    parser.add_argument(
+        "--full_run",
+        type=bool,
+        default=False,
+        help="Run the full training process (default: False)",
+    )
+    parser.add_argument(
+        "--tensorboard_status",
+        type=bool,
+        default=False,
+        help="tensorboard status (default: False)",
+    )
+    parser.add_argument(
+        "--save_model",
+        type=bool,
+        default=False,
+        help="Save model",
+    )
     args = parser.parse_args()
     
     is_cuda_available = check_cuda()
 
     # Set random seed for reproducibility
-    # set_seed(args.seed)
+    set_seed(args.seed)
     
     # Add timestamp to the output directory
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1311,6 +1455,14 @@ def main():
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
+
+    # Initialize TensorBoard writer if enabled
+    if args.tensorboard_status:
+        tensorboard_dir = os.path.join(args.output_mask_dir, 'tensorboard')
+        run_name = f"{args.experiment_name}_{timestamp}"
+        writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, run_name))
+        logging.info(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
+        print(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
 
     # Log the git commit hash and branch
     commit_hash = get_last_commit_hash()
@@ -1329,25 +1481,6 @@ def main():
     print("\n")
     
     
-
-    # if we use per-object PNG files, they could possibly overlap in inputs and outputs
-    hydra_overrides_extra = [
-        "++model.non_overlap_masks=" + ("false" if args.per_obj_png_file else "true")
-    ]
-    predictor = build_sam2_video_predictor(
-        config_file=args.sam2_cfg,
-        ckpt_path=args.sam2_checkpoint,
-        apply_postprocessing=args.apply_postprocessing,
-        hydra_overrides_extra=hydra_overrides_extra,
-        vos_optimized=args.use_vos_optimized_video_predictor,
-    )
-
-    if args.use_all_masks:
-        print("using all available masks in input_mask_dir as input to the MedSAM2 model")
-    else:
-        print(
-            "using only the first frame's mask in input_mask_dir as input to the MedSAM2 model"
-        )
     # if a video list file is provided, read the video names from the file
     # (otherwise, we use all subdirectories in base_video_dir)
     if args.video_list_file is not None:
@@ -1380,46 +1513,122 @@ def main():
     
     model = model.to(device)
 
-    train_loader, val_loader = get_dataloaders(args.post_hoc_model_save_dir, args, batch_size=args.batch_size)
+    train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
 
     # For multi-class classification, we use CrossEntropyLoss instead of BCEWithLogitsLoss
     criterion = nn.CrossEntropyLoss()
     
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0001)
     
+    # if args.tensorboard_status:
+    #     writer.add_scalar('Loss/train', 0, 0)
+    #     writer.add_scalar('Loss/val', 0, 0)
+    #     writer.add_scalar('Accuracy/train', 0, 0)
+    #     writer.add_scalar('Accuracy/val', 0, 0)
+    #     writer.add_scalar('Accuracy/val_moving_avg', 0, 0)
+    #     writer.add_scalar('Regret/train', 0, 0)
+    #     writer.add_scalar('Regret/val', 0, 0)
+    #     writer.add_scalar('Time/epoch_runtime', 0, 0)
+    
+   
+    
+    
+    
+    
     #--------------------------Train Model----------------------------------
     
+    # Start total runtime tracking
+    total_start_time = time.time()
+    
     train_losses, train_accs, val_losses, val_accs = [], [], [], []
+    # Initialize moving average queue for validation accuracy
+    val_acc_ma_queue = deque(maxlen=2)
+    best_ma_val_acc = 0.0
+    best_epoch = 0
+    
     for epoch in range(args.num_epochs):
+        # Start epoch runtime tracking
+        epoch_start_time = time.time()
+        
         train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
-        selection_accuracy, mean_regret, val_loss, best_actions, chosen_actions = validate_one_epoch(model, val_loader, criterion,args.alpha, args.beta, device, logging)
+        val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions = validate_one_epoch(model, val_loader, criterion, args.alpha, args.beta, device, logging)
 
+        # Calculate epoch runtime
+        epoch_runtime = time.time() - epoch_start_time
+        
         train_losses.append(train_loss)
         val_losses.append(val_loss)
         train_accs.append(train_acc)
-        val_accs.append(selection_accuracy)
+        val_accs.append(val_acc)
+        
+        # Update moving average of validation accuracy
+        val_acc_ma_queue.append(val_acc)
+        current_ma_val_acc = sum(val_acc_ma_queue) / len(val_acc_ma_queue)
+        
+        if args.tensorboard_status:
+            writer.add_scalar('Loss/train', train_loss, epoch)
+            writer.add_scalar('Loss/val', val_loss, epoch)
+            writer.add_scalar('Accuracy/train', train_acc, epoch)
+            writer.add_scalar('Accuracy/val', val_acc, epoch)
+            writer.add_scalar('Accuracy/val_moving_avg', current_ma_val_acc, epoch)
+            writer.add_scalar('Regret/train', train_regret, epoch)
+            writer.add_scalar('Regret/val', mean_regret, epoch)
+            writer.add_scalar('Time/epoch_runtime', epoch_runtime, epoch)
 
-        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {selection_accuracy:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
+        logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
+        
         # Log training best action and chosen action for 10 samples
         logging.info(f"Training Best Actions: {train_best_actions[:10]}")
         logging.info(f"Training Chosen Actions: {train_chosen_actions[:10]}")
 
         # Log validation best action and chosen action for 10 samples
-        logging.info(f"Validation Best Actions: {best_actions[:10]}")
-        logging.info(f"Validation Chosen Actions: {chosen_actions[:10]}")
-        print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {selection_accuracy:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+        logging.info(f"Validation Best Actions: {val_best_actions[:10]}")
+        logging.info(f"Validation Chosen Actions: {val_chosen_actions[:10]}")
+        print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+        print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
+        print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
+        
+        # Log memory usage
+        log_memory_usage(device, epoch=epoch, logger=logging, writer=writer if args.tensorboard_status else None)
+
+        # Save model if current moving average is better than previous best
+        if args.save_model:
+            if current_ma_val_acc > best_ma_val_acc:
+                best_ma_val_acc = current_ma_val_acc
+                save_checkpoint(
+                    model=model,
+                    optimizer=optimizer,
+                    epoch=epoch,
+                    train_losses=train_losses,
+                    val_losses=val_losses,
+                    train_accs=train_accs,
+                    val_accs=val_accs,
+                    current_ma_val_acc=current_ma_val_acc,
+                    args=args,
+                    timestamp=timestamp,
+                    save_dir=args.output_mask_dir,
+                    experiment_name=args.experiment_name
+                    )
+
+    # Calculate and log total runtime
+    total_runtime = time.time() - total_start_time
+    logging.info(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
+    print(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
+    logging.info(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
+    print(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
 
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     
-    # Save the model
-    model_path = os.path.join(args.post_hoc_model_save_dir, f"model_{args.experiment_name}_{timestamp}.pth")
-    torch.save(model.state_dict(), model_path)
-    print(f"Model saved to {model_path}")
-    logging.info(f"Model saved to {model_path}")
 
     # Plot and save loss and accuracy curves
     plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
+
+    # Close TensorBoard writer
+    if args.tensorboard_status:
+        writer.close()
 
 
 if __name__ == "__main__":
