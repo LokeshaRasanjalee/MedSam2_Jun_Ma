@@ -343,8 +343,8 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         
         optimizer.zero_grad()
         
-        input= clips_batch.permute(0, 2, 1, 3, 4)
-        rej_logits = rejector(input)
+        #input= clips_batch.permute(0, 2, 1, 3, 4)
+        rej_logits = rejector(clips_batch)
         
         loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    

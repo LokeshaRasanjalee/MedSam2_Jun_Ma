@@ -66,7 +66,7 @@ class ClipDataset(Dataset):
                 min_vals = masks.amin(dim=[-2, -1], keepdim=True)
                 max_vals = masks.amax(dim=[-2, -1], keepdim=True)
                 masks = (masks - min_vals) / (max_vals - min_vals + 1e-6)
-                masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
+                #masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
                 
                 self.video_metadata.append({
                     'pickle_file': file,
