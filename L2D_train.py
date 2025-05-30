@@ -439,8 +439,8 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
             post_df_dice_batch = post_df_dice_batch.to(device)          # [B, n_e]
 
             # Predict deferral logits
-            input= clips_batch.permute(0, 2, 1, 3, 4)
-            rej_logits = model(input)
+            #input= clips_batch.permute(0, 2, 1, 3, 4)
+            rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
             val_loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
@@ -1229,10 +1229,9 @@ def main():
     # Load pretrained R(2+1)D model
     model = r2plus1d_18(weights=R2Plus1D_18_Weights.KINETICS400_V1)
     
-    # Modify first convolutional layer: from (3, 3, 7, 7) to (1, 3, 7, 7)
     old_conv = model.stem[0]
     new_conv = nn.Conv3d(
-        in_channels=1,
+        in_channels=4,  # Now accepting 4 input channels
         out_channels=old_conv.out_channels,
         kernel_size=old_conv.kernel_size,
         stride=old_conv.stride,
@@ -1240,13 +1239,22 @@ def main():
         bias=(old_conv.bias is not None)
     )
 
-    # Copy and average pretrained weights across the input channel dimension
+    # Copy pretrained weights
     with torch.no_grad():
-        new_conv.weight[:] = old_conv.weight.mean(dim=1, keepdim=True)
+        # 1. Grayscale channel (channel 0): average RGB weights
+        new_conv.weight[:, 0, :, :, :] = old_conv.weight.mean(dim=1)
+
+        # 2. RGB channels (channels 1–3): use pretrained RGB weights directly
+        new_conv.weight[:, 1:4, :, :, :] = old_conv.weight  # shape [out, 3, T, H, W]
+
+        # 3. Copy bias if exists
         if old_conv.bias is not None:
             new_conv.bias[:] = old_conv.bias
+
+    # Replace the first conv layer
     model.stem[0] = new_conv
-    # Modify the final layer for 4 classes
+
+    # Modify the final layer for 4 output classes
     model.fc = nn.Linear(model.fc.in_features, 4)
     
     model = model.to(device)

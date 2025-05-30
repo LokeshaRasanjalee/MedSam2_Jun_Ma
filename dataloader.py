@@ -20,12 +20,13 @@ from functools import lru_cache
 
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, args):
-        # self.transform = transforms.Compose([
-        #     transforms.Resize((512, 512)),
-        #     transforms.ToTensor(),
-        #     transforms.Normalize(mean=[0.485, 0.456, 0.406],  # RGB means
-        #                  std=[0.229, 0.224, 0.225]) 
-        # ])
+        self.image_transform = transforms.Compose([
+            transforms.Resize((512, 512)),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],  # RGB means
+                         std=[0.229, 0.224, 0.225]) 
+        ])
+        
         self.mask_transform = transforms.Compose([
             transforms.Resize((512, 512), interpolation=InterpolationMode.NEAREST),  # preserve class labels
         ])
@@ -44,6 +45,22 @@ class ClipDataset(Dataset):
                     
                 video_name = data['video_name']
                 video_path = os.path.join(args.base_video_dir, video_name)
+                
+                # Load and sort images from the video folder
+                image_files = sorted(glob.glob(os.path.join(video_path, '*.jpg')))
+                if not image_files:
+                    continue
+                
+                # Load and transform images
+                images = []
+                for img_path in image_files:
+                    img = Image.open(img_path).convert('RGB')
+                    img = self.image_transform(img)
+                    images.append(img)
+                
+                # Stack images into a tensor
+                images = torch.stack(images)  # Shape: [T, C, H, W]
+                images = images.permute(1, 0, 2, 3)
                 
                 # Pre-compute normalized losses and complements
                 L_no_defer_sam_loss = torch.tensor(data['L_no_defer_sam_loss'], dtype=torch.float32)
@@ -68,14 +85,17 @@ class ClipDataset(Dataset):
                 masks = (masks - min_vals) / (max_vals - min_vals + 1e-6)
                 #masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
                 
+                combined = torch.cat([masks,images], dim=0)
+                
                 self.video_metadata.append({
-                    'pickle_file': file,
-                    'video_path': video_path,
+                    # 'pickle_file': file,
+                    # 'video_path': video_path,
                     'video_name': video_name,
                     'no_df_sam_complement': no_df_sam_complement,
                     'post_df_sam_complement': post_df_sam_complement,
-                    'masks': masks
+                    'masks': combined
                 })
+                
                 
                 del data
                 gc.collect()
