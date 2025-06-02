@@ -316,12 +316,12 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     total_loss = loss_term1 + loss_term2              # [B]
     
     # print("=== DEBUG LOGS ===")
-    print("Rejector logits:\n", rejector_logits[:3])
-    print("acc_no_def_batch:\n", acc_no_def_batch[:3])
-    print("acc_post_def_batch:\n", acc_post_def_batch[:3])
-    print("loss_term1:\n", loss_term1[:3])
-    print("loss_term2:\n", loss_term2[:3])
-    print("total_loss:\n", total_loss[:3])
+    # print("Rejector logits:\n", rejector_logits[:3])
+    # print("acc_no_def_batch:\n", acc_no_def_batch[:3])
+    # print("acc_post_def_batch:\n", acc_post_def_batch[:3])
+    # print("loss_term1:\n", loss_term1[:3])
+    # print("loss_term2:\n", loss_term2[:3])
+    # print("total_loss:\n", total_loss[:3])
     
     return torch.mean(total_loss)
     
