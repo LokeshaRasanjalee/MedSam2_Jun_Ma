@@ -1159,6 +1159,12 @@ def main():
         default=False,
         help="Save model",
     )
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=4,
+        help="Number of workers for training (default: 4)",
+    )
     args = parser.parse_args()
     
     is_cuda_available = check_cuda()
