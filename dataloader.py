@@ -1,5 +1,4 @@
 # dataset.py
-import pickle
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 from sklearn.model_selection import StratifiedShuffleSplit
@@ -16,7 +15,7 @@ from PIL import Image
 import torch
 import numpy as np
 from torchvision.transforms import InterpolationMode
-from functools import lru_cache
+
 
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, args):

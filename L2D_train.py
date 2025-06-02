@@ -19,18 +19,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from PIL import Image
-from sam2.build_sam import build_sam2_video_predictor
 import csv
 import logging
 from torch.utils.tensorboard import SummaryWriter
-
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 import joblib
-import pickle
 
 import torch
 import torch.nn as nn
