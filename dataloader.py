@@ -34,6 +34,10 @@ class ClipDataset(Dataset):
         self.args = args
         self.pickle_files = sorted(glob.glob(os.path.join(pickle_file, '*.pkl')))
         
+        # Create npz directory one step outside of pickle directory
+        self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz')
+        os.makedirs(self.npz_dir, exist_ok=True)
+        
         # Store only file paths and video names
         self.video_metadata = []
         for file in self.pickle_files:
@@ -61,21 +65,30 @@ class ClipDataset(Dataset):
                 no_df_sam_complement = 1 - no_df_sam_loss_norm
                 post_df_sam_complement = 1 - post_df_sam_loss_norm
                 
-                # Pre-compute normalized and permuted masks
+                # Pre-compute normalized masks
                 masks = self.mask_transform(data['Masks'])
                 min_vals = masks.amin(dim=[-2, -1], keepdim=True)
                 max_vals = masks.amax(dim=[-2, -1], keepdim=True)
                 masks = (masks - min_vals) / (max_vals - min_vals + 1e-6)
-                #masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
                 
-                self.video_metadata.append({
-                    'pickle_file': file,
-                    'video_path': video_path,
-                    'video_name': video_name,
-                    'no_df_sam_complement': no_df_sam_complement,
-                    'post_df_sam_complement': post_df_sam_complement,
-                    'masks': masks
-                })
+                # Save data as npz file in the new directory
+                base_name = os.path.basename(file)
+                npz_file = os.path.join(self.npz_dir, base_name.replace('.pkl', '.npz'))
+                np.savez(
+                    npz_file,    
+                    masks=masks.numpy(),
+                    no_df_sam_complement=no_df_sam_complement.numpy(),
+                    post_df_sam_complement=post_df_sam_complement.numpy()
+                )
+                
+                # self.video_metadata.append({
+                #     'npz_file': npz_file,
+                #     'video_path': video_path,
+                #     'video_name': video_name,
+                #     'masks': masks,
+                #     'no_df_sam_complement': no_df_sam_complement,
+                #     'post_df_sam_complement': post_df_sam_complement
+                # })
                 
                 del data
                 gc.collect()

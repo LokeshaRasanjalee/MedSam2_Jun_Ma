@@ -1253,119 +1253,119 @@ def main():
 
     train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
 
-    # For multi-class classification, we use CrossEntropyLoss instead of BCEWithLogitsLoss
-    criterion = nn.CrossEntropyLoss()
+    # # For multi-class classification, we use CrossEntropyLoss instead of BCEWithLogitsLoss
+    # criterion = nn.CrossEntropyLoss()
     
-    optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0001)
+    # optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0001)
     
-    # if args.tensorboard_status:
-    #     writer.add_scalar('Loss/train', 0, 0)
-    #     writer.add_scalar('Loss/val', 0, 0)
-    #     writer.add_scalar('Accuracy/train', 0, 0)
-    #     writer.add_scalar('Accuracy/val', 0, 0)
-    #     writer.add_scalar('Accuracy/val_moving_avg', 0, 0)
-    #     writer.add_scalar('Regret/train', 0, 0)
-    #     writer.add_scalar('Regret/val', 0, 0)
-    #     writer.add_scalar('Time/epoch_runtime', 0, 0)
+    # # if args.tensorboard_status:
+    # #     writer.add_scalar('Loss/train', 0, 0)
+    # #     writer.add_scalar('Loss/val', 0, 0)
+    # #     writer.add_scalar('Accuracy/train', 0, 0)
+    # #     writer.add_scalar('Accuracy/val', 0, 0)
+    # #     writer.add_scalar('Accuracy/val_moving_avg', 0, 0)
+    # #     writer.add_scalar('Regret/train', 0, 0)
+    # #     writer.add_scalar('Regret/val', 0, 0)
+    # #     writer.add_scalar('Time/epoch_runtime', 0, 0)
     
    
     
     
     
     
-    #--------------------------Train Model----------------------------------
+    # #--------------------------Train Model----------------------------------
     
 
     
-    train_losses, train_accs, val_losses, val_accs = [], [], [], []
-    # Initialize moving average queue for validation accuracy
-    val_acc_ma_queue = deque(maxlen=2)
-    best_ma_val_acc = 0.0
-    best_epoch = 0
+    # train_losses, train_accs, val_losses, val_accs = [], [], [], []
+    # # Initialize moving average queue for validation accuracy
+    # val_acc_ma_queue = deque(maxlen=2)
+    # best_ma_val_acc = 0.0
+    # best_epoch = 0
     
-    for epoch in range(args.num_epochs):
-        # Start epoch runtime tracking
-        epoch_start_time = time.time()
+    # for epoch in range(args.num_epochs):
+    #     # Start epoch runtime tracking
+    #     epoch_start_time = time.time()
         
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
-        val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions = validate_one_epoch(model, val_loader, criterion, args.alpha, args.beta, device, logging)
+    #     train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
+    #     val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions = validate_one_epoch(model, val_loader, criterion, args.alpha, args.beta, device, logging)
 
-        # Calculate epoch runtime
-        epoch_runtime = time.time() - epoch_start_time
+    #     # Calculate epoch runtime
+    #     epoch_runtime = time.time() - epoch_start_time
         
-        train_losses.append(train_loss)
-        val_losses.append(val_loss)
-        train_accs.append(train_acc)
-        val_accs.append(val_acc)
+    #     train_losses.append(train_loss)
+    #     val_losses.append(val_loss)
+    #     train_accs.append(train_acc)
+    #     val_accs.append(val_acc)
         
-        # Update moving average of validation accuracy
-        val_acc_ma_queue.append(val_acc)
-        current_ma_val_acc = sum(val_acc_ma_queue) / len(val_acc_ma_queue)
+    #     # Update moving average of validation accuracy
+    #     val_acc_ma_queue.append(val_acc)
+    #     current_ma_val_acc = sum(val_acc_ma_queue) / len(val_acc_ma_queue)
         
-        if args.tensorboard_status:
-            writer.add_scalar('Loss/train', train_loss, epoch)
-            writer.add_scalar('Loss/val', val_loss, epoch)
-            writer.add_scalar('Accuracy/train', train_acc, epoch)
-            writer.add_scalar('Accuracy/val', val_acc, epoch)
-            writer.add_scalar('Accuracy/val_moving_avg', current_ma_val_acc, epoch)
-            writer.add_scalar('Regret/train', train_regret, epoch)
-            writer.add_scalar('Regret/val', mean_regret, epoch)
-            writer.add_scalar('Time/epoch_runtime', epoch_runtime, epoch)
+    #     if args.tensorboard_status:
+    #         writer.add_scalar('Loss/train', train_loss, epoch)
+    #         writer.add_scalar('Loss/val', val_loss, epoch)
+    #         writer.add_scalar('Accuracy/train', train_acc, epoch)
+    #         writer.add_scalar('Accuracy/val', val_acc, epoch)
+    #         writer.add_scalar('Accuracy/val_moving_avg', current_ma_val_acc, epoch)
+    #         writer.add_scalar('Regret/train', train_regret, epoch)
+    #         writer.add_scalar('Regret/val', mean_regret, epoch)
+    #         writer.add_scalar('Time/epoch_runtime', epoch_runtime, epoch)
 
-        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
-        logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
-        logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
+    #     logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+    #     logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
+    #     logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
         
-        # Log training best action and chosen action for 10 samples
-        logging.info(f"Training Best Actions: {train_best_actions[:10]}")
-        logging.info(f"Training Chosen Actions: {train_chosen_actions[:10]}")
+    #     # Log training best action and chosen action for 10 samples
+    #     logging.info(f"Training Best Actions: {train_best_actions[:10]}")
+    #     logging.info(f"Training Chosen Actions: {train_chosen_actions[:10]}")
 
-        # Log validation best action and chosen action for 10 samples
-        logging.info(f"Validation Best Actions: {val_best_actions[:10]}")
-        logging.info(f"Validation Chosen Actions: {val_chosen_actions[:10]}")
-        print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
-        print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
-        print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
+    #     # Log validation best action and chosen action for 10 samples
+    #     logging.info(f"Validation Best Actions: {val_best_actions[:10]}")
+    #     logging.info(f"Validation Chosen Actions: {val_chosen_actions[:10]}")
+    #     print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+    #     print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
+    #     print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
         
-        # Log memory usage
-        log_memory_usage(device, epoch=epoch, logger=logging, writer=writer if args.tensorboard_status else None)
+    #     # Log memory usage
+    #     log_memory_usage(device, epoch=epoch, logger=logging, writer=writer if args.tensorboard_status else None)
 
-        # Save model if current moving average is better than previous best
-        if args.save_model:
-            if current_ma_val_acc > best_ma_val_acc:
-                best_ma_val_acc = current_ma_val_acc
-                save_checkpoint(
-                    model=model,
-                    optimizer=optimizer,
-                    epoch=epoch,
-                    train_losses=train_losses,
-                    val_losses=val_losses,
-                    train_accs=train_accs,
-                    val_accs=val_accs,
-                    current_ma_val_acc=current_ma_val_acc,
-                    args=args,
-                    timestamp=timestamp,
-                    save_dir=args.output_mask_dir,
-                    experiment_name=args.experiment_name
-                    )
+    #     # Save model if current moving average is better than previous best
+    #     if args.save_model:
+    #         if current_ma_val_acc > best_ma_val_acc:
+    #             best_ma_val_acc = current_ma_val_acc
+    #             save_checkpoint(
+    #                 model=model,
+    #                 optimizer=optimizer,
+    #                 epoch=epoch,
+    #                 train_losses=train_losses,
+    #                 val_losses=val_losses,
+    #                 train_accs=train_accs,
+    #                 val_accs=val_accs,
+    #                 current_ma_val_acc=current_ma_val_acc,
+    #                 args=args,
+    #                 timestamp=timestamp,
+    #                 save_dir=args.output_mask_dir,
+    #                 experiment_name=args.experiment_name
+    #                 )
 
-    # Calculate and log total runtime
-    total_runtime = time.time() - total_start_time
-    logging.info(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
-    print(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
-    logging.info(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
-    print(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
+    # # Calculate and log total runtime
+    # total_runtime = time.time() - total_start_time
+    # logging.info(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
+    # print(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
+    # logging.info(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
+    # print(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
 
-    print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
-    logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+    # print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+    # logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     
 
-    # Plot and save loss and accuracy curves
-    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
+    # # Plot and save loss and accuracy curves
+    # plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
 
-    # Close TensorBoard writer
-    if args.tensorboard_status:
-        writer.close()
+    # # Close TensorBoard writer
+    # if args.tensorboard_status:
+    #     writer.close()
 
 
 if __name__ == "__main__":
