@@ -35,6 +35,10 @@ class ClipDataset(Dataset):
         self.args = args
         self.pickle_files = sorted(glob.glob(os.path.join(pickle_file, '*.pkl')))
         
+        # Create npz directory one step outside of pickle directory
+        self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4')
+        os.makedirs(self.npz_dir, exist_ok=True)
+        
         # Store only file paths and video names
         self.video_metadata = []
         for file in self.pickle_files:
@@ -87,14 +91,16 @@ class ClipDataset(Dataset):
                 
                 combined = torch.cat([masks,images], dim=0)
                 
-                self.video_metadata.append({
-                    # 'pickle_file': file,
-                    # 'video_path': video_path,
-                    'video_name': video_name,
-                    'no_df_sam_complement': no_df_sam_complement,
-                    'post_df_sam_complement': post_df_sam_complement,
-                    'masks': combined
-                })
+                
+                # Save data as npz file in the new directory
+                base_name = os.path.basename(file)
+                npz_file = os.path.join(self.npz_dir, base_name.replace('.pkl', '.npz'))
+                np.savez(
+                    npz_file,    
+                    masks=combined.numpy(),
+                    no_df_sam_complement=no_df_sam_complement.numpy(),
+                    post_df_sam_complement=post_df_sam_complement.numpy()
+                )
                 
                 
                 del data
@@ -128,40 +134,40 @@ class ClipDataset(Dataset):
 def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
     dataset = ClipDataset(pickle_file_folder, args)
 
-    # Simple random split instead of stratified split
-    dataset_size = len(dataset)
-    indices = list(range(dataset_size))
-    split = int(np.floor(split_ratio * dataset_size))
+    # # Simple random split instead of stratified split
+    # dataset_size = len(dataset)
+    # indices = list(range(dataset_size))
+    # split = int(np.floor(split_ratio * dataset_size))
     
-    # Shuffle indices
-    np.random.seed(42)
-    np.random.shuffle(indices)
+    # # Shuffle indices
+    # np.random.seed(42)
+    # np.random.shuffle(indices)
     
-    train_idx, val_idx = indices[:split], indices[split:]
+    # train_idx, val_idx = indices[:split], indices[split:]
 
-    train_dataset = Subset(dataset, train_idx)
-    val_dataset = Subset(dataset, val_idx)
+    # train_dataset = Subset(dataset, train_idx)
+    # val_dataset = Subset(dataset, val_idx)
 
-    # Optimized DataLoader configuration for speed
-    train_loader = DataLoader(
-        train_dataset,
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=4,  # Increased workers for faster loading
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=2,  # Increased prefetch for better throughput
-        drop_last=True
-    )
+    # # Optimized DataLoader configuration for speed
+    # train_loader = DataLoader(
+    #     train_dataset,
+    #     batch_size=batch_size,
+    #     shuffle=True,
+    #     num_workers=4,  # Increased workers for faster loading
+    #     pin_memory=True,
+    #     persistent_workers=True,
+    #     prefetch_factor=2,  # Increased prefetch for better throughput
+    #     drop_last=True
+    # )
 
-    val_loader = DataLoader(
-        val_dataset,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=True,
-        persistent_workers=True,
-        prefetch_factor=2
-    )
+    # val_loader = DataLoader(
+    #     val_dataset,
+    #     batch_size=batch_size,
+    #     shuffle=False,
+    #     num_workers=4,
+    #     pin_memory=True,
+    #     persistent_workers=True,
+    #     prefetch_factor=2
+    # )
 
-    return train_loader, val_loader
+    # return train_loader, val_loader
