@@ -19,19 +19,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 from PIL import Image
-from sam2.build_sam import build_sam2_video_predictor
-import csv
 import logging
 from torch.utils.tensorboard import SummaryWriter
-
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 import joblib
-import pickle
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -46,6 +37,7 @@ from sklearn.metrics import confusion_matrix
 from collections import Counter
 from cnn_3d import Simple3DCNN
 from torchvision.models.video import r2plus1d_18, R2Plus1D_18_Weights
+import psutil
 
 def check_cuda():
     """Check if CUDA is available and print device information."""
@@ -883,9 +875,7 @@ def init_weights(m):
     elif isinstance(m, nn.BatchNorm2d):
         nn.init.constant_(m.weight, 1)
         nn.init.constant_(m.bias, 0)
-        
-import torch
-import psutil
+    
 
 def log_memory_usage(device, epoch=None, logger=None, writer=None):
     """
@@ -930,6 +920,55 @@ def log_memory_usage(device, epoch=None, logger=None, writer=None):
     # Reset peak stats for next epoch
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats(device)
+        
+def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
+    # Load pretrained R(2+1)D model
+    model = r2plus1d_18(weights=R2Plus1D_18_Weights.KINETICS400_V1)
+
+    # Modify first convolutional layer to accept 1-channel input
+    old_conv = model.stem[0]
+    new_conv = nn.Conv3d(
+        in_channels=4,  # change if using different input channels
+        out_channels=old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        bias=(old_conv.bias is not None)
+    )
+
+    # Copy pretrained weights
+    with torch.no_grad():
+        # 1. Grayscale channel (channel 0): average RGB weights
+        new_conv.weight[:, 0, :, :, :] = old_conv.weight.mean(dim=1)
+
+        # 2. RGB channels (channels 1–3): use pretrained RGB weights directly
+        new_conv.weight[:, 1:4, :, :, :] = old_conv.weight  # shape [out, 3, T, H, W]
+
+        # 3. Copy bias if exists
+        if old_conv.bias is not None:
+            new_conv.bias[:] = old_conv.bias
+
+    # Replace the first conv layer
+    model.stem[0] = new_conv
+
+    # Freeze early layers
+    freeze_layers = ['stem', 'layer1', 'layer2']
+    for name, module in model.named_children():
+        if name in freeze_layers:
+            for param in module.parameters():
+                param.requires_grad = False
+
+    # Replace final fully connected layer with Dropout + Linear
+   # Modify final FC layer
+    if dropout_p is not None and dropout_p > 0:
+        model.fc = nn.Sequential(
+            nn.Dropout(p=dropout_p),
+            nn.Linear(model.fc.in_features, num_classes)
+        )
+    else:
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    return model
 
 
 def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_accs, val_accs, 
@@ -1165,6 +1204,12 @@ def main():
         default=4,
         help="Number of workers for training (default: 4)",
     )
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=0.5,
+        help="Dropout rate for the model (default: 0.5)",
+    )
     args = parser.parse_args()
     
     is_cuda_available = check_cuda()
@@ -1233,36 +1278,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
-    model = r2plus1d_18(weights=R2Plus1D_18_Weights.KINETICS400_V1)
-    
-    old_conv = model.stem[0]
-    new_conv = nn.Conv3d(
-        in_channels=4,  # Now accepting 4 input channels
-        out_channels=old_conv.out_channels,
-        kernel_size=old_conv.kernel_size,
-        stride=old_conv.stride,
-        padding=old_conv.padding,
-        bias=(old_conv.bias is not None)
-    )
-
-    # Copy pretrained weights
-    with torch.no_grad():
-        # 1. Grayscale channel (channel 0): average RGB weights
-        new_conv.weight[:, 0, :, :, :] = old_conv.weight.mean(dim=1)
-
-        # 2. RGB channels (channels 1–3): use pretrained RGB weights directly
-        new_conv.weight[:, 1:4, :, :, :] = old_conv.weight  # shape [out, 3, T, H, W]
-
-        # 3. Copy bias if exists
-        if old_conv.bias is not None:
-            new_conv.bias[:] = old_conv.bias
-
-    # Replace the first conv layer
-    model.stem[0] = new_conv
-
-    # Modify the final layer for 4 output classes
-    model.fc = nn.Linear(model.fc.in_features, 4)
-    
+    model = build_r2plus1d_model(num_classes=4, dropout_p=args.dropout)
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
@@ -1272,21 +1288,7 @@ def main():
     
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0001)
     
-    # if args.tensorboard_status:
-    #     writer.add_scalar('Loss/train', 0, 0)
-    #     writer.add_scalar('Loss/val', 0, 0)
-    #     writer.add_scalar('Accuracy/train', 0, 0)
-    #     writer.add_scalar('Accuracy/val', 0, 0)
-    #     writer.add_scalar('Accuracy/val_moving_avg', 0, 0)
-    #     writer.add_scalar('Regret/train', 0, 0)
-    #     writer.add_scalar('Regret/val', 0, 0)
-    #     writer.add_scalar('Time/epoch_runtime', 0, 0)
-    
-   
-    
-    
-    
-    
+     
     #--------------------------Train Model----------------------------------
     
 
