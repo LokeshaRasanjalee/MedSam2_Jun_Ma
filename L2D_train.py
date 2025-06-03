@@ -951,7 +951,7 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
     model.stem[0] = new_conv
 
     # Freeze early layers
-    freeze_layers = ['stem', 'layer1', 'layer2']
+    freeze_layers = ['stem', 'layer1', 'layer2', 'layer3']  # Added layer3 to frozen layers
     for name, module in model.named_children():
         if name in freeze_layers:
             for param in module.parameters():
@@ -961,11 +961,26 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
    # Modify final FC layer
     if dropout_p is not None and dropout_p > 0:
         model.fc = nn.Sequential(
+            nn.BatchNorm1d(model.fc.in_features),
             nn.Dropout(p=dropout_p),
             nn.Linear(model.fc.in_features, num_classes)
         )
     else:
         model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    # Print parameter counts
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f'\nModel Parameter Statistics:')
+    print(f'Total parameters: {total_params:,}')
+    print(f'Trainable parameters: {trainable_params:,}')
+    print(f'Non-trainable parameters: {total_params - trainable_params:,}')
+    print(f'Percentage of trainable parameters: {(trainable_params/total_params)*100:.2f}%')
+    print('\nTrainable layers:')
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(f"{name}: {param.numel():,} parameters")
+    print('\n')
 
     return model
 
@@ -1280,6 +1295,20 @@ def main():
     # Load pretrained R(2+1)D model
     model = build_r2plus1d_model(num_classes=4, dropout_p=args.dropout)
     model = model.to(device)
+
+    # Print parameter counts
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f'\nModel Parameter Statistics:')
+    print(f'Total parameters: {total_params:,}')
+    print(f'Trainable parameters: {trainable_params:,}')
+    print(f'Non-trainable parameters: {total_params - trainable_params:,}')
+    print(f'Percentage of trainable parameters: {(trainable_params/total_params)*100:.2f}%')
+    print('\nTrainable layers:')
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            print(f"{name}: {param.numel():,} parameters")
+    print('\n')
 
     train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
 
