@@ -33,9 +33,9 @@ class ClipDataset(Dataset):
                  
             self.video_metadata.append({
                 'npz_file': npz_file,
-                'masks': torch.from_numpy(data['masks']),
-                'no_df_sam_complement': torch.from_numpy(data['no_df_sam_complement']),
-                'post_df_sam_complement': torch.from_numpy(data['post_df_sam_complement'])
+                # 'masks': torch.from_numpy(data['masks']),
+                # 'no_df_sam_complement': torch.from_numpy(data['no_df_sam_complement']),
+                # 'post_df_sam_complement': torch.from_numpy(data['post_df_sam_complement'])
             })
                 
                
@@ -56,11 +56,17 @@ class ClipDataset(Dataset):
 
     def __getitem__(self, idx):
         info = self.video_metadata[idx]
+        data = np.load(info['npz_file'])
+        
+        # return (info['masks'],
+        #         info['no_df_sam_complement'],
+        #         info['post_df_sam_complement'],
+        #         info['npz_file'])
         
         return (
-            info['masks'],
-            info['no_df_sam_complement'],
-            info['post_df_sam_complement'],
+            torch.from_numpy(data['masks']),
+            torch.from_numpy(data['no_df_sam_complement']),
+            torch.from_numpy(data['post_df_sam_complement']),
             info['npz_file']
         )
 
