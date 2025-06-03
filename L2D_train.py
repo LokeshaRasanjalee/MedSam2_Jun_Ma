@@ -1219,7 +1219,7 @@ def main():
     
     # Add timestamp to the output directory
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    args.output_mask_dir = os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}")
+    args.output_mask_dir = os.path.join(args.output_mask_dir, f"{timestamp}_{args.experiment_name}")
     
     # Ensure the directory exists
     os.makedirs(args.output_mask_dir, exist_ok=True)
