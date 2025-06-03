@@ -21,7 +21,7 @@ from functools import lru_cache
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, args):
         # Get npz directory one step back
-        self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4')
+        self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz')
         self.args = args
         self.npz_files = sorted(glob.glob(os.path.join(self.npz_dir, '*.npz')))
         

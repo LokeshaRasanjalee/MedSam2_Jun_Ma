@@ -1280,7 +1280,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
-    model = Simple3DCNN(in_channels=20, num_classes=4)
+    model = Simple3DCNN(in_channels=5, num_classes=4)
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
