@@ -1232,6 +1232,9 @@ def main():
     # Set random seed for reproducibility
     set_seed(args.seed)
     
+    # Add timestamp to the output directory
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     # Initialize TensorBoard writer if enabled
     if args.tensorboard_status:
         tensorboard_dir = os.path.join(args.output_mask_dir, 'tensorboard')
@@ -1240,8 +1243,7 @@ def main():
         logging.info(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
         print(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
     
-    # Add timestamp to the output directory
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     args.output_mask_dir = os.path.join(args.output_mask_dir, f"{timestamp}_{args.experiment_name}")
     
     # Ensure the directory exists
