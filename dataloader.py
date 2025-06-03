@@ -58,13 +58,19 @@ class ClipDataset(Dataset):
         info = self.video_metadata[idx]
         data = np.load(info['npz_file'])
         
+        clips_batch = torch.from_numpy(data['masks']).permute(1, 0, 2, 3)
+
+        # Reshape to [frames * channels, H, W] = [20, 512, 512]
+        masks = clips_batch.reshape(-1, 512, 512)
+        
+        
         # return (info['masks'],
         #         info['no_df_sam_complement'],
         #         info['post_df_sam_complement'],
         #         info['npz_file'])
         
         return (
-            torch.from_numpy(data['masks']),
+            masks,
             torch.from_numpy(data['no_df_sam_complement']),
             torch.from_numpy(data['post_df_sam_complement']),
             info['npz_file']
