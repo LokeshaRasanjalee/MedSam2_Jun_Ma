@@ -1217,8 +1217,18 @@ def main():
     # Set random seed for reproducibility
     set_seed(args.seed)
     
-    # Add timestamp to the output directory
+     # Add timestamp to the output directory
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Initialize TensorBoard writer if enabled
+    if args.tensorboard_status:
+        tensorboard_dir = os.path.join(args.output_mask_dir, 'tensorboard')
+        run_name = f"{timestamp}_{args.experiment_name}"
+        writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, run_name))
+        logging.info(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
+        print(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
+    
+    
     args.output_mask_dir = os.path.join(args.output_mask_dir, f"{timestamp}_{args.experiment_name}")
     
     # Ensure the directory exists
@@ -1230,14 +1240,6 @@ def main():
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
-
-    # Initialize TensorBoard writer if enabled
-    if args.tensorboard_status:
-        tensorboard_dir = os.path.join(args.output_mask_dir, 'tensorboard')
-        run_name = f"{args.experiment_name}_{timestamp}"
-        writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, run_name))
-        logging.info(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
-        print(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
 
     # Log the git commit hash and branch
     commit_hash = get_last_commit_hash()
