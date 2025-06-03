@@ -927,6 +927,47 @@ def log_memory_usage(device, epoch=None, logger=None, writer=None):
     # Reset peak stats for next epoch
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats(device)
+        
+def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
+    # Load pretrained R(2+1)D model
+    model = r2plus1d_18(weights=R2Plus1D_18_Weights.KINETICS400_V1)
+
+    # Modify first convolutional layer to accept 1-channel input
+    old_conv = model.stem[0]
+    new_conv = nn.Conv3d(
+        in_channels=1,  # change if using different input channels
+        out_channels=old_conv.out_channels,
+        kernel_size=old_conv.kernel_size,
+        stride=old_conv.stride,
+        padding=old_conv.padding,
+        bias=(old_conv.bias is not None)
+    )
+
+    # Copy and average weights across channels
+    with torch.no_grad():
+        new_conv.weight[:] = old_conv.weight.mean(dim=1, keepdim=True)
+        if old_conv.bias is not None:
+            new_conv.bias[:] = old_conv.bias
+    model.stem[0] = new_conv
+
+    # Freeze early layers
+    freeze_layers = ['stem', 'layer1', 'layer2']
+    for name, module in model.named_children():
+        if name in freeze_layers:
+            for param in module.parameters():
+                param.requires_grad = False
+
+    # Replace final fully connected layer with Dropout + Linear
+   # Modify final FC layer
+    if dropout_p is not None and dropout_p > 0:
+        model.fc = nn.Sequential(
+            nn.Dropout(p=dropout_p),
+            nn.Linear(model.fc.in_features, num_classes)
+        )
+    else:
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    return model
 
 
 def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_accs, val_accs, 
@@ -1162,6 +1203,13 @@ def main():
         default=4,
         help="Number of workers for training (default: 4)",
     )
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=0.5,
+        help="Dropout probability (default: 0.5)",
+    )
+    
     args = parser.parse_args()
     
     is_cuda_available = check_cuda()
@@ -1230,28 +1278,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
-    model = r2plus1d_18(weights=R2Plus1D_18_Weights.KINETICS400_V1)
-    
-    # Modify first convolutional layer: from (3, 3, 7, 7) to (1, 3, 7, 7)
-    old_conv = model.stem[0]
-    new_conv = nn.Conv3d(
-        in_channels=1,
-        out_channels=old_conv.out_channels,
-        kernel_size=old_conv.kernel_size,
-        stride=old_conv.stride,
-        padding=old_conv.padding,
-        bias=(old_conv.bias is not None)
-    )
-
-    # Copy and average pretrained weights across the input channel dimension
-    with torch.no_grad():
-        new_conv.weight[:] = old_conv.weight.mean(dim=1, keepdim=True)
-        if old_conv.bias is not None:
-            new_conv.bias[:] = old_conv.bias
-    model.stem[0] = new_conv
-    # Modify the final layer for 4 classes
-    model.fc = nn.Linear(model.fc.in_features, 4)
-    
+    model = build_r2plus1d_model(num_classes=4, dropout_p=args.dropout)
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
