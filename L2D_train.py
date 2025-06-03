@@ -1232,9 +1232,17 @@ def main():
     # Set random seed for reproducibility
     set_seed(args.seed)
     
+    # Initialize TensorBoard writer if enabled
+    if args.tensorboard_status:
+        tensorboard_dir = os.path.join(args.output_mask_dir, 'tensorboard')
+        run_name = f"{timestamp}_{args.experiment_name}"
+        writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, run_name))
+        logging.info(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
+        print(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
+    
     # Add timestamp to the output directory
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    args.output_mask_dir = os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}")
+    args.output_mask_dir = os.path.join(args.output_mask_dir, f"{timestamp}_{args.experiment_name}")
     
     # Ensure the directory exists
     os.makedirs(args.output_mask_dir, exist_ok=True)
@@ -1245,14 +1253,6 @@ def main():
         level=logging.INFO,
         format='%(asctime)s - %(levelname)s - %(message)s'
     )
-
-    # Initialize TensorBoard writer if enabled
-    if args.tensorboard_status:
-        tensorboard_dir = os.path.join(args.output_mask_dir, 'tensorboard')
-        run_name = f"{args.experiment_name}_{timestamp}"
-        writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, run_name))
-        logging.info(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
-        print(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
 
     # Log the git commit hash and branch
     commit_hash = get_last_commit_hash()
@@ -1295,20 +1295,6 @@ def main():
     # Load pretrained R(2+1)D model
     model = build_r2plus1d_model(num_classes=4, dropout_p=args.dropout)
     model = model.to(device)
-
-    # Print parameter counts
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f'\nModel Parameter Statistics:')
-    print(f'Total parameters: {total_params:,}')
-    print(f'Trainable parameters: {trainable_params:,}')
-    print(f'Non-trainable parameters: {total_params - trainable_params:,}')
-    print(f'Percentage of trainable parameters: {(trainable_params/total_params)*100:.2f}%')
-    print('\nTrainable layers:')
-    for name, param in model.named_parameters():
-        if param.requires_grad:
-            print(f"{name}: {param.numel():,} parameters")
-    print('\n')
 
     train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
 

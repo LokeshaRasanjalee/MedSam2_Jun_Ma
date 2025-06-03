@@ -32,10 +32,7 @@ class ClipDataset(Dataset):
             data = np.load(npz_file)
                  
             self.video_metadata.append({
-                'npz_file': npz_file,
-                'masks': torch.from_numpy(data['masks']),
-                'no_df_sam_complement': torch.from_numpy(data['no_df_sam_complement']),
-                'post_df_sam_complement': torch.from_numpy(data['post_df_sam_complement'])
+                'npz_file': npz_file
             })
             
             if not self.args.full_run and len(self.video_metadata) >= 64:
@@ -49,13 +46,21 @@ class ClipDataset(Dataset):
 
     def __getitem__(self, idx):
         info = self.video_metadata[idx]
+        data = np.load(info['npz_file'])
         
-        return (
-            info['masks'],
-            info['no_df_sam_complement'],
-            info['post_df_sam_complement'],
+        return(
+            torch.from_numpy(data['masks']),
+            torch.from_numpy(data['no_df_sam_complement']),
+            torch.from_numpy(data['post_df_sam_complement']),
             info['npz_file']
         )
+        
+        # return (
+        #     info['masks'],
+        #     info['no_df_sam_complement'],
+        #     info['post_df_sam_complement'],
+        #     info['npz_file']
+        # )
 
 
 def get_dataloaders(pickle_file_folder, args, batch_size, split_ratio=0.8):
