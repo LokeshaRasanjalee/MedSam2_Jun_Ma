@@ -39,8 +39,14 @@ for pkl_file in pkl_files:
 df = pd.DataFrame(data, columns=['video_name', 'L_no_defer_sam_loss', 'post_defer_1', 'post_defer_2', 'post_defer_3', 'post_defer_4',
                                 'L_no_defer', 'L_post_defer_1', 'L_post_defer_2', 'L_post_defer_3', 'L_post_defer_4'])
 
-# Save to CSV
-df.to_csv('sam_losses.csv', index=False)
+# Create separate DataFrame for SAM losses
+sam_loss_columns = ['L_no_defer_sam_loss', 'post_defer_1', 'post_defer_2', 'post_defer_3', 'post_defer_4']
+df_sam = df[['video_name'] + sam_loss_columns]
 
-print(f"CSV file saved to: sam_losses.csv")
+# Save to CSV files
+df.to_csv('sam_losses.csv', index=False)
+df_sam.to_csv('sam_losses_only.csv', index=False)
+
+print(f"Full CSV file saved to: sam_losses.csv")
+print(f"SAM losses CSV file saved to: sam_losses_only.csv")
 print(f"Total rows processed: {len(data)}") 
