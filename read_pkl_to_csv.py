@@ -19,22 +19,27 @@ for pkl_file in pkl_files:
         with open(pkl_file, 'rb') as f:
             pkl_data = pickle.load(f)
             
+            # Extract video name from the pickle file name
+            video_name = os.path.basename(pkl_file).replace('.pkl', '')
+            
             # Extract the required values and convert tensors to float values
             L_no_defer_sam_loss = float(pkl_data['L_no_defer_sam_loss'].item() if torch.is_tensor(pkl_data['L_no_defer_sam_loss']) else pkl_data['L_no_defer_sam_loss'])
             L_post_defer_sam_loss_list = [float(x.item() if torch.is_tensor(x) else x) for x in pkl_data['L_post_defer_sam_loss_list']]
+            L_no_defer = float(pkl_data['L_no_defer'].item() if torch.is_tensor(pkl_data['L_no_defer']) else pkl_data['L_no_defer'])
+            L_post_defer_list = [float(x.item() if torch.is_tensor(x) else x) for x in pkl_data['L_post_defer_list']]
             
             # Create a row with all values
-            row = [L_no_defer_sam_loss] + L_post_defer_sam_loss_list
+            row = [video_name, L_no_defer_sam_loss] + L_post_defer_sam_loss_list + [L_no_defer] + L_post_defer_list
             data.append(row)
             
     except Exception as e:
         print(f"Error reading {pkl_file}: {str(e)}")
 
 # Create DataFrame
-df = pd.DataFrame(data, columns=['L_no_defer_sam_loss', 'post_defer_1', 'post_defer_2', 'post_defer_3', 'post_defer_4'])
+df = pd.DataFrame(data, columns=['video_name', 'L_no_defer_sam_loss', 'post_defer_1', 'post_defer_2', 'post_defer_3', 'post_defer_4',
+                                'L_no_defer', 'L_post_defer_1', 'L_post_defer_2', 'L_post_defer_3', 'L_post_defer_4'])
 
 # Save to CSV
-
 df.to_csv('sam_losses.csv', index=False)
 
 print(f"CSV file saved to: sam_losses.csv")
