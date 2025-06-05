@@ -80,9 +80,9 @@ class ClipDataset(Dataset):
                 global_normalized = (all_losses - global_p1) / (global_p99 - global_p1 + 1e-6)
                 global_normalized = torch.clamp(global_normalized, 0, 1)  # Clamp values between 0 and 1
                 
-                if torch.sum(global_normalized == 1) > 1 or torch.sum(global_normalized == 0) > 1:
-                    print(f"{video_name} : More than one 1 or 0 in global_normalized. {global_normalized}")
-                    continue
+                # if torch.sum(global_normalized == 1) > 1 or torch.sum(global_normalized == 0) > 1:
+                #     print(f"{video_name} : More than one 1 or 0 in global_normalized. {global_normalized}")
+                #     continue
                 
                 global_no_df_sam_loss_norm = global_normalized[0]
                 global_post_df_sam_loss_norm = global_normalized[1:]
@@ -97,9 +97,9 @@ class ClipDataset(Dataset):
                 local_normalized = (all_losses - min_local_loss) / (max_local_loss - min_local_loss + 1e-6)
                 local_normalized = torch.clamp(local_normalized, 0, 1)  # Clamp values between 0 and 1
                 
-                if torch.sum(local_normalized == 1) > 1 or torch.sum(local_normalized == 0) > 1:
-                    print(f"{video_name} : More than one 1 or 0 in local_normalized. {local_normalized}")
-                    continue
+                # if torch.sum(local_normalized == 1) > 1 or torch.sum(local_normalized == 0) > 1:
+                #     print(f"{video_name} : More than one 1 or 0 in local_normalized. {local_normalized}")
+                #     continue
                 
                 local_no_df_sam_loss_norm = local_normalized[0]
                 local_post_df_sam_loss_norm = local_normalized[1:]
