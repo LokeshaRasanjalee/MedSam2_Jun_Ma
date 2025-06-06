@@ -39,12 +39,42 @@ class ClipDataset(Dataset):
         self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4')
         os.makedirs(self.npz_dir, exist_ok=True)
         
-        global_p1 = 312
-        global_p99 = 10256
+        global_p1 = args.p1
+        global_p99 = args.p99
+        
+        if args.num_groups == 0:
+            current_chunk = self.pickle_files
+        else:
+            num_groups = args.num_groups
+            total = len(self.pickle_files)
+
+            # Compute approximate chunk size
+            chunked = []
+            chunk_size = total // num_groups
+            remainder = total % num_groups
+
+            start = 0
+            for i in range(num_groups):
+                end = start + chunk_size + (1 if i < remainder else 0)
+                chunked.append(self.pickle_files[start:end])
+                start = end
+
+            # Output number of elements in each chunk
+            group_sizes = [len(group) for group in chunked]
+            for i, size in enumerate(group_sizes):
+                print(f"Group {i+1}: {size} items")
+
+            # Output total
+            print(f"\nTotal items across all groups: {sum(group_sizes)}")
+            
+
+            current_chunk = chunked[args.array_id] 
+                
+        
         
         # Store only file paths and video names
         self.video_metadata = []
-        for file in self.pickle_files:
+        for file in current_chunk:
             with open(file, 'rb') as f:
                 data = pickle.load(f)
                 if len(data['L_post_defer_sam_loss_list']) != 4:
