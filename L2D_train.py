@@ -1159,6 +1159,30 @@ def main():
         default=False,
         help="Save model",
     )
+    parser.add_argument(
+        "--p1",
+        type=float,
+        default=234.0,
+        help="P1 parameter for deferral loss (default: 312.0)",
+    )
+    parser.add_argument(
+        "--p99",
+        type=float,
+        default=8384.0,
+        help="P99 parameter for deferral loss (default: 10256.0)",
+    )
+    parser.add_argument(
+        "--array_id",
+        type=int,
+        default=0,
+        help = "array_id"
+    )
+    parser.add_argument(
+        "--num_groups",
+        type=int,
+        default=0,
+        help = "number of groups"
+    )
     args = parser.parse_args()
     
     is_cuda_available = check_cuda()
