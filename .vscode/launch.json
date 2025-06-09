@@ -72,7 +72,7 @@
             "request": "launch",
             "program": "L2D_train.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./sun_dataset/dataset_len-5_frameinterval-5_interclipstride-3_train/Images/ --input_mask_dir ./sun_dataset/dataset_len-5_frameinterval-5_interclipstride-3_train/Masks/ --data_pkl_dir ./l2d_models/dataset_len-5_frameinterval-5_interclipstride-3_train_array_id-0/data_pkl/ -o ./sun_dataset/out/ --experiment_name 'exp_loss_run' --batch_size 3 --num_epochs 5 --learning_rate 1e-6 --alpha 0.75 --beta 0.25"
+            "args": "--base_video_dir ./Barrets_dataset_len-10_frameinterval-5_interclipstride-1-all/Images/ --input_mask_dir ./sun_dataset/Barrets_dataset_len-10_frameinterval-5_interclipstride-1-all/Masks/ --data_pkl_dir ./l2d_models/Barrets_dataset_len-10_frameinterval-5_interclipstride-1-all/data_pkl/ -o ./sun_dataset/out/ --experiment_name 'exp_loss_run' --batch_size 3 --num_epochs 5 --learning_rate 1e-6 --alpha 0.75 --beta 0.25"
         },
         {
             "name": "L2D_debug",

@@ -327,6 +327,7 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
 
     all_best_actions = []
     all_chosen_actions = []
+    rank_distances = []
 
     for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
         clips_batch = clips_batch.to(device)
@@ -373,6 +374,14 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         regret = best_accs - chosen_accs
         total_regret += regret.sum().item()
         total_samples += clips_batch.size(0)
+        
+        # Compute rank distance per sample in batch
+        for i in range(all_accs.size(0)):
+            accs = all_accs[i]
+            chosen_idx = chosen_actions[i].item()
+            sorted_indices = torch.argsort(accs, descending=True)
+            rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
+            rank_distances.append(rank)
 
         # Store results
         all_best_actions.append(best_actions.cpu())
@@ -381,10 +390,11 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
     avg_loss = total_loss / len(loader)
     selection_accuracy = correct / total_samples
     mean_regret = total_regret / total_samples
+    avg_rank_distance = sum(rank_distances) / len(rank_distances)
     all_best_actions = torch.cat(all_best_actions)
     all_chosen_actions = torch.cat(all_chosen_actions)
 
-    return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions
+    return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance
 
 def infer_deferral_action(rejector_logits):
     """
@@ -423,6 +433,7 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
 
     all_best_actions = []
     all_chosen_actions = []
+    rank_distances = []  # <-- new list to store rank distances
 
     with torch.no_grad():
         for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
@@ -456,6 +467,14 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
             regret = best_accs - chosen_accs
             total_regret += regret.sum().item()
             total_samples += clips_batch.size(0)
+            
+             # Compute rank distance per sample in batch
+            for i in range(all_accs.size(0)):
+                accs = all_accs[i]
+                chosen_idx = chosen_actions[i].item()
+                sorted_indices = torch.argsort(accs, descending=True)
+                rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
+                rank_distances.append(rank)
 
             # Store results
             all_best_actions.append(best_actions.cpu())
@@ -464,10 +483,11 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
     selection_accuracy = correct / total_samples
     mean_regret = total_regret / total_samples
     avg_val_loss = total_val_loss / len(loader)
+    avg_rank_distance = sum(rank_distances) / len(rank_distances)
     all_best_actions = torch.cat(all_best_actions)
     all_chosen_actions = torch.cat(all_chosen_actions)
 
-    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions
+    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance
 
 
 # def validate_one_epoch(model, loader, criterion, device,logging):
@@ -938,11 +958,15 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
 
     # Copy pretrained weights
     with torch.no_grad():
-        # 1. Grayscale channel (channel 0): average RGB weights
-        new_conv.weight[:, 0, :, :, :] = old_conv.weight.mean(dim=1)
-
-        # 2. RGB channels (channels 1–3): use pretrained RGB weights directly
-        new_conv.weight[:, 1:4, :, :, :] = old_conv.weight  # shape [out, 3, T, H, W]
+        rgb_weights = old_conv.weight  # [out_channels, 3, T, H, W]
+    
+        # Channel 0: grayscale initialized by averaging across RGB channels
+        new_conv.weight[:, 0, :, :, :] = rgb_weights.mean(dim=1)
+        
+        # Channels 1–3: copy RGB weights directly
+        new_conv.weight[:, 1, :, :, :] = rgb_weights[:, 0, :, :, :]
+        new_conv.weight[:, 2, :, :, :] = rgb_weights[:, 1, :, :, :]
+        new_conv.weight[:, 3, :, :, :] = rgb_weights[:, 2, :, :, :]
 
         # 3. Copy bias if exists
         if old_conv.bias is not None:
@@ -952,7 +976,7 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
     model.stem[0] = new_conv
 
     # Freeze early layers
-    freeze_layers = ['stem', 'layer1', 'layer2']
+    freeze_layers = ['stem', 'layer1', 'layer2', 'layer3']
     for name, module in model.named_children():
         if name in freeze_layers:
             for param in module.parameters():
@@ -1064,14 +1088,12 @@ def main():
         "-i",
         "--base_video_dir",
         type=str,
-        required=True,
         help="directory containing videos (as JPEG files) to run inference on",
     )
     parser.add_argument(
         "-m",
         "--input_mask_dir",
         type=str,
-        required=True,
         help="directory containing input masks (as PNG files) of each video",
     )
     parser.add_argument(
@@ -1219,25 +1241,39 @@ def main():
     
     # Add timestamp to the output directory
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    args.output_mask_dir = os.path.join(args.output_mask_dir, f"{timestamp}_{args.experiment_name}")
     
-    # Ensure the directory exists
+    tensor_dir = os.path.join(args.output_mask_dir, 'tensorboard_logs')
+    os.makedirs(tensor_dir, exist_ok=True)
+    
+    # Create output directory with timestamp and experiment name
+    args.output_mask_dir = os.path.join(args.output_mask_dir, f"{timestamp}_{args.experiment_name}")
     os.makedirs(args.output_mask_dir, exist_ok=True)
-
-    # Set up logging to use the output_mask_dir
+    
+    # Set up logging configuration
+    log_file = os.path.join(args.output_mask_dir, 'output.log')
     logging.basicConfig(
-        filename=os.path.join(args.output_mask_dir, 'output.log'),
         level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s'
+        format='%(asctime)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler()  # This will also print to console
+        ]
     )
-
+    
+    # Log the start of the experiment
+    logging.info("="*50)
+    logging.info(f"Starting experiment: {args.experiment_name}")
+    logging.info(f"Timestamp: {timestamp}")
+    logging.info("="*50)
+    
     # Initialize TensorBoard writer if enabled
-    if args.tensorboard_status:
-        tensorboard_dir = os.path.join(args.output_mask_dir, 'tensorboard')
+    writer = None
+    if args.tensorboard_status:  
+        os.makedirs(tensor_dir, exist_ok=True)
         run_name = f"{args.experiment_name}_{timestamp}"
-        writer = SummaryWriter(log_dir=os.path.join(tensorboard_dir, run_name))
-        logging.info(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
-        print(f"TensorBoard logs will be saved to: {tensorboard_dir}/{run_name}")
+        writer = SummaryWriter(log_dir=os.path.join(tensor_dir, run_name))
+        logging.info(f"TensorBoard logs will be saved to: {tensor_dir}/{run_name}")
+        print(f"TensorBoard logs will be saved to: {tensor_dir}/{run_name}")
 
     # Log the git commit hash and branch
     commit_hash = get_last_commit_hash()
@@ -1248,37 +1284,23 @@ def main():
     print(f"Git commit hash: {commit_hash}")
 
     # Print all arguments
-    print("\nArguments:")
     logging.info("\nArguments:")
+    print("\nArguments:")
     for arg in vars(args):
-        print(f"{arg}: {getattr(args, arg)}")
         logging.info(f"{arg}: {getattr(args, arg)}")
+        print(f"{arg}: {getattr(args, arg)}")
+    logging.info("\n")
     print("\n")
     
-    
-    # if a video list file is provided, read the video names from the file
-    # (otherwise, we use all subdirectories in base_video_dir)
-    if args.video_list_file is not None:
-        with open(args.video_list_file, "r") as f:
-            video_names = [v.strip() for v in f.readlines()]
-    else:
-        video_names = [
-            p
-            for p in os.listdir(args.base_video_dir)
-            if os.path.isdir(os.path.join(args.base_video_dir, p))
-        ]
-        
     # Here we are not considering this scenario : vos_separate_inference_per_object
     assert not args.track_object_appearing_later_in_video
     
-    #print(f"Train on {len(video_names)} videos:\n{video_names}")
-    #logging.info(f"Train on {len(video_names)} videos:\n{video_names}")
-
+   
     # ----- Prepare R(2+1)D model -----
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
-    model = build_r2plus1d_model(num_classes=4, dropout_p=args.dropout)
+    model = build_r2plus1d_model(num_classes=9, dropout_p=args.dropout)
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
@@ -1303,8 +1325,8 @@ def main():
         # Start epoch runtime tracking
         epoch_start_time = time.time()
         
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
-        val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions = validate_one_epoch(model, val_loader, criterion, args.alpha, args.beta, device, logging)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
+        val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance = validate_one_epoch(model, val_loader, criterion, args.alpha, args.beta, device, logging)
 
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
@@ -1327,6 +1349,8 @@ def main():
             writer.add_scalar('Regret/train', train_regret, epoch)
             writer.add_scalar('Regret/val', mean_regret, epoch)
             writer.add_scalar('Time/epoch_runtime', epoch_runtime, epoch)
+            writer.add_scalar('Rank Distance/train', train_avg_rank_distance, epoch)
+            writer.add_scalar('Rank Distance/val', val_avg_rank_distance, epoch)
 
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
@@ -1372,16 +1396,22 @@ def main():
     logging.info(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
     print(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
 
-    print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
-    logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+    # print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+    # logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     
 
     # Plot and save loss and accuracy curves
     plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
 
-    # Close TensorBoard writer
-    if args.tensorboard_status:
+    # Close TensorBoard writer if it was initialized
+    if writer is not None:
         writer.close()
+        logging.info("TensorBoard writer closed")
+
+    logging.info("="*50)
+    logging.info(f"Experiment completed: {args.experiment_name}")
+    logging.info(f"Total runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
+    logging.info("="*50)
 
 
 if __name__ == "__main__":

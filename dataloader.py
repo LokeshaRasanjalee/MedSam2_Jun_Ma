@@ -16,12 +16,13 @@ from PIL import Image
 import torch
 import numpy as np
 from torchvision.transforms import InterpolationMode
-from functools import lru_cache
+from collections import Counter
+from tqdm import tqdm
 
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, args):
         # Get npz directory one step back
-        self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4')
+        self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_112')
         self.args = args
         self.npz_files = sorted(glob.glob(os.path.join(self.npz_dir, '*.npz')))
         
@@ -65,10 +66,31 @@ class ClipDataset(Dataset):
         
         return (
             torch.from_numpy(data['masks']),
-            torch.from_numpy(data['no_df_sam_complement']),
-            torch.from_numpy(data['post_df_sam_complement']),
+            torch.from_numpy(data['global_no_df_sam_complement']),
+            torch.from_numpy(data['global_post_df_sam_complement']),
             info['npz_file']
         )
+        
+def get_max_index_distribution(dataset):
+    counter = Counter()
+
+    for i in tqdm(range(len(dataset))):
+        _, no_df_val, post_df_vals, _ = dataset[i]  # Extract values
+
+        # Ensure tensors are 1D
+        no_df_val = no_df_val.view(-1)        # Shape: [1]
+        post_df_vals = post_df_vals.view(-1)  # Shape: [9]
+
+        # Concatenate to get [10] vector
+        combined = torch.cat([no_df_val, post_df_vals], dim=0)
+
+        # Get index of max
+        max_idx = int(torch.argmax(combined).item())
+
+        # Count it
+        counter[max_idx] += 1
+
+    return counter
 
 
 def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
@@ -87,6 +109,13 @@ def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
 
     train_dataset = Subset(dataset, train_idx)
     val_dataset = Subset(dataset, val_idx)
+    
+    # Check max index distribution
+    train_dist = get_max_index_distribution(train_dataset)
+    val_dist = get_max_index_distribution(val_dataset)
+
+    print("Train split distribution:", dict(train_dist))
+    print("Validation split distribution:", dict(val_dist))
 
     # Optimized DataLoader configuration for speed
     train_loader = DataLoader(
