@@ -38,6 +38,8 @@ from collections import Counter
 from cnn_3d import Simple3DCNN
 from torchvision.models.video import r2plus1d_18, R2Plus1D_18_Weights
 import psutil
+from timesformer.models.vit import TimeSformer
+import torch.nn.functional as F
 
 def check_cuda():
     """Check if CUDA is available and print device information."""
@@ -994,6 +996,80 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
 
     return model
 
+def build_timesformer_model(num_classes=9, weight_path='/path/to/TimeSformer_divST_K400.pyth'):
+    model = TimeSformer(
+        img_size=224,
+        num_classes=400,  # dummy head; will be replaced
+        num_frames=10,
+        attention_type='divided_space_time'
+    )
+
+    # 🔄 Expand input conv to accept 4 channels instead of 3
+    old_proj = model.model.patch_embed.proj  # <- correct access
+    if old_proj.in_channels == 3:
+        print("🔄 Expanding input projection from 3 to 4 channels")
+        new_proj = nn.Conv2d(
+            in_channels=4,
+            out_channels=old_proj.out_channels,
+            kernel_size=old_proj.kernel_size,
+            stride=old_proj.stride,
+            padding=old_proj.padding,
+            bias=old_proj.bias is not None
+        )
+        with torch.no_grad():
+            new_proj.weight[:, :3, :, :] = old_proj.weight  # Copy pretrained RGB weights
+            new_proj.weight[:, 3:, :, :] = old_proj.weight.mean(dim=1, keepdim=True)  # Init 4th channel
+            if old_proj.bias is not None:
+                new_proj.bias.copy_(old_proj.bias)
+        model.model.patch_embed.proj = new_proj
+
+    # Load checkpoint (raw or wrapped)
+    checkpoint = torch.load(weight_path, map_location='cpu')
+    state_dict = checkpoint.get('model_state', checkpoint)
+
+    # Strip 'model.' prefix if needed
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        new_key = k.replace('model.', '') if k.startswith('model.') else k
+        new_state_dict[new_key] = v
+
+    # Interpolate pos_embed if present and valid
+    if 'pos_embed' in new_state_dict:
+        embed_dim = new_state_dict['pos_embed'].shape[-1]
+        if embed_dim != 768:
+            print(f"⚠️ Skipping pos_embed: checkpoint embed_dim={embed_dim}, expected=768")
+            del new_state_dict['pos_embed']
+        else:
+            print("Interpolating positional embeddings...")
+
+            def interpolate_pos_embed(old_embed, new_frames):
+                cls_token = old_embed[:, :1, :]
+                spatial_embed = old_embed[:, 1:, :]  # [1, N, D]
+                N = spatial_embed.shape[1]
+                D = spatial_embed.shape[2]
+
+                # Repeat spatial tokens over time
+                repeated = spatial_embed.repeat(1, new_frames, 1)  # [1, T*N, D]
+                return torch.cat((cls_token, repeated), dim=1)
+
+            new_state_dict['pos_embed'] = interpolate_pos_embed(new_state_dict['pos_embed'], new_frames=10)
+
+    # Load weights
+    msg = model.load_state_dict(new_state_dict, strict=False)
+    print("✅ Weights loaded.")
+    print("Missing keys:", msg.missing_keys)
+    print("Unexpected keys:", msg.unexpected_keys)
+
+    # Replace classification head
+    model.model.head = nn.Linear(768, num_classes)
+
+    # Freeze all except classification head
+    for name, param in model.named_parameters():
+        param.requires_grad = name.startswith("model.head")
+
+    return model
+
+
 
 def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_accs, val_accs, 
                     current_ma_val_acc, args, timestamp, save_dir, experiment_name):
@@ -1232,6 +1308,12 @@ def main():
         default=0.5,
         help="Dropout rate for the model (default: 0.5)",
     )
+    parser.add_argument(
+        "--weight_path",
+        type=str,
+        default=None,
+        help="Path to the pretrained weights for the model (default: None)",
+    )
     args = parser.parse_args()
     
     is_cuda_available = check_cuda()
@@ -1300,7 +1382,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
-    model = build_r2plus1d_model(num_classes=9, dropout_p=args.dropout)
+    model = build_timesformer_model(num_classes=9, weight_path=args.weight_path)
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
