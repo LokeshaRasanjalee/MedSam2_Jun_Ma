@@ -24,11 +24,11 @@ class Simple3DCNN(nn.Module):
         x = F.relu(self.bn1(self.conv1(x)))  # [B, 16, H, W]
         x = self.pool1(x)                    # Downsample
 
-        x = F.relu(self.bn2(self.conv2(x)))  # [B, 32, H, W]
-        x = self.pool2(x)
+        # x = F.relu(self.bn2(self.conv2(x)))  # [B, 32, H, W]
+        # x = self.pool2(x)
 
-        x = F.relu(self.bn3(self.conv3(x)))  # [B, 64, H, W]
-        x = self.pool3(x)                    # [B, 64, 1, 1]
+        # x = F.relu(self.bn3(self.conv3(x)))  # [B, 64, H, W]
+        # x = self.pool3(x)                    # [B, 64, 1, 1]
 
         x = x.view(x.size(0), -1)            # [B, 64]
         x = F.relu(self.fc1(x))              # [B, 128]

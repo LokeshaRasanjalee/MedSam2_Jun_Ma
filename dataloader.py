@@ -61,7 +61,7 @@ class ClipDataset(Dataset):
         clips_batch = torch.from_numpy(data['masks']).permute(1, 0, 2, 3)
 
         # Reshape to [frames * channels, H, W] = [20, 512, 512]
-        masks = clips_batch.reshape(-1, 512, 512)
+        masks = clips_batch.reshape(-1, 224, 224)
         
         
         # return (info['masks'],
@@ -71,8 +71,8 @@ class ClipDataset(Dataset):
         
         return (
             masks,
-            torch.from_numpy(data['no_df_sam_complement']),
-            torch.from_numpy(data['post_df_sam_complement']),
+            torch.from_numpy(data['global_no_df_sam_complement']),
+            torch.from_numpy(data['global_post_df_sam_complement']),
             info['npz_file']
         )
 
@@ -115,5 +115,26 @@ def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
         persistent_workers=True,
         prefetch_factor=2
     )
-
+    
+    # Analyze validation dataset
+    index_counts = {}
+    
+    print("Analyzing validation dataset...")
+    for clips_batch, global_no_df_sam_complement, global_post_df_sam_complement, video_name_batch in val_loader:
+        # Concatenate the dice scores
+        combined_scores = torch.cat([global_no_df_sam_complement, global_post_df_sam_complement], dim=1)
+        
+        # Get indices of maximum values
+        max_indices = torch.argmax(combined_scores, dim=1)
+        
+        # Count occurrences of each index
+        for idx in max_indices:
+            idx = idx.item()
+            index_counts[idx] = index_counts.get(idx, 0) + 1
+    
+    # Print the results
+    print("\nIndex counts in validation dataset:")
+    for idx, count in sorted(index_counts.items()):
+        print(f"Index {idx}: {count} occurrences")
+    
     return train_loader, val_loader
