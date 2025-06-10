@@ -975,15 +975,7 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
     # Replace the first conv layer
     model.stem[0] = new_conv
 
-    # Freeze early layers
-    freeze_layers = ['stem', 'layer1', 'layer2', 'layer3']
-    for name, module in model.named_children():
-        if name in freeze_layers:
-            for param in module.parameters():
-                param.requires_grad = False
-
     # Replace final fully connected layer with Dropout + Linear
-   # Modify final FC layer
     if dropout_p is not None and dropout_p > 0:
         model.fc = nn.Sequential(
             nn.Dropout(p=dropout_p),
