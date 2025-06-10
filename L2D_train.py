@@ -324,6 +324,8 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
     correct = 0
     total_samples = 0
     total_regret = 0.0
+    total_chosen_acc = 0.0
+    total_best_acc = 0.0
 
     all_best_actions = []
     all_chosen_actions = []
@@ -373,6 +375,8 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         correct += (chosen_actions == best_actions).sum().item()
         regret = best_accs - chosen_accs
         total_regret += regret.sum().item()
+        total_chosen_acc += chosen_accs.sum().item()
+        total_best_acc += best_accs.sum().item()
         total_samples += clips_batch.size(0)
         
         # Compute rank distance per sample in batch
@@ -391,10 +395,12 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
     selection_accuracy = correct / total_samples
     mean_regret = total_regret / total_samples
     avg_rank_distance = sum(rank_distances) / len(rank_distances)
+    avg_chosen_acc = total_chosen_acc / total_samples
+    avg_best_acc = total_best_acc / total_samples
     all_best_actions = torch.cat(all_best_actions)
     all_chosen_actions = torch.cat(all_chosen_actions)
 
-    return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance
+    return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc
 
 def infer_deferral_action(rejector_logits):
     """
@@ -430,6 +436,8 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
     total_regret = 0.0
     correct = 0
     total_val_loss = 0.0
+    total_chosen_acc = 0.0
+    total_best_acc = 0.0
 
     all_best_actions = []
     all_chosen_actions = []
@@ -466,6 +474,8 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
             correct += (chosen_actions == best_actions).sum().item()
             regret = best_accs - chosen_accs
             total_regret += regret.sum().item()
+            total_chosen_acc += chosen_accs.sum().item()
+            total_best_acc += best_accs.sum().item()
             total_samples += clips_batch.size(0)
             
              # Compute rank distance per sample in batch
@@ -484,10 +494,12 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
     mean_regret = total_regret / total_samples
     avg_val_loss = total_val_loss / len(loader)
     avg_rank_distance = sum(rank_distances) / len(rank_distances)
+    avg_chosen_acc = total_chosen_acc / total_samples
+    avg_best_acc = total_best_acc / total_samples
     all_best_actions = torch.cat(all_best_actions)
     all_chosen_actions = torch.cat(all_chosen_actions)
 
-    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance
+    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc
 
 
 # def validate_one_epoch(model, loader, criterion, device,logging):
@@ -1317,8 +1329,8 @@ def main():
         # Start epoch runtime tracking
         epoch_start_time = time.time()
         
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
-        val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance = validate_one_epoch(model, val_loader, criterion, args.alpha, args.beta, device, logging)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc = train_one_epoch(model, train_loader, criterion, optimizer, args.alpha, args.beta, device)
+        val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc = validate_one_epoch(model, val_loader, criterion, args.alpha, args.beta, device, logging)
 
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
@@ -1343,11 +1355,17 @@ def main():
             writer.add_scalar('Time/epoch_runtime', epoch_runtime, epoch)
             writer.add_scalar('Rank Distance/train', train_avg_rank_distance, epoch)
             writer.add_scalar('Rank Distance/val', val_avg_rank_distance, epoch)
+            # Add new metrics for chosen and best accuracies
+            writer.add_scalar('Accuracy/chosen_train', train_chosen_acc, epoch)
+            writer.add_scalar('Accuracy/best_train', train_best_acc, epoch)
+            writer.add_scalar('Accuracy/chosen_val', val_chosen_acc, epoch)
+            writer.add_scalar('Accuracy/best_val', val_best_acc, epoch)
+           
 
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
         logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
-        
+                
         # Log training best action and chosen action for 10 samples
         logging.info(f"Training Best Actions: {train_best_actions[:10]}")
         logging.info(f"Training Chosen Actions: {train_chosen_actions[:10]}")
