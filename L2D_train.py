@@ -297,8 +297,7 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
         exp_rj = torch.exp(r_j.squeeze(1))            # [B]
         penalty = exp_diff + (n_e-1)*exp_rj                   # [B]
 
-        # Cost calculation with clamping to prevent negative losses
-        # cost = torch.clamp(alpha * (1 - acc_post_def_batch[:, j]) + beta, max=1.0)
+
         cost = alpha * (1 - acc_post_def_batch[:, j]) + beta
         c_bar = 1 - cost  # This will now always be >= 0
 
@@ -316,6 +315,38 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     # print("total_loss:\n", total_loss[:3])
     
     return torch.mean(total_loss)
+
+def deferral_loss_mozannar(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha):
+    """
+    Cost-sensitive cross-entropy loss for learning to defer.
+    
+    Parameters:
+    - acc_no_def_batch: [B] — Dice scores for predictions using only prompt at f₀
+    - rejector_logits:  [B, J+1] — model logits for deferral decisions (0 = no deferral, 1..J = frame-specific deferral)
+    - acc_post_def_batch: [B, J] — Dice scores using f₀ + fⱼ, for j=1..J
+    - alpha: scalar — constant deferral cost to be added to each post-deferral option
+    
+    Returns:
+    - scalar loss (mean over batch)
+    """
+    B, num_classes = rejector_logits.shape  # num_classes = J + 1
+    J = num_classes - 1
+
+    # 1. Compute total cost vector: c(i) = 1 - acc(i) + lambda (only for deferred)
+    c0 = 1.0 - acc_no_def_batch                         # [B] for no deferral
+    c_defer = 1.0 - acc_post_def_batch + alpha        # [B, J] with deferral cost added
+
+    # 2. Combine into full cost matrix [B, J+1]
+    cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)  # [B, J+1]
+
+    # 3. Compute softmax weights: w(i) = max(c) - c(i)
+    max_c, _ = cost.max(dim=1, keepdim=True)            # [B, 1]
+    weights = max_c - cost                              # [B, J+1]
+
+    # 4. Cross-entropy with custom weights
+    log_probs = F.log_softmax(rejector_logits, dim=1)   # [B, J+1]
+    loss = -torch.sum(weights * log_probs, dim=1)       # [B]
+    return loss.mean()
     
 
 def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device):
@@ -341,7 +372,7 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
+        loss = deferral_loss_mozannar(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha)
    
         # Backward pass
         loss.backward()
@@ -364,11 +395,15 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
         # All possible accuracies: base + n_e frames
         all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
 
+        # Find best actions with preference for zeroth action in case of ties
+        max_vals, max_indices = all_accs.max(dim=1)        # [B], [B]
+        # Check if the best action is at index 0
+        is_0_best = (all_accs[:, 0] == max_vals)           # [B], boolean mask
+        # If index 0 is best, return 0; otherwise return argmax
+        best_actions = torch.where(is_0_best, torch.zeros_like(max_indices), max_indices)
+
         # Accuracy from chosen action
         chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
-
-        # Best accuracy (oracle)
-        best_actions = torch.argmax(all_accs, dim=1)
         best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
 
         # Compute metrics
@@ -404,30 +439,18 @@ def train_one_epoch(rejector, loader, criterion, optimizer, alpha, beta, device)
 
 def infer_deferral_action(rejector_logits):
     """
-    Implements inference rule from Mao et al. (2023) predictor-rejector setting:
-    - Defer to expert j if r_j <= 0 and r_j < all other r_i.
-    - Else, use base model (no deferral).
-    
-    Args:
-        rejector_logits: [B, n_e] logits from rejector model
+    Given logits over deferral actions, return the index of the inferred best action.
+
+    Parameters:
+    - rejector_logits: Tensor of shape [B, N] where:
+        - B = batch size
+        - N = number of deferral options (e.g., 0 = no deferral, 1..J = frame-specific prompts)
 
     Returns:
-        actions: [B] where 0 = no deferral, 1...n_e = defer to expert j = action - 1
+    - action_idx: Tensor of shape [B] — index of the best action per sample
     """
-    B, n_e = rejector_logits.shape
-    actions = torch.zeros(B, dtype=torch.long, device=rejector_logits.device)
-
-    for b in range(B):
-        r = rejector_logits[b]
-        eligible = (r <= 0)
-        if eligible.any():
-            eligible_indices = torch.arange(n_e, device=r.device)[eligible]
-            chosen_idx = eligible_indices[torch.argmin(r[eligible])]
-            actions[b] = chosen_idx + 1  # offset for base = 0
-        else:
-            actions[b] = 0
-
-    return actions
+    action_idx = torch.argmax(rejector_logits, dim=1)  # shape [B]
+    return action_idx
 
 
 def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=None):
@@ -450,11 +473,10 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
             post_df_dice_batch = post_df_dice_batch.to(device)          # [B, n_e]
 
             # Predict deferral logits
-            #input= clips_batch.permute(0, 2, 1, 3, 4)
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = deferral_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
+            val_loss = deferral_loss_mozannar(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
@@ -463,11 +485,16 @@ def validate_one_epoch(model, loader, criterion, alpha, beta, device, logging=No
             # All possible accuracies: base + n_e frames
             all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)  # [B, 1+n_e]
 
+            # Find best actions with preference for zeroth action in case of ties
+            max_vals, max_indices = all_accs.max(dim=1)        # [B], [B]
+            # Check if the best action is at index 0
+            is_0_best = (all_accs[:, 0] == max_vals)           # [B], boolean mask
+            # If index 0 is best, return 0; otherwise return argmax
+            best_actions = torch.where(is_0_best, torch.zeros_like(max_indices), max_indices)
+
             # Accuracy from chosen action
             chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)   # [B]
-
-            # Best accuracy (oracle)
-            best_actions = torch.argmax(all_accs, dim=1)                                     # [B]
+                           
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)      # [B]
 
             # Compute metrics
@@ -994,15 +1021,18 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
             for param in module.parameters():
                 param.requires_grad = False
 
-    # Replace final fully connected layer with Dropout + Linear
-   # Modify final FC layer
+    # Replace final fully connected layer with Dropout + Linear + Softmax
     if dropout_p is not None and dropout_p > 0:
         model.fc = nn.Sequential(
             nn.Dropout(p=dropout_p),
-            nn.Linear(model.fc.in_features, num_classes)
+            nn.Linear(model.fc.in_features, num_classes),
+            nn.Softmax(dim=1)
         )
     else:
-        model.fc = nn.Linear(model.fc.in_features, num_classes)
+        model.fc = nn.Sequential(
+            nn.Linear(model.fc.in_features, num_classes),
+            nn.Softmax(dim=1)
+        )
 
     return model
 
@@ -1077,13 +1107,11 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
     with open(history_path, 'w') as f:
         json.dump(history, f, indent=4)
     
-    logging.info(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
-    print(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+    # logging.info(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+    # print(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
     
     if current_ma_val_acc >= best_ma_val_acc:
-        logging.info(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
-        print(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
-        
+         
         # Delete existing checkpoint file with the same experiment name
         old_checkpoint = os.path.join(save_dir, f"model_{experiment_name}_best_epoch_*.pth")
         try:
@@ -1115,6 +1143,10 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
         history_path = os.path.join(save_dir, f"history_{experiment_name}_best_epoch_{epoch}.json")
         with open(history_path, 'w') as f:
             json.dump(history, f, indent=4)
+            
+        logging.info(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+        print(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+       
         
         
         
@@ -1366,7 +1398,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
-    model = build_r2plus1d_model(num_classes=9, dropout_p=args.dropout)
+    model = build_r2plus1d_model(num_classes=10, dropout_p=args.dropout)
     start_epoch = 0
     if args.load_model_path is not None:
         checkpoint = torch.load(args.load_model_path)
@@ -1436,8 +1468,8 @@ def main():
         logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
         
         # Log training best action and chosen action for 10 samples
-        logging.info(f"Training Best Actions: {train_best_actions[:10]}")
-        logging.info(f"Training Chosen Actions: {train_chosen_actions[:10]}")
+        logging.info(f"Training Best Actions: {train_best_actions[:20]}")
+        logging.info(f"Training Chosen Actions: {train_chosen_actions[:20]}")
 
         # Log validation best action and chosen action for 10 samples
         logging.info(f"Validation Best Actions: {val_best_actions[:10]}")
