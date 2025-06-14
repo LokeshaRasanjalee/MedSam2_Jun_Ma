@@ -1008,7 +1008,7 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
 
 
 def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_accs, val_accs, 
-                    current_ma_val_acc, args, timestamp, save_dir, experiment_name):
+                    current_ma_val_acc, best_ma_val_acc, args, timestamp, save_dir, experiment_name):
     """
     Save model checkpoint and training history.
     
@@ -1034,7 +1034,7 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
     }
     
     # Delete existing checkpoint file with the same experiment name
-    old_checkpoint = os.path.join(save_dir, f"model_{experiment_name}_*.pth")
+    old_checkpoint = os.path.join(save_dir, f"model_{experiment_name}_last_epoch_*.pth")
     try:
         existing_files = glob.glob(old_checkpoint)
         if existing_files:
@@ -1047,7 +1047,7 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
     
     
     # Save new checkpoint
-    checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_epoch_{epoch}_ma_acc_{current_ma_val_acc:.4f}.pth")
+    checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_last_epoch_{epoch}_ma_acc_{current_ma_val_acc:.4f}.pth")
     torch.save(checkpoint, checkpoint_path)
     
     # Save training history
@@ -1062,7 +1062,7 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
         'timestamp': timestamp
     }
      # Delete existing history file with the same experiment name
-    old_history = os.path.join(save_dir, f"history_{experiment_name}_*.json")
+    old_history = os.path.join(save_dir, f"history_{experiment_name}_last_epoch_*.json")
     try:
         existing_files = glob.glob(old_history)
         if existing_files:
@@ -1073,13 +1073,51 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
         logging.warning(f"Failed to delete old history: {str(e)}")
         print(f"Failed to delete old history: {str(e)}")
         
-    history_path = os.path.join(save_dir, f"history_{experiment_name}_epoch_{epoch}.json")
+    history_path = os.path.join(save_dir, f"history_{experiment_name}_last_epoch_{epoch}.json")
     with open(history_path, 'w') as f:
         json.dump(history, f, indent=4)
     
-    logging.info(f"Saved new best model with moving average validation accuracy: {current_ma_val_acc:.4f}")
-    print(f"Saved new best model with moving average validation accuracy: {current_ma_val_acc:.4f}")
-
+    logging.info(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+    print(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+    
+    if current_ma_val_acc >= best_ma_val_acc:
+        logging.info(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+        print(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+        
+        # Delete existing checkpoint file with the same experiment name
+        old_checkpoint = os.path.join(save_dir, f"model_{experiment_name}_best_epoch_*.pth")
+        try:
+            existing_files = glob.glob(old_checkpoint)
+            if existing_files:
+                os.remove(existing_files[0])
+                logging.info(f"Deleted old checkpoint: {existing_files[0]}")
+                print(f"Deleted old checkpoint: {existing_files[0]}")
+        except Exception as e:
+            logging.warning(f"Failed to delete old checkpoint: {str(e)}")
+            print(f"Failed to delete old checkpoint: {str(e)}")
+            
+        # Save new checkpoint
+        checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_best_epoch_{epoch}_ma_acc_{current_ma_val_acc:.4f}.pth")
+        torch.save(checkpoint, checkpoint_path)
+        
+        # Delete existing history file with the same experiment name
+        old_history = os.path.join(save_dir, f"history_{experiment_name}_best_epoch_*.json")
+        try:
+            existing_files = glob.glob(old_history)
+            if existing_files:
+                os.remove(existing_files[0])
+                logging.info(f"Deleted old history: {existing_files[0]}")
+                print(f"Deleted old history: {existing_files[0]}")
+        except Exception as e:
+            logging.warning(f"Failed to delete old history: {str(e)}")
+            print(f"Failed to delete old history: {str(e)}")
+            
+        history_path = os.path.join(save_dir, f"history_{experiment_name}_best_epoch_{epoch}.json")
+        with open(history_path, 'w') as f:
+            json.dump(history, f, indent=4)
+        
+        
+        
 def main():
     # Start total runtime tracking
     total_start_time = time.time()
@@ -1244,6 +1282,22 @@ def main():
         default=0.5,
         help="Dropout rate for the model (default: 0.5)",
     )
+    parser.add_argument(
+        "--save_every",
+        type=int,
+        default=10,
+        help="Save model every N epochs (default: 2)",
+    )
+    
+    parser.add_argument(
+        "--load_model_path",
+        type=str,
+        default=None,
+        help="Load model path (default: None)",
+    )
+    
+    
+    
     args = parser.parse_args()
     
     is_cuda_available = check_cuda()
@@ -1313,6 +1367,14 @@ def main():
 
     # Load pretrained R(2+1)D model
     model = build_r2plus1d_model(num_classes=9, dropout_p=args.dropout)
+    start_epoch = 0
+    if args.load_model_path is not None:
+        checkpoint = torch.load(args.load_model_path)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1  # Start from next epoch
+        logging.info(f"Loaded model from {args.load_model_path} at epoch {start_epoch-1}")
+        print(f"Loaded model from {args.load_model_path} at epoch {start_epoch-1}")
+    
     model = model.to(device)
 
     train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
@@ -1322,10 +1384,11 @@ def main():
     
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate, weight_decay=0.0001)
     
+    # Load optimizer state if loading from checkpoint
+    if args.load_model_path is not None:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
      
     #--------------------------Train Model----------------------------------
-    
-
     
     train_losses, train_accs, val_losses, val_accs = [], [], [], []
     # Initialize moving average queue for validation accuracy
@@ -1333,7 +1396,7 @@ def main():
     best_ma_val_acc = 0.0
     best_epoch = 0
     
-    for epoch in range(args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs):
         # Start epoch runtime tracking
         epoch_start_time = time.time()
         
@@ -1386,24 +1449,28 @@ def main():
         # Log memory usage
         log_memory_usage(device, epoch=epoch, logger=logging, writer=writer if args.tensorboard_status else None)
 
+        
+        
         # Save model if current moving average is better than previous best
-        if args.save_model:
+        if args.save_model and (epoch+1) % args.save_every == 0:
+            
+            save_checkpoint(
+                model=model,
+                optimizer=optimizer,
+                epoch=epoch,
+                train_losses=train_losses,
+                val_losses=val_losses,
+                train_accs=train_accs,
+                val_accs=val_accs,
+                current_ma_val_acc=current_ma_val_acc,
+                best_ma_val_acc=best_ma_val_acc,
+                args=args,
+                timestamp=timestamp,
+                save_dir=args.output_mask_dir,
+                experiment_name=args.experiment_name
+                )
             if current_ma_val_acc > best_ma_val_acc:
                 best_ma_val_acc = current_ma_val_acc
-                save_checkpoint(
-                    model=model,
-                    optimizer=optimizer,
-                    epoch=epoch,
-                    train_losses=train_losses,
-                    val_losses=val_losses,
-                    train_accs=train_accs,
-                    val_accs=val_accs,
-                    current_ma_val_acc=current_ma_val_acc,
-                    args=args,
-                    timestamp=timestamp,
-                    save_dir=args.output_mask_dir,
-                    experiment_name=args.experiment_name
-                    )
 
     # Calculate and log total runtime
     total_runtime = time.time() - total_start_time
