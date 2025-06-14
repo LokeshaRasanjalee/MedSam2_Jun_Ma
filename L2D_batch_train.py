@@ -948,6 +948,13 @@ def main():
         required=True,
         help="array ID for the current batch processing",
     )
+    parser.add_argument(
+        "--num_chunks",
+        type=int,
+        default=1,
+        help="number of chunks for the current batch processing",
+    )
+    
     
     args = parser.parse_args()
 
@@ -1012,7 +1019,7 @@ def main():
     
     video_names.sort()
     # Calculate chunk size to get 2000 chunks
-    num_groups = 4
+    num_groups = args.num_chunks
     total = len(video_names)
 
     # Compute approximate chunk size
