@@ -14,6 +14,7 @@ import time  # Add time module import
 import json
 from collections import deque
 import glob
+from sam2.build_sam import build_sam2_video_predictors
 
 import numpy as np
 import matplotlib.pyplot as plt
