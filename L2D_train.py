@@ -1161,10 +1161,10 @@ def main():
         help="directory to save the output masks (as PNG files)",
     )
     parser.add_argument(
-        "--data_pkl_dir",
+        "--data_npz_dir",
         type=str,
         required=True,
-        help="directory to save the data pkl",
+        help="directory to save the data npz",
     )
     parser.add_argument(
         "--score_thresh",
@@ -1378,7 +1378,7 @@ def main():
     
     model = model.to(device)
 
-    train_loader, val_loader = get_dataloaders(args.data_pkl_dir, args, batch_size=args.batch_size)
+    train_loader, val_loader = get_dataloaders(args.data_npz_dir, args, batch_size=args.batch_size)
 
     # For multi-class classification, we use CrossEntropyLoss instead of BCEWithLogitsLoss
     criterion = nn.CrossEntropyLoss()
