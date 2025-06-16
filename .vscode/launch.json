@@ -5,22 +5,6 @@
     "version": "0.2.0",
     "configurations": [ 
 
-
-
-
-    
-    
-
-
-
-    
-
-    
-
-
-
-        
-
         {
             "name": "MedSAM2 Video Inference",
             "type": "debugpy",
@@ -93,7 +77,5 @@
             "console": "integratedTerminal"
         }
         
-
-
     ]
 }
