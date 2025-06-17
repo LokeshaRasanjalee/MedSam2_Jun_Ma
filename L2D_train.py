@@ -376,7 +376,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
 
             # Compute metrics
             correct += (chosen_actions == best_actions).sum().item()
-            regret = best_accs - chosen_accs
+            regret = torch.abs(best_accs - chosen_accs)
             total_regret += regret.sum().item()
             total_samples += clips_batch.size(0)
             total_chosen_acc += chosen_accs.sum().item()
@@ -483,7 +483,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
 
             # Compute metrics
             correct += (chosen_actions == best_actions).sum().item()
-            regret = best_accs - chosen_accs
+            regret = torch.abs(best_accs - chosen_accs)
             total_regret += regret.sum().item()
             total_samples += clips_batch.size(0)
             total_chosen_acc += chosen_accs.sum().item()
