@@ -15,6 +15,7 @@ import json
 from collections import deque
 import glob
 from sam2.build_sam import build_sam2_video_predictor
+import wandb
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -1297,6 +1298,13 @@ def main():
         help="Load model path (default: None)",
     )
     
+    parser.add_argument(
+        "--wandb_status",
+        type=bool,
+        default=False,
+        help="Wandb status (default: False)",
+    )
+    
     
     
     args = parser.parse_args()
@@ -1341,6 +1349,20 @@ def main():
         writer = SummaryWriter(log_dir=os.path.join(tensor_dir, run_name))
         logging.info(f"TensorBoard logs will be saved to: {tensor_dir}/{run_name}")
         print(f"TensorBoard logs will be saved to: {tensor_dir}/{run_name}")
+        
+    if args.wandb_status:
+        wandb.init(
+            # set the wandb project where this run will be logged
+            project="L2D-Video",
+            name= f"{timestamp}_{args.experiment_name}",
+            # track hyperparameters and run metadata
+            config={
+                "learning_rate": args.learning_rate,
+                "architecture": args.experiment_name,
+                "epochs": args.num_epochs,
+                "batch_size": args.batch_size
+            }
+        ) 
 
     # Log the git commit hash and branch
     commit_hash = get_last_commit_hash()
@@ -1431,6 +1453,24 @@ def main():
             writer.add_scalar('Accuracy/best_train', train_best_acc, epoch)
             writer.add_scalar('Accuracy/chosen_val', val_chosen_acc, epoch)
             writer.add_scalar('Accuracy/best_val', val_best_acc, epoch)
+            
+        if args.wandb_status:
+            wandb.log({
+                "Epoch": epoch+1,
+                "Train Loss": train_loss,
+                "Train Acc": train_acc,
+                "Val Loss": val_loss,
+                "Val Acc": val_acc,
+                "Train Regret": train_regret,
+                "Val Regret": mean_regret,
+                "Train Avg Rank Distance": train_avg_rank_distance,
+                "Val Avg Rank Distance": val_avg_rank_distance,
+                "Train Best Acc": train_best_acc,
+                "Train Chosen Acc": train_chosen_acc,
+                "Val Best Acc": val_best_acc,
+                "Val Chosen Acc": val_chosen_acc
+            })
+
 
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
         logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
