@@ -319,37 +319,36 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     
     return torch.mean(total_loss)
 
-def deferral_loss_mozannar(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta):
+def deferral_loss_mozannar(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha, beta):
+    
     """
-    Cost-sensitive cross-entropy loss for learning to defer.
+    Implements cost-sensitive softmax surrogate loss with soft labels.
     
-    Parameters:
-    - acc_no_def_batch: [B] — Dice scores for predictions using only prompt at f₀
-    - rejector_logits:  [B, J+1] — model logits for deferral decisions (0 = no deferral, 1..J = frame-specific deferral)
-    - acc_post_def_batch: [B, J] — Dice scores using f₀ + fⱼ, for j=1..J
-    - alpha: scalar — constant deferral cost to be added to each post-deferral option
-    
+    Args:
+        acc_no_def_batch: [B] tensor, accuracy/Dice for no deferral
+        rejector_logits: [B, L] tensor, model output logits for each frame (0 to L-1)
+        acc_post_def_batch: [B, L] tensor, accuracy/Dice if second prompt is given at each frame
+        lambda_cost: scalar, cost of deferring (added to all t ≠ 0)
+        beta: temperature scaling for soft labels
     Returns:
-    - scalar loss (mean over batch)
+        loss: scalar tensor
     """
-    B, num_classes = rejector_logits.shape  # num_classes = J + 1
-    J = num_classes - 1
+    B, L = acc_post_def_batch.shape
+ 
+    cost = torch.cat([1-acc_no_def_batch.unsqueeze(1), (1-acc_post_def_batch)+alpha], dim=1)
 
-    # 1. Compute total cost vector: c(i) = 1 - acc(i) + lambda (only for deferred)
-    c0 = 1.0 - acc_no_def_batch                         # [B] for no deferral
-    c_defer = 1.0 - acc_post_def_batch + beta        # [B, J] with deferral cost added
+    # Convert costs to soft labels using softmax over -beta * cost
+    soft_targets = F.softmax(-beta * cost, dim=1)  # shape [B, L]
 
-    # 2. Combine into full cost matrix [B, J+1]
-    cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)  # [B, J+1]
+    # Log softmax over model logits
+    log_probs = F.log_softmax(rejector_logits, dim=1)  # shape [B, L]
 
-    # 3. Compute softmax weights: w(i) = max(c) - c(i)
-    max_c, _ = cost.max(dim=1, keepdim=True)            # [B, 1]
-    weights = max_c - cost                              # [B, J+1]
+    # # KL divergence loss: q_t * log(q_t / p_t)
+    # loss = F.kl_div(log_probs, soft_targets, reduction='batchmean')
+    
+    loss = -torch.sum(soft_targets * log_probs, dim=1).mean() 
 
-    # 4. Cross-entropy with custom weights
-    log_probs = F.log_softmax(rejector_logits, dim=1)   # [B, J+1]
-    loss = -torch.sum(weights * log_probs, dim=1)       # [B]
-    return loss.mean()
+    return loss
     
 
 def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device):
@@ -375,7 +374,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = deferral_loss_mozannar(no_df_dice_batch, rej_logits, post_df_dice_batch, beta)
+        loss = deferral_loss_mozannar(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
    
         # Backward pass
         loss.backward()
@@ -480,7 +479,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = deferral_loss_mozannar(no_df_dice_batch, rej_logits, post_df_dice_batch, beta)
+            val_loss = deferral_loss_mozannar(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
