@@ -336,17 +336,22 @@ def deferral_loss_mozannar(acc_no_def_batch, rejector_logits, acc_post_def_batch
     B, L = acc_post_def_batch.shape
  
     cost = torch.cat([1-acc_no_def_batch.unsqueeze(1), (1-acc_post_def_batch)+alpha], dim=1)
-
-    # Convert costs to soft labels using softmax over -beta * cost
-    soft_targets = F.softmax(-beta * cost, dim=1)  # shape [B, L]
-
-    # Log softmax over model logits
-    log_probs = F.log_softmax(rejector_logits, dim=1)  # shape [B, L]
-
-    # # KL divergence loss: q_t * log(q_t / p_t)
-    # loss = F.kl_div(log_probs, soft_targets, reduction='batchmean')
     
-    loss = -torch.sum(soft_targets * log_probs, dim=1).mean() 
+    # Step 3: Identify best frame t* = argmin(cost)
+    t_star = torch.argmin(cost[:, 1:], dim=1) + 1 
+    
+    # Step 4: Compute log-probabilities over all frames
+    log_probs = F.log_softmax(rejector_logits, dim=1)  # [B, L]
+    
+    # Step 5: First term — always penalize frame 0 if low confidence
+    term1 = -log_probs[:, 0]  # [B]
+
+    # Step 6: Second term — always include deferal term (as Mozannar does), but only for t > 0
+    batch_indices = torch.arange(B, device=rejector_logits.device)
+    term2 = -log_probs[batch_indices, t_star]  # [B]
+    
+    # Step 7: Final loss = mean over batch
+    loss = (term1 + term2).mean()
 
     return loss
     
