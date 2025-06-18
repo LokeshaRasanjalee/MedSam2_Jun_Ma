@@ -337,6 +337,7 @@ def deferral_loss_mozannar(acc_no_def_batch, rejector_logits, acc_post_def_batch
  
     cost = torch.cat([1-acc_no_def_batch.unsqueeze(1), (1-acc_post_def_batch)+alpha], dim=1)
     
+    
     # Step 3: Identify best frame t* = argmin(cost)
     t_star = torch.argmin(cost[:, 1:], dim=1) + 1 
     
@@ -346,10 +347,15 @@ def deferral_loss_mozannar(acc_no_def_batch, rejector_logits, acc_post_def_batch
     # Step 5: First term — always penalize frame 0 if low confidence
     term1 = -log_probs[:, 0]  # [B]
 
-    # Step 6: Second term — always include deferal term (as Mozannar does), but only for t > 0
+    # Step 6: Second term — always include deferal term (as Mozannar does), but only for t > 0  
     batch_indices = torch.arange(B, device=rejector_logits.device)
-    term2 = -log_probs[batch_indices, t_star]  # [B]
+    defer_cost = cost[batch_indices, t_star]
+    no_defer_cost = cost[:, 0]
+    should_defer = defer_cost < no_defer_cost
     
+    term2_all = -log_probs[batch_indices, t_star]
+    term2 = torch.where(should_defer, term2_all, torch.zeros_like(term2_all))
+
     # Step 7: Final loss = mean over batch
     loss = (term1 + term2).mean()
 
