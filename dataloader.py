@@ -31,9 +31,25 @@ class ClipDataset(Dataset):
         
         for npz_file in self.npz_files:
             data = np.load(npz_file)
+            
+            no_df_dice_batch = torch.from_numpy(data['global_no_df_sam_complement'])
+            post_df_dice_batch = torch.from_numpy(data['global_post_df_sam_complement'])
+            
+            all_costs = torch.cat([1-no_df_dice_batch.unsqueeze(0), (1-post_df_dice_batch)+args.beta], dim=0)
+            
+            adjusted_costs = (1-post_df_dice_batch) + args.beta
+            # All possible accuracies: base + n_e frames with adjusted gain
+            all_cost_adjusted = torch.cat([1-no_df_dice_batch.unsqueeze(0), adjusted_costs], dim=0)
+            # Best cost (oracle) using argmin on adjusted gains
+            best_actions = torch.argmin(all_cost_adjusted, dim=0)
+            best_cost = torch.gather(all_costs, 0, best_actions.unsqueeze(0)).squeeze(0)
+
+            
                  
             self.video_metadata.append({
                 'npz_file': npz_file,
+                'best_accs': 1-best_cost,
+                'best_actions': best_actions,
                 # 'masks': torch.from_numpy(data['masks']),
                 # 'no_df_sam_complement': torch.from_numpy(data['no_df_sam_complement']),
                 # 'post_df_sam_complement': torch.from_numpy(data['post_df_sam_complement'])
@@ -68,14 +84,16 @@ class ClipDataset(Dataset):
             torch.from_numpy(data['masks']),
             torch.from_numpy(data['global_no_df_sam_complement']),
             torch.from_numpy(data['global_post_df_sam_complement']),
-            info['npz_file']
+            info['npz_file'],
+            info['best_accs'],
+            info['best_actions']
         )
         
 def get_max_index_distribution(dataset):
     counter = Counter()
 
     for i in tqdm(range(len(dataset))):
-        _, no_df_val, post_df_vals, _ = dataset[i]  # Extract values
+        _, no_df_val, post_df_vals, _, _, _ = dataset[i]  # Extract values
 
         # Ensure tensors are 1D
         no_df_val = no_df_val.view(-1)        # Shape: [1]

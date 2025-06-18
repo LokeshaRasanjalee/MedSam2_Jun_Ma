@@ -335,7 +335,7 @@ def deferral_loss_mozannar(acc_no_def_batch, rejector_logits, acc_post_def_batch
     """
     B, L = acc_post_def_batch.shape
  
-    cost = torch.cat([1-acc_no_def_batch.unsqueeze(1), (1-acc_post_def_batch)+alpha], dim=1)
+    cost = torch.cat([1-acc_no_def_batch.unsqueeze(1), (1-acc_post_def_batch)+beta], dim=1)
     
     
     # Step 3: Identify best frame t* = argmin(cost)
@@ -375,10 +375,12 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
     total_chosen_acc = 0.0
     total_best_acc = 0.0
 
-    for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
+    for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch, best_accs, best_actions in loader:
         clips_batch = clips_batch.to(device)
         no_df_dice_batch = no_df_dice_batch.to(device)
         post_df_dice_batch = post_df_dice_batch.to(device)
+        best_accs = best_accs.to(device)
+        best_actions = best_actions.to(device)
         
         optimizer.zero_grad()
         
@@ -406,15 +408,6 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
             # Accuracy from chosen action
             chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
-
-
-            # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta
-            # All possible accuracies: base + n_e frames with adjusted gain
-            all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
-            # Best accuracy (oracle) using argmax on adjusted gains
-            best_actions = torch.argmax(all_accs_adjusted, dim=1)
-            best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
             correct += (chosen_actions == best_actions).sum().item()
@@ -480,10 +473,12 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
     total_best_acc = 0.0
 
     with torch.no_grad():
-        for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
+        for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch, best_accs, best_actions in loader:
             clips_batch = clips_batch.to(device)                        # [B, T, C, H, W]
             no_df_dice_batch = no_df_dice_batch.to(device)              # [B]
             post_df_dice_batch = post_df_dice_batch.to(device)          # [B, n_e]
+            best_accs = best_accs.to(device)
+            best_actions = best_actions.to(device)
 
             # Predict deferral logits
             #input= clips_batch.permute(0, 2, 1, 3, 4)
@@ -502,14 +497,6 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             # Accuracy from chosen action
             chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
 
-
-            # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta
-            # All possible accuracies: base + n_e frames with adjusted gain
-            all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
-            # Best accuracy (oracle) using argmax on adjusted gains
-            best_actions = torch.argmax(all_accs_adjusted, dim=1)
-            best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
             correct += (chosen_actions == best_actions).sum().item()
