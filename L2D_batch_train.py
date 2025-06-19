@@ -464,6 +464,9 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     total_dice_loss = 0.0
     total_sam_loss = 0.0
     total_focal_loss = 0.0
+    dice_loss_list = []
+    sam_loss_list = []
+    focal_loss_list = []
     # valid_frames = 0
     
     for idx in frame_indices_for_clip:
@@ -476,12 +479,15 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
         
         dice_loss = dice_loss_calc(pred_mask, gt_mask, 1, loss_on_multimask=False)  # inputs, targets, num_objects, loss_on_multimask=False
         focal_loss = sigmoid_focal_loss_calc(pred_mask, gt_mask, 1, loss_on_multimask=False)
+        sam_loss = dice_loss + 20*focal_loss
+
         total_dice_loss += dice_loss
         total_focal_loss += focal_loss
-        #dice_loss = 1-dice
-        #focal_loss = 1-focal_loss
-        sam_loss = dice_loss + 20*focal_loss
         total_sam_loss += sam_loss
+        
+        dice_loss_list.append(dice_loss)
+        focal_loss_list.append(focal_loss)
+        sam_loss_list.append(sam_loss)
         # valid_frames += 1
         
 
@@ -491,7 +497,7 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     avg_sam_loss = total_sam_loss / len(frame_indices_for_clip)
     avg_focal_loss = total_focal_loss / len(frame_indices_for_clip)
     #downstream_loss = 1.0 - avg_iou
-    return avg_dice_loss, avg_sam_loss, avg_focal_loss  
+    return avg_dice_loss, avg_sam_loss, avg_focal_loss, dice_loss_list, sam_loss_list, focal_loss_list  
 
 
 def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
@@ -533,17 +539,17 @@ def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_na
         
         #------------------Save Images------------------------------
         
-        # os.makedirs(output_mask_dir, exist_ok=True)
-        # plt.figure(figsize=(9, 6))
-        # plt.title(f"frame {input_frame_idx}")
-        # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
-        # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-        # print(out_mask_logits.shape)
+        os.makedirs(output_mask_dir, exist_ok=True)
+        plt.figure(figsize=(9, 6))
+        plt.title(f"frame {input_frame_idx}")
+        plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+        show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+        print(out_mask_logits.shape)
         
-        # # Save the visualization image
-        # vis_path = os.path.join(output_mask_dir, f"vis_add_mask_{frame_names[input_frame_idx]}.png")
-        # plt.savefig(vis_path)
-        # plt.close()  # Close the figure to free memory
+        # Save the visualization image
+        vis_path = os.path.join(output_mask_dir, f"vis_add_mask_{frame_names[input_frame_idx]}.png")
+        plt.savefig(vis_path)
+        plt.close()  # Close the figure to free memory
         
         #-----------------Save Images - End-------------------------
     return  out_obj_ids, out_mask_logits, object_ids_set
@@ -765,46 +771,46 @@ def vos_inference(
             confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
           
         #---------------------------------Save Prediction--------------------------------------  
-        # vis_frame_stride = 1   
-        # for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
-        #     frame_name = frame_names[out_frame_idx]
-        #     # print(frame_name)
-        #     # print(out_frame_idx)
-        #     # Load RGB frame
-        #     img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
+        vis_frame_stride = 1   
+        for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
+            frame_name = frame_names[out_frame_idx]
+            # print(frame_name)
+            # print(out_frame_idx)
+            # Load RGB frame
+            img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
 
-        #     # Load ground truth mask image (you can convert it to grayscale if needed)
-        #     gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
-        #     gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
+            # Load ground truth mask image (you can convert it to grayscale if needed)
+            gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
+            gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
 
-        #     fig, ax = plt.subplots(figsize=(8, 6))
-        #     #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
 
-        #     # Show the input image
-        #     ax.imshow(img)
-        #     ax.set_title("Predicted + Ground Truth")
-        #     ax.axis("off")  
+            # Show the input image
+            ax.imshow(img)
+            ax.set_title("Predicted + Ground Truth")
+            ax.axis("off")  
 
-        #     # Convert ground truth to NumPy and normalize to [0,1]
-        #     gt_mask_np = np.array(gt_mask) / 255.0
+            # Convert ground truth to NumPy and normalize to [0,1]
+            gt_mask_np = np.array(gt_mask) / 255.0
 
-        #     # Create transparent green overlay
-        #     green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
-        #     green_overlay[..., 1] = 1.0  # green channel
-        #     green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
+            # Create transparent green overlay
+            green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
+            green_overlay[..., 1] = 1.0  # green channel
+            green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
 
-        #     # Overlay ground truth
-        #     ax.imshow(green_overlay)
+            # Overlay ground truth
+            ax.imshow(green_overlay)
 
-        #     # Show predicted masks
-        #     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
-        #         show_mask(out_mask, ax, obj_id=out_obj_id)
+            # Show predicted masks
+            for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+                show_mask(out_mask, ax, obj_id=out_obj_id)
 
-        #     save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
-        #     plt.tight_layout()
-        #     plt.savefig(save_path, dpi=150)
+            save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
+            plt.tight_layout()
+            plt.savefig(save_path, dpi=150)
             
-        #     plt.close(fig) 
+            plt.close(fig) 
          #---------------------------------Save Prediction - END --------------------------------------  
         
     predictor.reset_state(inference_state)
@@ -1065,6 +1071,9 @@ def main():
         L_post_defer_sam_loss_list = []
         L_post_defer_focal_loss_list = []
         clips = []
+        ll_post_dice = []
+        ll_post_sam = []
+        ll_post_focal = []
         
         # if video_name != 'seq4':
         #     continue
@@ -1148,7 +1157,7 @@ def main():
         #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
 
         # Uncorrected downstream loss
-        L_no_defer, L_no_defer_sam_loss, L_no_defer_focal_loss = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        L_no_defer, L_no_defer_sam_loss, L_no_defer_focal_loss, ll_pre_dice, ll_pre_sam, ll_pre_focal = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
         clip_frames = []
         for idx in frame_indices_for_clip:
@@ -1219,13 +1228,15 @@ def main():
                 binary_masks_cor.append(binary_mask)
 
             # Corrected downstream loss
-            L_post_defer, L_post_defer_sam_loss, L_post_defer_focal_loss = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
+            L_post_defer, L_post_defer_sam_loss, L_post_defer_focal_loss, L_post_defer_dice_loss_list, L_post_defer_sam_loss_list_cor, L_post_defer_focal_loss_list_cor = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
             
             
             L_post_defer_list.append(L_post_defer)
             L_post_defer_sam_loss_list.append(L_post_defer_sam_loss)
             L_post_defer_focal_loss_list.append(L_post_defer_focal_loss)
-            
+            ll_post_dice.append(L_post_defer_dice_loss_list)
+            ll_post_sam.append(L_post_defer_sam_loss_list_cor)
+            ll_post_focal.append(L_post_defer_focal_loss_list_cor)
 
              
             
@@ -1253,7 +1264,7 @@ def main():
         data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
-            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss, 'L_no_defer_focal_loss':L_no_defer_focal_loss, 'L_post_defer_focal_loss_list':L_post_defer_focal_loss_list}, f)
+            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss, 'L_no_defer_focal_loss':L_no_defer_focal_loss, 'L_post_defer_focal_loss_list':L_post_defer_focal_loss_list, 'll_post_dice':ll_post_dice, 'll_post_sam':ll_post_sam, 'll_post_focal':ll_post_focal,'ll_pre_dice':ll_pre_dice, 'll_pre_sam':ll_pre_sam, 'll_pre_focal':ll_pre_focal}, f)
             
         #break
    
