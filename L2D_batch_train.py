@@ -675,7 +675,8 @@ def vos_inference(
     #Then 
 
     
-    object_ids_set = None
+    object_ids_set = None # Bipass the object id check
+    
     out_mask_logits=[]
     out_frame_idx=[]
     for idx, input_frame_idx in enumerate(input_frame_inds):
@@ -700,29 +701,29 @@ def vos_inference(
                 
                 #-----------Object ID Check -----------------
                 #This is to bipass multiobject scenario. Change it when you work with multiple objects
-                try:
-                    per_obj_input_mask, input_palette = load_masks_from_dir(
-                        input_mask_dir=input_mask_dir,
-                        video_name=video_name,
-                        frame_name=frame_names[input_frame_idx],
-                        per_obj_png_file=per_obj_png_file,
-                    )
-                except FileNotFoundError as e:
-                    raise RuntimeError(
-                        f"In {video_name=}, failed to load input mask for frame {input_frame_idx=}. "
-                        "Please add the `--track_object_appearing_later_in_video` flag "
-                        "for VOS datasets that don't have all objects to track appearing "
-                        "in the first frame (such as LVOS or YouTube-VOS)."
-                    ) from e
+                # try:
+                #     per_obj_input_mask, input_palette = load_masks_from_dir(
+                #         input_mask_dir=input_mask_dir,
+                #         video_name=video_name,
+                #         frame_name=frame_names[input_frame_idx],
+                #         per_obj_png_file=per_obj_png_file,
+                #     )
+                # except FileNotFoundError as e:
+                #     raise RuntimeError(
+                #         f"In {video_name=}, failed to load input mask for frame {input_frame_idx=}. "
+                #         "Please add the `--track_object_appearing_later_in_video` flag "
+                #         "for VOS datasets that don't have all objects to track appearing "
+                #         "in the first frame (such as LVOS or YouTube-VOS)."
+                #     ) from e
                 
-                # get the list of object ids to track from the first input frame
-                if object_ids_set is None:
-                    object_ids_set = set(per_obj_input_mask)
+                # # get the list of object ids to track from the first input frame
+                # if object_ids_set is None:
+                #     object_ids_set = set(per_obj_input_mask)
                     
-                if len(object_ids_set) != 1:
-                    raise SystemExit("Exiting with error due to multiple objects in the first frame.")
-                    print("Multiple objects in the first frame.")
-                    return None, None
+                # if len(object_ids_set) != 1:
+                #     raise SystemExit("Exiting with error due to multiple objects in the first frame.")
+                #     print("Multiple objects in the first frame.")
+                #     return None, None
                     
                 #-----------Object ID Check - End -----------------
                     
@@ -735,13 +736,14 @@ def vos_inference(
                     out_obj_ids_prompt,out_mask_logits_prompt = add_point(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
                     input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state,
                               [center], labels,gt)
+                    object_ids_set = [1]
                 else:
                     raise SystemExit("Exiting with error due to no mask or negative points.")
                     print("No mask or negative points")
                     return None, None   
                     
                 
-        git:
+        else:
             #Check if the output mask logit for relavant frame id have a gt mask or not
             
             # if gt has a mask
@@ -1282,6 +1284,7 @@ def main():
                 use_all_masks=args.use_all_masks,
                 per_obj_png_file=args.per_obj_png_file,
                 save_palette_png=args.save_palette_png,
+                prompt=args.prompt,
                 )
             
             if video_segments_cor is None:
