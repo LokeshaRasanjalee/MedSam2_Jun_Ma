@@ -748,9 +748,35 @@ def vos_inference(
             
             # if gt has a mask
             if np.any(gt[input_frame_idx] == 1):
-                print("Add mask")
-                out_obj_ids_prompt, out_mask_logits_prompt,object_ids_set= add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
-                input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state)
+                
+                if prompt == "mask":
+                
+                    print("Add mask")
+                    out_obj_ids_prompt, out_mask_logits_prompt,object_ids_set= add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
+                    input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state)
+                    
+                elif prompt == "point":
+                    print("Add point")
+                    cleaned_mask = keep_largest_blob(gt[input_frame_idx][0])
+                    labeled_cleaned, n_clean = label(cleaned_mask)
+                    if n_clean != 1:
+                        raise SystemExit("Exiting with error due to multiple objects in the first frame.")
+                        print("Multiple objects in the first frame.")
+                        return None, None  
+                    center = center_of_mass(cleaned_mask)[::-1]
+                    labels = np.ones(1)
+                    
+                    if center:
+                        out_obj_ids_prompt,out_mask_logits_prompt = add_point(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
+                        input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state,
+                                [center], labels,gt)
+                        object_ids_set = [1]
+                    else:
+                        raise SystemExit("Exiting with error due to no mask or negative points.")
+                        print("No mask or negative points")
+                        return None, None   
+                    
+                    
                 
             else:
                 
