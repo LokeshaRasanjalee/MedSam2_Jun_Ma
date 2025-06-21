@@ -36,7 +36,10 @@ class ClipDataset(Dataset):
         self.pickle_files = sorted(glob.glob(os.path.join(pickle_file, '*.pkl')))
         
         # Create npz directory one step outside of pickle directory
-        self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4')
+        if args.loss_type == "sam":
+            self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_focal')
+        elif args.loss_type == "dice":
+            self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_dice')
         os.makedirs(self.npz_dir, exist_ok=True)
         
         global_p1 = args.p1
@@ -100,11 +103,15 @@ class ClipDataset(Dataset):
                 images = images.permute(1, 0, 2, 3)
                 
                 # Pre-compute normalized losses and complements
-                L_no_defer_sam_loss = torch.tensor(data['L_no_defer_sam_loss'], dtype=torch.float32)
-                L_post_defer_sam_loss_list = torch.tensor(data['L_post_defer_sam_loss_list'], dtype=torch.float32)
+                if self.args.loss_type == "sam":
+                    Loss_no_defer = torch.tensor(data['L_no_defer_sam_loss'], dtype=torch.float32)
+                    Loss_post_defer = torch.tensor(data['L_post_defer_sam_loss_list'], dtype=torch.float32)
+                elif self.args.loss_type == "dice":
+                    Loss_no_defer = torch.tensor(data['L_no_defer'], dtype=torch.float32)
+                    Loss_post_defer = torch.tensor(data['L_post_defer_list'], dtype=torch.float32)
                 
                 # Normalize losses
-                all_losses = torch.cat([L_no_defer_sam_loss.unsqueeze(0), L_post_defer_sam_loss_list])
+                all_losses = torch.cat([Loss_no_defer.unsqueeze(0), Loss_post_defer])
                 
                  # Normalize using percentiles
                 global_normalized = (all_losses - global_p1) / (global_p99 - global_p1 + 1e-6)
@@ -114,11 +121,11 @@ class ClipDataset(Dataset):
                 #     print(f"{video_name} : More than one 1 or 0 in global_normalized. {global_normalized}")
                 #     continue
                 
-                global_no_df_sam_loss_norm = global_normalized[0]
-                global_post_df_sam_loss_norm = global_normalized[1:]
+                global_no_df_loss_norm = global_normalized[0]
+                global_post_df_loss_norm = global_normalized[1:]
                 
-                global_no_df_sam_complement = 1 - global_no_df_sam_loss_norm
-                global_post_df_sam_complement = 1 - global_post_df_sam_loss_norm
+                global_no_df_loss_complement = 1 - global_no_df_loss_norm
+                global_post_df_loss_complement = 1 - global_post_df_loss_norm
                 
                 
                 # Normalize using min and max
@@ -131,11 +138,11 @@ class ClipDataset(Dataset):
                 #     print(f"{video_name} : More than one 1 or 0 in local_normalized. {local_normalized}")
                 #     continue
                 
-                local_no_df_sam_loss_norm = local_normalized[0]
-                local_post_df_sam_loss_norm = local_normalized[1:]
+                local_no_df_loss_norm = local_normalized[0]
+                local_post_df_loss_norm = local_normalized[1:]
                 
-                local_no_df_sam_complement = 1 - local_no_df_sam_loss_norm
-                local_post_df_sam_complement = 1 - local_post_df_sam_loss_norm
+                local_no_df_loss_complement = 1 - local_no_df_loss_norm
+                local_post_df_loss_complement = 1 - local_post_df_loss_norm
                 
                 # Pre-compute normalized and permuted masks
                 masks = self.mask_transform(data['Masks'])
@@ -153,10 +160,10 @@ class ClipDataset(Dataset):
                 np.savez(
                     npz_file,    
                     masks=combined.numpy(),
-                    local_no_df_sam_complement=local_no_df_sam_complement.numpy(),
-                    local_post_df_sam_complement=local_post_df_sam_complement.numpy(),
-                    global_no_df_sam_complement=global_no_df_sam_complement.numpy(),
-                    global_post_df_sam_complement=global_post_df_sam_complement.numpy()
+                    local_no_df_loss_complement=local_no_df_loss_complement.numpy(),
+                    local_post_df_loss_complement=local_post_df_loss_complement.numpy(),
+                    global_no_df_loss_complement=global_no_df_loss_complement.numpy(),
+                    global_post_df_loss_complement=global_post_df_loss_complement.numpy()
                 )
                 
                 self.video_metadata.append(

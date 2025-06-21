@@ -1183,6 +1183,13 @@ def main():
         default=0,
         help = "number of groups"
     )
+    parser.add_argument(
+        "--loss_type",
+        type=str,
+        default="sam",
+        help="loss type (default: sam)",
+    )
+
     
     
     args = parser.parse_args()
