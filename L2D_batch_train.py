@@ -545,7 +545,7 @@ def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_na
         # plt.title(f"frame {input_frame_idx}")
         # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
         # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-        # print(out_mask_logits.shape)
+       
         
         # # Save the visualization image
         # vis_path = os.path.join(output_mask_dir, f"vis_add_mask_{frame_names[input_frame_idx]}.png")
@@ -593,7 +593,7 @@ def add_point(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_n
     # for center in blob_centers:
     #     plt.plot(center[0], center[1], 'rx')  # 'rx' for red crosses
     
-    # print(out_mask_logits.shape)
+    
     
     # # Save the visualization image
     # timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
@@ -727,7 +727,7 @@ def vos_inference(
             f"In {video_name=}, got no input masks in {input_mask_dir=}. "
             "Please make sure the input masks are available in the correct format."
         )
-    input_frame_inds = sorted(set(input_frame_inds))
+    input_frame_inds = sorted(input_frame_inds)
     
     #Then 
 
@@ -740,12 +740,12 @@ def vos_inference(
         print ("input_frame_idx: ", input_frame_idx)
         if idx == 0:
             if prompt[0] == "mask":
-                print("Add mask")
+                print(f"{input_frame_idx} -Add mask")
                 out_obj_ids_prompt, out_mask_logits_prompt,object_ids_set = add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
                 input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state)
             
             elif prompt[0] == "point":
-                print("Add point")
+                print(f"{input_frame_idx} -Add point")
                 
                 cleaned_mask = keep_largest_blob(gt[input_frame_idx][0])
                 labeled_cleaned, n_clean = label(cleaned_mask)
@@ -800,7 +800,7 @@ def vos_inference(
                     return None, None   
                 
             elif prompt[0]  == "box":
-                print("Add box")
+                print(f"{input_frame_idx} -Add box")
                 
                 cleaned_mask = keep_largest_blob(gt[input_frame_idx][0])
                 labeled_cleaned, n_clean = label(cleaned_mask)
@@ -833,12 +833,12 @@ def vos_inference(
                 
                 if prompt[1] == "mask":
                 
-                    print("Add mask")
+                    print(f"{input_frame_idx} - Add mask")
                     out_obj_ids_prompt, out_mask_logits_prompt,object_ids_set= add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
                     input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state)
                     
                 elif prompt[1] == "point":
-                    print("Add point")
+                    print(f"{input_frame_idx} -Add point")
                     cleaned_mask = keep_largest_blob(gt[input_frame_idx][0])
                     labeled_cleaned, n_clean = label(cleaned_mask)
                     if n_clean != 1:
@@ -859,7 +859,7 @@ def vos_inference(
                         return None, None  
                 
                 elif prompt[1] == "box":
-                    print("Add box")
+                    print(f"{input_frame_idx} -Add box")
                     
                     cleaned_mask = keep_largest_blob(gt[input_frame_idx][0])
                     labeled_cleaned, n_clean = label(cleaned_mask)

@@ -7,6 +7,7 @@
 
 
 
+
     
     
 
@@ -34,7 +35,7 @@
             "request": "launch",
             "program": "L2D_batch_train.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./sun_dataset/Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp/Images/ --input_mask_dir ./sun_dataset/Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp/Masks/ --post_hoc_model_save_dir ./l2d_models/Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp-ms-mask -o ./sun_dataset/out/ --experiment_name 'Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp-ms-mask' --array_id 0 --num_chunks 1 --prompt 'point'"
+            "args": "--base_video_dir ./sun_dataset/Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp/Images/ --input_mask_dir ./sun_dataset/Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp/Masks/ --post_hoc_model_save_dir ./l2d_models/Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp-ms-mask -o ./sun_dataset/out/ --experiment_name 'Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp-ms-mask' --array_id 0 --num_chunks 1 --prompt 'point' 'mask'"
         }
         ,
         {
