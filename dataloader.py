@@ -37,7 +37,7 @@ class ClipDataset(Dataset):
         
         # Create npz directory one step outside of pickle directory
         if args.loss_type == "sam":
-            self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_focal')
+            self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_sam')
         elif args.loss_type == "dice":
             self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_dice')
         os.makedirs(self.npz_dir, exist_ok=True)
