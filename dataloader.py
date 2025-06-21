@@ -77,8 +77,8 @@ class ClipDataset(Dataset):
         for file in current_chunk:
             with open(file, 'rb') as f:
                 data = pickle.load(f)
-                if len(data['L_post_defer_sam_loss_list']) != 4:
-                    continue
+                # if len(data['L_post_defer_sam_loss_list']) != 4:
+                #     continue
                     
                 video_name = data['video_name']
                 video_path = os.path.join(args.base_video_dir, video_name)
