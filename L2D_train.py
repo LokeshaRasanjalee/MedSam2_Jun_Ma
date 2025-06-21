@@ -1333,6 +1333,12 @@ def main():
         default=False,
         help="Wandb status (default: False)",
     )
+    parser.add_argument(
+        "--num_classes",
+        type=int,
+        default=10,
+        help="Number of classes for the model (default: 10)",
+    )
     
     
     
@@ -1419,7 +1425,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
-    model = build_r2plus1d_model(num_classes=10, dropout_p=args.dropout)
+    model = build_r2plus1d_model(num_classes=args.num_classes, dropout_p=args.dropout)
     start_epoch = 0
     if args.load_model_path is not None:
         checkpoint = torch.load(args.load_model_path)

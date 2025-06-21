@@ -24,7 +24,7 @@ class ClipDataset(Dataset):
         # Get npz directory one step back
         self.npz_dir = pickle_file
         self.args = args
-        self.npz_files = sorted(glob.glob(os.path.join(self.npz_dir, '*.npz')))
+        self.npz_files = glob.glob(os.path.join(self.npz_dir, '*.npz'))
         
         # Store only file paths and video names
         self.video_metadata = []
@@ -41,7 +41,7 @@ class ClipDataset(Dataset):
                 
                
                 
-            if not self.args.full_run and len(self.video_metadata) >= 64:
+            if not self.args.full_run and len(self.video_metadata) >= 1000:
                 break   
                 
         print(f"Loaded metadata for {len(self.video_metadata)} videos.")
