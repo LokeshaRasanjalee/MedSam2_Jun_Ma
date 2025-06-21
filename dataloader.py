@@ -66,8 +66,8 @@ class ClipDataset(Dataset):
         
         return (
             torch.from_numpy(data['masks']),
-            torch.from_numpy(data['global_no_df_sam_complement']),
-            torch.from_numpy(data['global_post_df_sam_complement']),
+            torch.from_numpy(data['global_no_df_loss_complement']),
+            torch.from_numpy(data['global_post_df_loss_complement']),
             info['npz_file']
         )
         
