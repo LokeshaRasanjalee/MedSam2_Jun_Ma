@@ -21,14 +21,14 @@ from functools import lru_cache
 class ClipDataset(Dataset):
     def __init__(self, pickle_file, args):
         self.image_transform = transforms.Compose([
-            transforms.Resize((224, 224)),
+            transforms.Resize((112, 112)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406],  # RGB means
                          std=[0.229, 0.224, 0.225]) 
         ])
         
         self.mask_transform = transforms.Compose([
-            transforms.Resize((224, 224), interpolation=InterpolationMode.NEAREST),  # preserve class labels
+            transforms.Resize((112, 112), interpolation=InterpolationMode.NEAREST),  # preserve class labels
         ])
         
         self.pickle_file = pickle_file
