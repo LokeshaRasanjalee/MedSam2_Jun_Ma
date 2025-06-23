@@ -31,9 +31,19 @@ class ClipDataset(Dataset):
         
         for npz_file in self.npz_files:
             data = np.load(npz_file)
+            if 'global_no_df_loss_complement' in data:
+                no_df = 'global_no_df_loss_complement'
+                post_df = 'global_post_df_loss_complement'
+            else:
+                no_df = 'global_no_df_sam_complement'
+                post_df = 'global_post_df_sam_complement'
+            
+            
                  
             self.video_metadata.append({
                 'npz_file': npz_file,
+                'no_df': no_df,
+                'post_df': post_df,
                 # 'masks': torch.from_numpy(data['masks']),
                 # 'no_df_sam_complement': torch.from_numpy(data['no_df_sam_complement']),
                 # 'post_df_sam_complement': torch.from_numpy(data['post_df_sam_complement'])
@@ -66,8 +76,8 @@ class ClipDataset(Dataset):
         
         return (
             torch.from_numpy(data['masks']),
-            torch.from_numpy(data['global_no_df_loss_complement']),
-            torch.from_numpy(data['global_post_df_loss_complement']),
+            torch.from_numpy(data[info['no_df']]),
+            torch.from_numpy(data[info['post_df']]),
             info['npz_file']
         )
         
