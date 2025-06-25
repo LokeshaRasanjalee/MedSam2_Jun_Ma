@@ -486,9 +486,9 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
         total_focal_loss += focal_loss
         total_sam_loss += sam_loss
         
-        dice_loss_list.append(dice_loss)
-        focal_loss_list.append(focal_loss)
-        sam_loss_list.append(sam_loss)
+        # dice_loss_list.append(dice_loss)
+        # focal_loss_list.append(focal_loss)
+        # sam_loss_list.append(sam_loss)
         # valid_frames += 1
         
 
@@ -498,7 +498,7 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     avg_sam_loss = total_sam_loss / len(frame_indices_for_clip)
     avg_focal_loss = total_focal_loss / len(frame_indices_for_clip)
     #downstream_loss = 1.0 - avg_iou
-    return avg_dice_loss, avg_sam_loss, avg_focal_loss, dice_loss_list, sam_loss_list, focal_loss_list  
+    return avg_dice_loss, avg_sam_loss, avg_focal_loss
 
 
 def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
@@ -1373,7 +1373,7 @@ def main():
         #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
 
         # Uncorrected downstream loss
-        L_no_defer, L_no_defer_sam_loss, L_no_defer_focal_loss, ll_pre_dice, ll_pre_sam, ll_pre_focal = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        L_no_defer, L_no_defer_sam_loss, L_no_defer_focal_loss = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
         clip_frames = []
         for idx in frame_indices_for_clip:
@@ -1389,7 +1389,7 @@ def main():
         
         # -------------------Correction Prompts -------------------------------------
         
-        for second_prompt in range (initial_prompt, len(frame_names)):
+        for second_prompt in range (initial_prompt+1, len(frame_names)):
             
             # if (second_prompt >= initial_prompt + half_window) and (second_prompt < len(frame_names) - half_window):
             #     # GOOD → continue normal processing
@@ -1445,15 +1445,15 @@ def main():
                 binary_masks_cor.append(binary_mask)
 
             # Corrected downstream loss
-            L_post_defer, L_post_defer_sam_loss, L_post_defer_focal_loss, L_post_defer_dice_loss_list, L_post_defer_sam_loss_list_cor, L_post_defer_focal_loss_list_cor = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
+            L_post_defer, L_post_defer_sam_loss, L_post_defer_focal_loss = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
             
             
             L_post_defer_list.append(L_post_defer)
             L_post_defer_sam_loss_list.append(L_post_defer_sam_loss)
             L_post_defer_focal_loss_list.append(L_post_defer_focal_loss)
-            ll_post_dice.append(L_post_defer_dice_loss_list)
-            ll_post_sam.append(L_post_defer_sam_loss_list_cor)
-            ll_post_focal.append(L_post_defer_focal_loss_list_cor)
+            # ll_post_dice.append(L_post_defer_dice_loss_list)
+            # ll_post_sam.append(L_post_defer_sam_loss_list_cor)
+            # ll_post_focal.append(L_post_defer_focal_loss_list_cor)
 
              
             
@@ -1481,7 +1481,7 @@ def main():
         data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
-            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss, 'L_no_defer_focal_loss':L_no_defer_focal_loss, 'L_post_defer_focal_loss_list':L_post_defer_focal_loss_list, 'll_post_dice':ll_post_dice, 'll_post_sam':ll_post_sam, 'll_post_focal':ll_post_focal,'ll_pre_dice':ll_pre_dice, 'll_pre_sam':ll_pre_sam, 'll_pre_focal':ll_pre_focal}, f)
+            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss, 'L_no_defer_focal_loss':L_no_defer_focal_loss, 'L_post_defer_focal_loss_list':L_post_defer_focal_loss_list}, f)
             
         #break
    
