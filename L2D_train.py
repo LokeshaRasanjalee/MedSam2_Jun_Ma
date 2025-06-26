@@ -352,7 +352,7 @@ def deferral_loss_mozannar(acc_no_def_batch, rejector_logits, acc_post_def_batch
     return loss.mean()
     
 
-def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device):
+def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5]):
     rejector.train()
     total_loss = 0
     correct = 0
@@ -364,6 +364,9 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
     rank_distances = []
     total_chosen_acc = 0.0
     total_best_acc = 0.0
+    
+    # Add top-k accuracy tracking
+    total_topk_correct = {k: 0 for k in topk_values}
 
     for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
         clips_batch = clips_batch.to(device)
@@ -414,6 +417,11 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             total_chosen_acc += chosen_accs.sum().item()
             total_best_acc += best_accs.sum().item()
             
+            # Compute top-k accuracy
+            topk_accuracies = calculate_topk_accuracy(rej_logits, best_actions, topk_values)
+            for k, acc in topk_accuracies.items():
+                total_topk_correct[k] += acc * clips_batch.size(0)
+            
             # Compute rank distance per sample in batch
             for i in range(all_accs.size(0)):
                 accs = all_accs[i]
@@ -435,10 +443,13 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         all_chosen_actions = torch.cat(all_chosen_actions)
         avg_chosen_acc = total_chosen_acc / total_samples
         avg_best_acc = total_best_acc / total_samples
+        
+        # Calculate top-k accuracies
+        topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-        return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc
+        return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies
     else:
-        return None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None
 
 def infer_deferral_action(rejector_logits):
     """
@@ -456,7 +467,43 @@ def infer_deferral_action(rejector_logits):
     return action_idx
 
 
-def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, logging=None):
+def calculate_topk_accuracy(rejector_logits, best_actions, k_values=[1, 3, 5]):
+    """
+    Calculate top-k accuracy for deferral action prediction.
+    
+    Parameters:
+    - rejector_logits: Tensor of shape [B, N] — model logits for each action
+    - best_actions: Tensor of shape [B] — ground truth best actions
+    - k_values: list of ints — top-k values to consider (default: [1, 3, 5])
+    
+    Returns:
+    - topk_accuracies: dict — dictionary with k as key and accuracy as value
+    """
+    topk_accuracies = {}
+    
+    for k in k_values:
+        if k == 1:
+            # For k=1, it's the same as regular accuracy
+            chosen_actions = torch.argmax(rejector_logits, dim=1)
+            correct = (chosen_actions == best_actions).float().mean().item()
+            topk_accuracies[k] = correct
+        else:
+            # Get top-k predicted actions
+            topk_values, topk_indices = torch.topk(rejector_logits, k, dim=1)  # [B, k]
+            
+            # Check if the correct action is in the top-k predictions
+            # Expand best_actions to match topk_indices shape for comparison
+            best_actions_expanded = best_actions.unsqueeze(1).expand_as(topk_indices)  # [B, k]
+            
+            # Check if any of the top-k predictions match the correct action
+            correct_in_topk = torch.any(topk_indices == best_actions_expanded, dim=1)  # [B]
+            
+            # Calculate accuracy
+            topk_accuracies[k] = correct_in_topk.float().mean().item()
+    
+    return topk_accuracies
+
+def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, logging=None, topk_values=[1, 3, 5]):
     model.eval()
     total_samples = 0
     total_regret = 0.0
@@ -468,6 +515,9 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
     rank_distances = []  # <-- new list to store rank distances
     total_chosen_acc = 0.0
     total_best_acc = 0.0
+    
+    # Add top-k accuracy tracking
+    total_topk_correct = {k: 0 for k in topk_values}
 
     with torch.no_grad():
         for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
@@ -509,6 +559,12 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             total_chosen_acc += chosen_accs.sum().item()
             total_best_acc += best_accs.sum().item()
             
+            # Compute top-k accuracy
+            topk_accuracies = calculate_topk_accuracy(rej_logits, best_actions, topk_values)
+            for k, acc in topk_accuracies.items():
+                total_topk_correct[k] += acc * clips_batch.size(0)
+            
+            
              # Compute rank distance per sample in batch
             for i in range(all_accs.size(0)):
                 accs = all_accs[i]
@@ -529,8 +585,11 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
     all_chosen_actions = torch.cat(all_chosen_actions)
     avg_chosen_acc = total_chosen_acc / total_samples
     avg_best_acc = total_best_acc / total_samples
+    
+    # Calculate top-k accuracies
+    topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc
+    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies
 
 
 # def validate_one_epoch(model, loader, criterion, device,logging):
@@ -1030,7 +1089,7 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
     if dropout_p is not None and dropout_p > 0:
         model.fc = nn.Sequential(
             nn.Dropout(p=dropout_p),
-            nn.Linear(model.fc.in_features, num_classes)
+            nn.Linear(model.fc.in_features, num_classes)     
         )
     else:
         model.fc = nn.Linear(model.fc.in_features, num_classes)
@@ -1352,6 +1411,13 @@ def main():
         help="Have seperate folders for train and test datasets(default: False)",
     )
     
+    parser.add_argument(
+        "--topk_values",
+        type=int,
+        nargs='+',
+        default=[1, 3, 5],
+        help="Top-k values to track for accuracy (default: [1, 3, 5])",
+    )
     
     
     
@@ -1472,14 +1538,14 @@ def main():
         # Start epoch runtime tracking
         epoch_start_time = time.time()
         
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
         if (epoch+1) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging)
+            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -1505,6 +1571,13 @@ def main():
                 writer.add_scalar('Accuracy/best_train', train_best_acc, epoch)
                 writer.add_scalar('Accuracy/chosen_val', val_chosen_acc, epoch)
                 writer.add_scalar('Accuracy/best_val', val_best_acc, epoch)
+                # Add top-k accuracy tracking
+                for k in args.topk_values:
+                    writer.add_scalar(f'Top{k} Accuracy/train', topk_accuracies[k], epoch)
+                    writer.add_scalar(f'Top{k} Accuracy/val', val_topk_accuracies[k], epoch)
+                writer.add_scalar('Top1 Accuracy/val', val_topk_accuracies['top1'], epoch)
+                writer.add_scalar('Top3 Accuracy/val', val_topk_accuracies['top3'], epoch)
+                writer.add_scalar('Top5 Accuracy/val', val_topk_accuracies['top5'], epoch)
 
             if args.wandb_status:
                 wandb.log({
@@ -1520,11 +1593,19 @@ def main():
                     "Train Best Acc": train_best_acc,
                     "Train Chosen Acc": train_chosen_acc,
                     "Val Best Acc": val_best_acc,
-                    "Val Chosen Acc": val_chosen_acc
+                    "Val Chosen Acc": val_chosen_acc,
                 })
-
+                
+                # Add top-k accuracies to wandb
+                for k in args.topk_values:
+                    wandb.log({f"Train Top{k} Accuracy": topk_accuracies[k]})
+                    wandb.log({f"Val Top{k} Accuracy": val_topk_accuracies[k]})
 
             logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            # # Log top-k accuracies
+            train_topk_str = "/".join([f"{topk_accuracies[k]:.4f}" for k in args.topk_values])
+            val_topk_str = "/".join([f"{val_topk_accuracies[k]:.4f}" for k in args.topk_values])
+            logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
             logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
             logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
@@ -1536,6 +1617,7 @@ def main():
             logging.info(f"Validation Best Actions: {val_best_actions[:10]}")
             logging.info(f"Validation Chosen Actions: {val_chosen_actions[:10]}")
             print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            # print(f"Epoch [{epoch+1}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
             print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
             print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
