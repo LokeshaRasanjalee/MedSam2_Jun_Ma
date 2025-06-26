@@ -1191,10 +1191,16 @@ def main():
         help="directory to save the output masks (as PNG files)",
     )
     parser.add_argument(
-        "--data_npz_dir",
+        "--data_npz_dir_train",
         type=str,
         required=True,
-        help="directory to save the data npz",
+        help="directory with npz for train",
+    )   
+    parser.add_argument(
+        "--data_npz_dir_test",
+        type=str,
+        default=None,
+        help="directory with npz for test",
     )
     parser.add_argument(
         "--score_thresh",
@@ -1339,6 +1345,13 @@ def main():
         default=10,
         help="Number of classes for the model (default: 10)",
     )
+    parser.add_argument(
+        "--train_test_split",
+        type=bool,
+        default=False,
+        help="Have seperate folders for train and test datasets(default: False)",
+    )
+    
     
     
     
@@ -1436,7 +1449,7 @@ def main():
     
     model = model.to(device)
 
-    train_loader, val_loader = get_dataloaders(args.data_npz_dir, args, batch_size=args.batch_size)
+    train_loader, val_loader = get_dataloaders(args, batch_size=args.batch_size)
 
     # For multi-class classification, we use CrossEntropyLoss instead of BCEWithLogitsLoss
     criterion = nn.CrossEntropyLoss()

@@ -93,22 +93,25 @@ def get_max_index_distribution(dataset):
     return counter
 
 
-def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
-    dataset = ClipDataset(pickle_file_folder, args)
-
-    # Simple random split instead of stratified split
-    dataset_size = len(dataset)
-    indices = list(range(dataset_size))
-    split = int(np.floor(split_ratio * dataset_size))
-    
-    # Shuffle indices
+def get_dataloaders( args, batch_size=8, split_ratio=0.8):
     np.random.seed(42)
-    np.random.shuffle(indices)
-    
-    train_idx, val_idx = indices[:split], indices[split:]
+    if args.train_test_split:       
+        train_dataset = ClipDataset(args.data_npz_dir_train, args)
+        val_dataset = ClipDataset(args.data_npz_dir_test, args)
+    else:
+        dataset = ClipDataset(args.data_npz_dir, args)
+        # Simple random split instead of stratified split
+        dataset_size = len(dataset)
+        indices = list(range(dataset_size))
+        split = int(np.floor(split_ratio * dataset_size))
+        
+        # Shuffle indices
+        np.random.shuffle(indices)
+        
+        train_idx, val_idx = indices[:split], indices[split:]
 
-    train_dataset = Subset(dataset, train_idx)
-    val_dataset = Subset(dataset, val_idx)
+        train_dataset = Subset(dataset, train_idx)
+        val_dataset = Subset(dataset, val_idx)
     
     # Check max index distribution
     train_dist = get_max_index_distribution(train_dataset)
@@ -126,7 +129,6 @@ def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
         pin_memory=True,
         persistent_workers=True,
         prefetch_factor=2,  # Increased prefetch for better throughput
-        drop_last=True
     )
 
     val_loader = DataLoader(
