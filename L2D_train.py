@@ -1575,10 +1575,7 @@ def main():
                 for k in args.topk_values:
                     writer.add_scalar(f'Top{k} Accuracy/train', topk_accuracies[k], epoch)
                     writer.add_scalar(f'Top{k} Accuracy/val', val_topk_accuracies[k], epoch)
-                writer.add_scalar('Top1 Accuracy/val', val_topk_accuracies['top1'], epoch)
-                writer.add_scalar('Top3 Accuracy/val', val_topk_accuracies['top3'], epoch)
-                writer.add_scalar('Top5 Accuracy/val', val_topk_accuracies['top5'], epoch)
-
+               
             if args.wandb_status:
                 wandb.log({
                     "Epoch": epoch+1,
