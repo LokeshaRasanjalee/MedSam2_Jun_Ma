@@ -39,6 +39,9 @@ from matplotlib.patches import Rectangle
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
 
+# Global color mapping for consistent object colors
+obj_color_mapping = {}
+
 def load_ann_png(path):
     """Load a PNG file as a mask and its palette."""
     mask = Image.open(path)
@@ -58,24 +61,8 @@ def save_ann_png(path, mask, palette):
 
 def get_per_obj_mask(mask):
     """Split a mask into per-object masks."""
-    
-    if mask.ndim == 3:
-    # RGB mask → binary mask
-        mask = np.any(mask != 0, axis=-1)
-    elif mask.ndim == 2:
-        # Already 2D, just ensure it's boolean
-        mask = mask != 0
-    else:
-        raise ValueError(f"Unexpected mask shape: {mask.shape}")  
-    object_ids = np.unique(mask).astype(int)
+    object_ids = np.unique(mask)
     object_ids = object_ids[object_ids > 0].tolist()
-    
-    pixel_counts = {}
-    for obj_id in object_ids:
-        pixel_counts[obj_id] = np.sum(mask == obj_id)
-    
-    # print(pixel_counts)
-    
     per_obj_mask = {object_id: (mask == object_id) for object_id in object_ids}
     return per_obj_mask
 
@@ -92,11 +79,25 @@ def put_per_obj_mask(per_obj_mask, height, width):
 
 
 def show_mask(mask, ax, obj_id=None, random_color=False):
+    global obj_color_mapping
+    
     if random_color:
         color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
     else:
         cmap = plt.get_cmap("tab10")
-        cmap_idx = 0 if obj_id is None else obj_id
+        
+        # Use consistent color mapping for object IDs
+        if obj_id is not None:
+            if obj_id not in obj_color_mapping:
+                # Assign next available color index
+                if len(obj_color_mapping) == 0:
+                    obj_color_mapping[obj_id] = 0
+                else:
+                    obj_color_mapping[obj_id] = max(obj_color_mapping.values()) + 1
+            cmap_idx = obj_color_mapping[obj_id]
+        else:
+            cmap_idx = 0
+            
         color = np.array([*cmap(cmap_idx)[:3], 0.6])
     h, w = mask.shape[-2:]
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
@@ -521,7 +522,10 @@ def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_na
     # get the list of object ids to track from the first input frame
     if object_ids_set is None:
         object_ids_set = set(per_obj_input_mask)
-    for object_id, object_mask in per_obj_input_mask.items():
+    # Create a mapping from object_id to color index
+    sorted_obj_ids = sorted(per_obj_input_mask.keys())
+    objid_to_coloridx = {oid: idx for idx, oid in enumerate(sorted_obj_ids)}
+    for idx, (object_id, object_mask) in enumerate(per_obj_input_mask.items()):
         # check and make sure no new object ids appear only in later frames
         if object_id not in object_ids_set:
             raise RuntimeError(
@@ -539,18 +543,17 @@ def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_na
         )
         
         #------------------Save Images------------------------------
-        
-        # os.makedirs(output_mask_dir, exist_ok=True)
-        # plt.figure(figsize=(9, 6))
-        # plt.title(f"frame {input_frame_idx}")
-        # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
-        # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-       
-        
-        # # Save the visualization image
-        # vis_path = os.path.join(output_mask_dir, f"vis_add_mask_{frame_names[input_frame_idx]}.png")
-        # plt.savefig(vis_path)
-        # plt.close()  # Close the figure to free memory
+        os.makedirs(output_mask_dir, exist_ok=True)
+        plt.figure(figsize=(9, 6))
+        plt.title(f"frame {input_frame_idx}")
+        plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+        # Use mapped color index for visualization
+        color_idx = objid_to_coloridx[object_id]
+        show_mask((out_mask_logits[idx] > 0.0).cpu().numpy(), plt.gca(), obj_id=color_idx)
+        # Save the visualization image
+        vis_path = os.path.join(output_mask_dir, f"vis_add_mask_obj-{object_id}_{frame_names[input_frame_idx]}.png")
+        plt.savefig(vis_path)
+        plt.close()  # Close the figure to free memory
         
         #-----------------Save Images - End-------------------------
     return  out_obj_ids, out_mask_logits, object_ids_set
@@ -884,7 +887,7 @@ def vos_inference(
                 
             else:
                 
-                raise RuntimeError("negative points")
+                # raise RuntimeError("negative points")
                 if np.any(video_segments[input_frame_idx][1] == 1): 
                     print("Add negative points iteratively")
                     
@@ -921,7 +924,7 @@ def vos_inference(
                     
                               
                 else: 
-                    raise SystemExit("Exiting with error due to no mask or negative points.")
+                    # raise SystemExit("Exiting with error due to no mask or negative points.")
                     print("No mask or negative points")
                     return None, None
                     
@@ -957,6 +960,7 @@ def vos_inference(
         for out_frame_idx, out_obj_ids, out_mask_logits, object_score_logits in predictor.propagate_in_video(
             inference_state
         ):
+            print (out_frame_idx, out_obj_ids)
             #print (out_frame_idx)
             per_obj_output_mask = {
                 out_obj_id: (out_mask_logits[i] > score_thresh).cpu().numpy()
@@ -973,46 +977,46 @@ def vos_inference(
             confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
           
         #---------------------------------Save Prediction--------------------------------------  
-        # vis_frame_stride = 1   
-        # for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
-        #     frame_name = frame_names[out_frame_idx]
-        #     # print(frame_name)
-        #     # print(out_frame_idx)
-        #     # Load RGB frame
-        #     img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
+        vis_frame_stride = 1   
+        for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
+            frame_name = frame_names[out_frame_idx]
+            # print(frame_name)
+            # print(out_frame_idx)
+            # Load RGB frame
+            img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
 
-        #     # Load ground truth mask image (you can convert it to grayscale if needed)
-        #     gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
-        #     gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
+            # Load ground truth mask image (you can convert it to grayscale if needed)
+            gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
+            gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
 
-        #     fig, ax = plt.subplots(figsize=(8, 6))
-        #     #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
 
-        #     # Show the input image
-        #     ax.imshow(img)
-        #     ax.set_title("Predicted + Ground Truth")
-        #     ax.axis("off")  
+            # Show the input image
+            ax.imshow(img)
+            ax.set_title("Predicted + Ground Truth")
+            ax.axis("off")  
 
-        #     # Convert ground truth to NumPy and normalize to [0,1]
-        #     gt_mask_np = np.array(gt_mask) / 255.0
+            # Convert ground truth to NumPy and normalize to [0,1]
+            gt_mask_np = np.array(gt_mask) / 255.0
 
-        #     # Create transparent green overlay
-        #     green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
-        #     green_overlay[..., 1] = 1.0  # green channel
-        #     green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
+            # Create transparent green overlay
+            green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
+            green_overlay[..., 1] = 1.0  # green channel
+            green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
 
-        #     # Overlay ground truth
-        #     ax.imshow(green_overlay)
+            # Overlay ground truth
+            ax.imshow(green_overlay)
 
-        #     # Show predicted masks
-        #     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
-        #         show_mask(out_mask, ax, obj_id=out_obj_id)
+            # Show predicted masks
+            for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+                show_mask(out_mask, ax, obj_id=out_obj_id)
 
-        #     save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
-        #     plt.tight_layout()
-        #     plt.savefig(save_path, dpi=150)
+            save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
+            plt.tight_layout()
+            plt.savefig(save_path, dpi=150)
             
-        #     plt.close(fig) 
+            plt.close(fig) 
          #---------------------------------Save Prediction - END --------------------------------------  
         
     predictor.reset_state(inference_state)
@@ -1429,14 +1433,18 @@ def main():
                 print("No gt mask or pred mask")
                 continue
             
-            for idx, value in confidence_scores_cor.items():
-                score = float(value[0][0])  # Extract float from array([[value]])
-                if idx not in combined_scores:
-                    combined_scores[idx] = {}
-                combined_scores[idx][folder_name] = score
-                #frame_indices.add(idx)
+            # for idx, value in confidence_scores_cor.items():
+            #     score = float(value[0][0])  # Extract float from array([[value]])
+            #     if idx not in combined_scores:
+            #         combined_scores[idx] = {}
+            #     combined_scores[idx][folder_name] = score
                 
                 
+                
+            # per_obj_output_mask = {
+            # out_obj_id: (video_segments_cor[i] > args.score_thresh).cpu().numpy()
+            # for i, out_obj_id in enumerate(out_obj_ids)
+            # }
             
             binary_masks_cor = []
             for frame_index, segment in video_segments_cor.items():
@@ -1483,7 +1491,7 @@ def main():
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
             pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss, 'L_no_defer_focal_loss':L_no_defer_focal_loss, 'L_post_defer_focal_loss_list':L_post_defer_focal_loss_list}, f)
             
-        #break
+        break
    
                 
     
