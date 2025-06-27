@@ -470,6 +470,9 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     # focal_loss_list = []
     # valid_frames = 0
     
+    if video_segments == None:
+        return None,None,None    
+    
     for idx in frame_indices_for_clip:
         # if idx >= len(video_segments) or idx >= len(gt_list):
         #     continue  # Skip out of range indices
@@ -884,7 +887,7 @@ def vos_inference(
                 
             else:
                 
-                raise RuntimeError("negative points")
+                
                 if np.any(video_segments[input_frame_idx][1] == 1): 
                     print("Add negative points iteratively")
                     
@@ -908,20 +911,22 @@ def vos_inference(
                             input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state, 
                             blob_centers_list, labels,gt
                         )
-                        out_mask_logits_prompt = (out_mask_logits_prompt > score_thresh).cpu().numpy()
+                        obj_id = 1 #Bipass object id extraction
+                        out_mask_logits_prompt = (out_mask_logits_prompt[obj_id] > score_thresh).cpu().numpy()
                         
                         # Recalculate blob centers after removal
                         pred_wrong_mask = np.squeeze(out_mask_logits_prompt[0, 0, :, :])
                         blob_centers = np.array(find_blob_centers(pred_wrong_mask))
-                        print (blob_centers)
-                        if not blob_centers:
+                        
+                        if len(blob_centers) != 0:
+                            blob_centers = blob_centers.astype(np.float32)[:, [1, 0]][0]
+                        else:
                             break
-                        blob_centers = blob_centers.astype(np.float32)[:, [1, 0]][0]
    
                     
                               
                 else: 
-                    raise SystemExit("Exiting with error due to no mask or negative points.")
+                    # raise SystemExit("Exiting with error due to no mask or negative points.")
                     print("No mask or negative points")
                     return None, None
                     
@@ -1281,7 +1286,7 @@ def main():
 
 
     for n_video, video_name in enumerate(current_chunk):
-        
+               
        
         L_post_defer_list = []
         L_post_defer_sam_loss_list = []
@@ -1345,29 +1350,32 @@ def main():
             prompt=args.prompt,
             )
         
-        for idx, value in confidence_scores_first.items():
-            score = float(value[0][0])  # Extract float from array([[value]])
-            if idx not in combined_scores:
-                combined_scores[idx] = {}
-            combined_scores[idx][folder_name] = score
-            frame_indices.add(idx)
-            
-        frame_indices = sorted(frame_indices)
+        # for idx, value in confidence_scores_first.items():
+        #     score = float(value[0][0])  # Extract float from array([[value]])
+        #     if idx not in combined_scores:
+        #         combined_scores[idx] = {}
+        #     combined_scores[idx][folder_name] = score
+        #     frame_indices.add(idx)
             
         
-        
-        binary_masks_first = []
-        for frame_index, segment in video_segments_first.items():
-            mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
-            binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
-            binary_masks_first.append(binary_mask)
             
-        img_list=[]
-        for f_name in frame_names:
-            input_f_path = os.path.join(args.base_video_dir, video_name, f"{f_name}.jpg")
-            if os.path.exists(input_f_path):
-                input_f, _ = load_ann_png(input_f_path)
-                img_list.append(input_f)
+        
+        if video_segments_first != None:
+            binary_masks_first = []
+            for frame_index, segment in video_segments_first.items():
+                mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
+                binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
+                binary_masks_first.append(binary_mask)
+                  
+        else:
+            binary_masks_first = None
+            
+        # img_list=[]
+        # for f_name in frame_names:
+        #     input_f_path = os.path.join(args.base_video_dir, video_name, f"{f_name}.jpg")
+        #     if os.path.exists(input_f_path):
+        #         input_f, _ = load_ann_png(input_f_path)
+        #         img_list.append(input_f)
         
         # Uncorrected downstream loss
         #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
@@ -1424,25 +1432,26 @@ def main():
                 save_palette_png=args.save_palette_png,
                 prompt=args.prompt,
                 )
+                   
             
-            if video_segments_cor is None:
-                print("No gt mask or pred mask")
-                continue
-            
-            for idx, value in confidence_scores_cor.items():
-                score = float(value[0][0])  # Extract float from array([[value]])
-                if idx not in combined_scores:
-                    combined_scores[idx] = {}
-                combined_scores[idx][folder_name] = score
+            # for idx, value in confidence_scores_cor.items():
+            #     score = float(value[0][0])  # Extract float from array([[value]])
+            #     if idx not in combined_scores:
+            #         combined_scores[idx] = {}
+            #     combined_scores[idx][folder_name] = score
                 #frame_indices.add(idx)
                 
                 
             
             binary_masks_cor = []
-            for frame_index, segment in video_segments_cor.items():
-                mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
-                binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
-                binary_masks_cor.append(binary_mask)
+            
+            if video_segments_cor is None:
+                binary_masks_cor = None
+            else:
+                for frame_index, segment in video_segments_cor.items():
+                    mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
+                    binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
+                    binary_masks_cor.append(binary_mask)
 
             # Corrected downstream loss
             L_post_defer, L_post_defer_sam_loss, L_post_defer_focal_loss = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
@@ -1456,26 +1465,7 @@ def main():
             # ll_post_focal.append(L_post_defer_focal_loss_list_cor)
 
              
-            
-              
-        
-        
-        # Write confidence to a CSV file
-        folder_name = os.path.join(args.output_mask_dir, video_name, "combined_confidence_scores")
-        os.makedirs(folder_name, exist_ok=True)
-        with open(os.path.join(folder_name, "combined_confidence_scores.csv"), "w", newline="") as f:
-            print("Saving confidence csv")
-            logging.info("Saving confidence csv")
-            writer = csv.writer(f)
-            header = ["frame_index"] + folder_name_list
-            writer.writerow(header)
-
-            for idx in frame_indices:
-                row = [idx]
-                for folder_name in folder_name_list:
-                    row.append(combined_scores[idx].get(folder_name, ""))  # blank if missing
-                writer.writerow(row)
-                
+      
                 
         # Save all lists in a single file
         data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")

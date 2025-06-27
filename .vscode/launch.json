@@ -35,8 +35,8 @@
             "request": "launch",
             "program": "L2D_batch_train.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./sun_dataset/Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp/Images/ --input_mask_dir ./sun_dataset/Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp/Masks/ --post_hoc_model_save_dir ./l2d_models/Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp-ms-mask -o ./sun_dataset/out/ --experiment_name 'Barrets_dataset_len-10_frameinterval-5_interclipstride-1_tmp-ms-mask' --array_id 0 --num_chunks 1 --prompt 'point' 'mask'"
-        }
+            "args": "--base_video_dir ./VOST_tmp/dataset3/Images/ --input_mask_dir ./VOST_tmp/dataset3/Masks/ --post_hoc_model_save_dir ./l2d_models/VOST_dataset_len-10_frameinterval-1_interclipstride-10 -o ./sun_dataset/out/ --experiment_name 'VOST' --array_id 0 --num_chunks 1 --prompt 'mask' 'mask'"
+        }   
         ,
         {
             "name": "L2D feature generation",
