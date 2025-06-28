@@ -23,8 +23,10 @@ class ClipDataset(Dataset):
         self.image_transform = transforms.Compose([
             transforms.Resize((112, 112)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],  # RGB means
-                         std=[0.229, 0.224, 0.225]) 
+            transforms.Normalize(
+                mean=[0.5],  # typical mean for grayscale normalization
+                std=[0.5],   # typical std for grayscale normalization
+            )
         ])
         
         self.mask_transform = transforms.Compose([
@@ -94,7 +96,7 @@ class ClipDataset(Dataset):
                 # Load and transform images
                 images = []
                 for img_path in image_files:
-                    img = Image.open(img_path).convert('RGB')
+                    img = Image.open(img_path).convert('L')  # 'L' mode = single-channel grayscale
                     img = self.image_transform(img)
                     images.append(img)
                 
