@@ -454,7 +454,7 @@ def downstream_impact(fir_prom, sec_prom, pred_logits_uncorrected, pred_logits_c
     return impact, np.mean(future_iou_c), np.mean(future_iou_u)
 
 
-def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
+def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip, local_window, prompt_list):
     """
     Compute downstream loss for the given frame indices.
     
@@ -543,17 +543,17 @@ def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_na
         
         #------------------Save Images------------------------------
         
-        # os.makedirs(output_mask_dir, exist_ok=True)
-        # plt.figure(figsize=(9, 6))
-        # plt.title(f"frame {input_frame_idx}")
-        # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
-        # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+        os.makedirs(output_mask_dir, exist_ok=True)
+        plt.figure(figsize=(9, 6))
+        plt.title(f"frame {input_frame_idx}")
+        plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+        show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
        
         
-        # # Save the visualization image
-        # vis_path = os.path.join(output_mask_dir, f"vis_add_mask_{frame_names[input_frame_idx]}.png")
-        # plt.savefig(vis_path)
-        # plt.close()  # Close the figure to free memory
+        # Save the visualization image
+        vis_path = os.path.join(output_mask_dir, f"vis_add_mask_{frame_names[input_frame_idx]}.png")
+        plt.savefig(vis_path)
+        plt.close()  # Close the figure to free memory
         
         #-----------------Save Images - End-------------------------
     return  out_obj_ids, out_mask_logits, object_ids_set
@@ -978,46 +978,46 @@ def vos_inference(
             confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
           
         #---------------------------------Save Prediction--------------------------------------  
-        # vis_frame_stride = 1   
-        # for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
-        #     frame_name = frame_names[out_frame_idx]
-        #     # print(frame_name)
-        #     # print(out_frame_idx)
-        #     # Load RGB frame
-        #     img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
+        vis_frame_stride = 1   
+        for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
+            frame_name = frame_names[out_frame_idx]
+            # print(frame_name)
+            # print(out_frame_idx)
+            # Load RGB frame
+            img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
 
-        #     # Load ground truth mask image (you can convert it to grayscale if needed)
-        #     gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
-        #     gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
+            # Load ground truth mask image (you can convert it to grayscale if needed)
+            gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
+            gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
 
-        #     fig, ax = plt.subplots(figsize=(8, 6))
-        #     #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
 
-        #     # Show the input image
-        #     ax.imshow(img)
-        #     ax.set_title("Predicted + Ground Truth")
-        #     ax.axis("off")  
+            # Show the input image
+            ax.imshow(img)
+            ax.set_title("Predicted + Ground Truth")
+            ax.axis("off")  
 
-        #     # Convert ground truth to NumPy and normalize to [0,1]
-        #     gt_mask_np = np.array(gt_mask) / 255.0
+            # Convert ground truth to NumPy and normalize to [0,1]
+            gt_mask_np = np.array(gt_mask) / 255.0
 
-        #     # Create transparent green overlay
-        #     green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
-        #     green_overlay[..., 1] = 1.0  # green channel
-        #     green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
+            # Create transparent green overlay
+            green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
+            green_overlay[..., 1] = 1.0  # green channel
+            green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
 
-        #     # Overlay ground truth
-        #     ax.imshow(green_overlay)
+            # Overlay ground truth
+            ax.imshow(green_overlay)
 
-        #     # Show predicted masks
-        #     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
-        #         show_mask(out_mask, ax, obj_id=out_obj_id)
+            # Show predicted masks
+            for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+                show_mask(out_mask, ax, obj_id=out_obj_id)
 
-        #     save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
-        #     plt.tight_layout()
-        #     plt.savefig(save_path, dpi=150)
+            save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
+            plt.tight_layout()
+            plt.savefig(save_path, dpi=150)
             
-        #     plt.close(fig) 
+            plt.close(fig) 
          #---------------------------------Save Prediction - END --------------------------------------  
         
     predictor.reset_state(inference_state)
@@ -1173,6 +1173,12 @@ def main():
         nargs='+',
         default=["mask"],
         help="prompt type(s) for first prompt (e.g., mask point box). Pass one or more."
+    )
+    parser.add_argument(
+        "--local_window",
+        type=int,
+        default=5,
+        help="local window size",
     )
     
 
@@ -1381,7 +1387,7 @@ def main():
         #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
 
         # Uncorrected downstream loss
-        L_no_defer, L_no_defer_sam_loss, L_no_defer_focal_loss = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        L_no_defer, L_no_defer_sam_loss, L_no_defer_focal_loss = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip, args.local_window, [initial_prompt]   )
         
         clip_frames = []
         for idx in frame_indices_for_clip:
