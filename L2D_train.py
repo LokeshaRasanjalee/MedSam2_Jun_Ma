@@ -1050,7 +1050,7 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
     # Modify first convolutional layer to accept 1-channel input
     old_conv = model.stem[0]
     new_conv = nn.Conv3d(
-        in_channels=4,  # change if using different input channels
+        in_channels=2,  # change if using different input channels
         out_channels=old_conv.out_channels,
         kernel_size=old_conv.kernel_size,
         stride=old_conv.stride,
@@ -1062,13 +1062,12 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
     with torch.no_grad():
         rgb_weights = old_conv.weight  # [out_channels, 3, T, H, W]
     
-        # Channel 0: grayscale initialized by averaging across RGB channels
-        new_conv.weight[:, 0, :, :, :] = rgb_weights.mean(dim=1)
-        
-        # Channels 1–3: copy RGB weights directly
-        new_conv.weight[:, 1, :, :, :] = rgb_weights[:, 0, :, :, :]
-        new_conv.weight[:, 2, :, :, :] = rgb_weights[:, 1, :, :, :]
-        new_conv.weight[:, 3, :, :, :] = rgb_weights[:, 2, :, :, :]
+        # Initialize both grayscale channels with the average of RGB pretrained weights
+        gray_avg = rgb_weights.mean(dim=1, keepdim=True)  # shape: [out, 1, T, H, W]
+
+        # Broadcast average weights to both grayscale channels
+        new_conv.weight[:, 0, :, :, :] = gray_avg[:, 0, :, :, :]
+        new_conv.weight[:, 1, :, :, :] = gray_avg[:, 0, :, :, :]
 
         # 3. Copy bias if exists
         if old_conv.bias is not None:
