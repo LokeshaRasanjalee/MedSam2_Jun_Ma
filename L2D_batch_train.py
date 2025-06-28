@@ -231,6 +231,16 @@ def get_mask_img_list_with_obj(args, frame_names, video_name):
 
     return mask_img_list_with_obj
 
+def get_mask_img_list(args, frame_names, video_name):
+    mask_img_list = [
+        int(name)  # convert string like '0000' → integer 0
+        for idx, name in enumerate(frame_names)
+        if os.path.exists(
+            os.path.join(args.input_mask_dir, video_name, f"{name}.png")
+        )
+    ]
+    return mask_img_list
+
 
 # def compute_focal_loss(pred_mask, true_mask, alpha=0.25, gamma=2.0, eps=1e-6):
 #     if isinstance(pred_mask, np.ndarray):
@@ -1307,7 +1317,7 @@ def main():
         frame_indices = set()
         
         frame_names = get_frame_names(os.path.join(args.base_video_dir, video_name))    
-        mask_img_list_with_obj = sorted(get_mask_img_list_with_obj(args, frame_names, video_name))
+        mask_img_list_with_obj = sorted(get_mask_img_list(args, frame_names, video_name))
         frame_indices_for_clip = mask_img_list_with_obj.copy()
         initial_prompt = int(mask_img_list_with_obj[0])
         mask_img_list_with_obj.pop(0)
