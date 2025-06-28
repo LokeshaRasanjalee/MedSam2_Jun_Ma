@@ -102,20 +102,24 @@ class ClipDataset(Dataset):
                 images = torch.stack(images)  # Shape: [T, C, H, W]
                 images = images.permute(1, 0, 2, 3)
                 
-                # Pre-compute normalized losses and complements
                 if self.args.loss_type == "sam":
-                    Loss_no_defer = torch.tensor(data['L_no_defer_sam_loss'], dtype=torch.float32)
-                    Loss_post_defer = torch.tensor(data['L_post_defer_sam_loss_list'], dtype=torch.float32)
+                    Loss_no_defer = np.array([data['L_no_defer_sam_loss']], dtype=object)  # single-element list
+                    Loss_post_defer = np.array(data['L_post_defer_sam_loss_list'], dtype=object)
                 elif self.args.loss_type == "dice":
-                    Loss_no_defer = torch.tensor(data['L_no_defer'], dtype=torch.float32)
-                    Loss_post_defer = torch.tensor(data['L_post_defer_list'], dtype=torch.float32)
+                    Loss_no_defer = np.array([data['L_no_defer']], dtype=object)  # single-element list
+                    Loss_post_defer = np.array(data['L_post_defer_list'], dtype=object)
+
+                # Concatenate: (N+1,) with first element no_defer
+                all_losses = np.concatenate([Loss_no_defer, Loss_post_defer])
                 
-                # Normalize losses
-                all_losses = torch.cat([Loss_no_defer.unsqueeze(0), Loss_post_defer])
+                replaced_losses = np.array([
+                    global_p99 + 1 if (v is None or np.isnan(v)) else v
+                    for v in all_losses
+                ], dtype=np.float32)
                 
                  # Normalize using percentiles
-                global_normalized = (all_losses - global_p1) / (global_p99 - global_p1 + 1e-6)
-                global_normalized = torch.clamp(global_normalized, 0, 1)  # Clamp values between 0 and 1
+                global_normalized = (replaced_losses - global_p1) / (global_p99 - global_p1 + 1e-6)
+                global_normalized = np.clip(global_normalized, 0, 1)
                 
                 # if torch.sum(global_normalized == 1) > 1 or torch.sum(global_normalized == 0) > 1:
                 #     print(f"{video_name} : More than one 1 or 0 in global_normalized. {global_normalized}")
@@ -129,10 +133,23 @@ class ClipDataset(Dataset):
                 
                 
                 # Normalize using min and max
-                min_local_loss = all_losses.min()
-                max_local_loss = all_losses.max()
-                local_normalized = (all_losses - min_local_loss) / (max_local_loss - min_local_loss + 1e-6)
-                local_normalized = torch.clamp(local_normalized, 0, 1)  # Clamp values between 0 and 1
+                # Filter out None values first:
+                valid_losses = [v for v in all_losses if v is not None]
+
+                if len(valid_losses) == 0:
+                    raise ValueError(f"No valid losses found in all_losses for min/max calculation: {all_losses}")
+
+                # Compute min and max on valid floats only
+                min_local_loss = np.min(valid_losses)
+                max_local_loss = np.max(valid_losses)
+                
+                local_replaced_losses = np.array([
+                    max_local_loss + 1 if (v is None or np.isnan(v)) else v
+                    for v in all_losses
+                ], dtype=np.float32) # to clamp values at 1
+                
+                local_normalized = (local_replaced_losses - min_local_loss) / (max_local_loss - min_local_loss + 1e-6)
+                local_normalized = np.clip(local_normalized, 0, 1)  # Clamp values between 0 and 1
                 
                 # if torch.sum(local_normalized == 1) > 1 or torch.sum(local_normalized == 0) > 1:
                 #     print(f"{video_name} : More than one 1 or 0 in local_normalized. {local_normalized}")
@@ -146,12 +163,28 @@ class ClipDataset(Dataset):
                 
                 # Pre-compute normalized and permuted masks
                 masks = self.mask_transform(data['Masks'])
-                min_vals = masks.amin(dim=[-2, -1], keepdim=True)
-                max_vals = masks.amax(dim=[-2, -1], keepdim=True)
-                masks = (masks - min_vals) / (max_vals - min_vals + 1e-6)
-                #masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
                 
-                combined = torch.cat([masks,images], dim=0)
+                # masks: torch.Tensor of shape (1, 7, 112, 112)
+                masks_np = masks.numpy()  # Convert to numpy for easy percentile computation
+
+                # Initialize array for normalized masks with same shape
+                normalized_masks = np.empty_like(masks_np)
+
+                for i in range(masks_np.shape[1]):  # iterate over 7 images
+                    img = masks_np[0, i]  # shape (112, 112)
+                    p1 = np.percentile(img, 1)
+                    p99 = np.percentile(img, 99)
+                    
+                    norm_img = (img - p1) / (p99 - p1 + 1e-6)
+                    norm_img = np.clip(norm_img, 0, 1)
+                    
+                    normalized_masks[0, i] = norm_img
+
+                # Convert back to torch.Tensor if needed
+                masks = torch.from_numpy(normalized_masks).float()
+                
+                images_np = images.numpy()
+                combined = np.concatenate([masks, images_np], axis=0)
                 
                 
                 # Save data as npz file in the new directory
@@ -159,11 +192,11 @@ class ClipDataset(Dataset):
                 npz_file = os.path.join(self.npz_dir, base_name.replace('.pkl', '.npz'))
                 np.savez(
                     npz_file,    
-                    masks=combined.numpy(),
-                    local_no_df_loss_complement=local_no_df_loss_complement.numpy(),
-                    local_post_df_loss_complement=local_post_df_loss_complement.numpy(),
-                    global_no_df_loss_complement=global_no_df_loss_complement.numpy(),
-                    global_post_df_loss_complement=global_post_df_loss_complement.numpy()
+                    masks=combined,
+                    local_no_df_loss_complement=local_no_df_loss_complement,
+                    local_post_df_loss_complement=local_post_df_loss_complement,
+                    global_no_df_loss_complement=global_no_df_loss_complement,
+                    global_post_df_loss_complement=global_post_df_loss_complement
                 )
                 
                 self.video_metadata.append(
