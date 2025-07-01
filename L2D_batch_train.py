@@ -553,17 +553,17 @@ def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_na
         
         #------------------Save Images------------------------------
         
-        # os.makedirs(output_mask_dir, exist_ok=True)
-        # plt.figure(figsize=(9, 6))
-        # plt.title(f"frame {input_frame_idx}")
-        # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
-        # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+        os.makedirs(output_mask_dir, exist_ok=True)
+        plt.figure(figsize=(9, 6))
+        plt.title(f"frame {input_frame_idx}")
+        plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+        show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
        
         
-        # # Save the visualization image
-        # vis_path = os.path.join(output_mask_dir, f"vis_add_mask_{frame_names[input_frame_idx]}.png")
-        # plt.savefig(vis_path)
-        # plt.close()  # Close the figure to free memory
+        # Save the visualization image
+        vis_path = os.path.join(output_mask_dir, f"vis_add_mask_{frame_names[input_frame_idx]}.png")
+        plt.savefig(vis_path)
+        plt.close()  # Close the figure to free memory
         
         #-----------------Save Images - End-------------------------
     return  out_obj_ids, out_mask_logits, object_ids_set
@@ -633,37 +633,37 @@ def add_box(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_nam
     
     #------------------Save Images------------------------------
     
-    # os.makedirs(output_mask_dir, exist_ok=True)
-    # plt.figure(figsize=(9, 6))
-    # plt.title(f"frame {input_frame_idx}")
-    # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+    os.makedirs(output_mask_dir, exist_ok=True)
+    plt.figure(figsize=(9, 6))
+    plt.title(f"frame {input_frame_idx}")
+    plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
     
-    # # Overlay the ground truth mask in green
-    # gt_mask = gt[input_frame_idx]
-    # gt_mask = np.squeeze(gt_mask)  # Ensure it's 2D
-    # green_overlay = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 4))
-    # green_overlay[..., 1] = 1.0  # green channel
-    # green_overlay[..., 3] = gt_mask * 0.4  # alpha based on mask
-    # plt.imshow(green_overlay)
+    # Overlay the ground truth mask in green
+    gt_mask = gt[input_frame_idx]
+    gt_mask = np.squeeze(gt_mask)  # Ensure it's 2D
+    green_overlay = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 4))
+    green_overlay[..., 1] = 1.0  # green channel
+    green_overlay[..., 3] = gt_mask * 0.4  # alpha based on mask
+    plt.imshow(green_overlay)
     
-    # # Show the predicted mask on top
-    # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+    # Show the predicted mask on top
+    show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
     
-    # # Mark the blob centers on the image with a cross
-    # x_min, y_min, x_max, y_max = bbox[0]
-    # width = x_max - x_min
-    # height = y_max - y_min
-    # rect = Rectangle((x_min, y_min), width, height, linewidth=2, edgecolor='r', facecolor='none')
-    # plt.gca().add_patch(rect)
+    # Mark the blob centers on the image with a cross
+    x_min, y_min, x_max, y_max = bbox[0]
+    width = x_max - x_min
+    height = y_max - y_min
+    rect = Rectangle((x_min, y_min), width, height, linewidth=2, edgecolor='r', facecolor='none')
+    plt.gca().add_patch(rect)
     
-    # print(out_mask_logits.shape)
+    print(out_mask_logits.shape)
     
-    # # Save the visualization image
-    # timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    # if labels == 1:
-    #     vis_path = os.path.join(output_mask_dir, f"vis_add_box_{frame_names[input_frame_idx]}_{x_min:.3f}_{y_min:.3f}_{x_max:.3f}_{y_max:.3f}_{timestamp}.png")
-    # plt.savefig(vis_path)
-    # plt.close()  # Close the figure to free memory
+    # Save the visualization image
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    if labels == 1:
+        vis_path = os.path.join(output_mask_dir, f"vis_add_box_{frame_names[input_frame_idx]}_{x_min:.3f}_{y_min:.3f}_{x_max:.3f}_{y_max:.3f}_{timestamp}.png")
+    plt.savefig(vis_path)
+    plt.close()  # Close the figure to free memory
     
     #-----------------Save Images - End-------------------------
     return out_obj_ids,out_mask_logits  
@@ -687,14 +687,48 @@ def keep_largest_blob(mask):
     largest_label = sizes.argmax()
     return labeled == largest_label
 
+# def get_bounding_box(mask):
+#     """Return (x_min, y_min, x_max, y_max) of the foreground blob in a binary mask."""
+#     ys, xs = np.where(mask)  # y = row, x = column
+#     if len(xs) == 0 or len(ys) == 0:
+#         return None  # no foreground
+#     x_min, x_max = xs.min(), xs.max()
+#     y_min, y_max = ys.min(), ys.max()
+#     return (x_min, y_min, x_max, y_max)
+
 def get_bounding_box(mask):
-    """Return (x_min, y_min, x_max, y_max) of the foreground blob in a binary mask."""
+    """Return (x_min, y_min, x_max, y_max) of a box triple the size of the foreground blob in a binary mask."""
     ys, xs = np.where(mask)  # y = row, x = column
     if len(xs) == 0 or len(ys) == 0:
         return None  # no foreground
+
     x_min, x_max = xs.min(), xs.max()
     y_min, y_max = ys.min(), ys.max()
-    return (x_min, y_min, x_max, y_max)
+
+    # Original box center, width, and height
+    cx = (x_min + x_max) / 2
+    cy = (y_min + y_max) / 2
+    width = x_max - x_min + 1
+    height = y_max - y_min + 1
+
+    # Triple the size
+    new_width = width * 2
+    new_height = height * 2
+
+    # New box coordinates
+    new_x_min = int(round(cx - new_width / 2))
+    new_x_max = int(round(cx + new_width / 2)) - 1
+    new_y_min = int(round(cy - new_height / 2))
+    new_y_max = int(round(cy + new_height / 2)) - 1
+
+    # Clip to image boundaries
+    H, W = mask.shape
+    new_x_min = max(0, new_x_min)
+    new_y_min = max(0, new_y_min)
+    new_x_max = min(W - 1, new_x_max)
+    new_y_max = min(H - 1, new_y_max)
+
+    return (new_x_min, new_y_min, new_x_max, new_y_max)
 
 
 @torch.inference_mode()
@@ -988,46 +1022,46 @@ def vos_inference(
             confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
           
         #---------------------------------Save Prediction--------------------------------------  
-        # vis_frame_stride = 1   
-        # for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
-        #     frame_name = frame_names[out_frame_idx]
-        #     # print(frame_name)
-        #     # print(out_frame_idx)
-        #     # Load RGB frame
-        #     img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
+        vis_frame_stride = 1   
+        for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
+            frame_name = frame_names[out_frame_idx]
+            # print(frame_name)
+            # print(out_frame_idx)
+            # Load RGB frame
+            img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
 
-        #     # Load ground truth mask image (you can convert it to grayscale if needed)
-        #     gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
-        #     gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
+            # Load ground truth mask image (you can convert it to grayscale if needed)
+            gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
+            gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
 
-        #     fig, ax = plt.subplots(figsize=(8, 6))
-        #     #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
 
-        #     # Show the input image
-        #     ax.imshow(img)
-        #     ax.set_title("Predicted + Ground Truth")
-        #     ax.axis("off")  
+            # Show the input image
+            ax.imshow(img)
+            ax.set_title("Predicted + Ground Truth")
+            ax.axis("off")  
 
-        #     # Convert ground truth to NumPy and normalize to [0,1]
-        #     gt_mask_np = np.array(gt_mask) / 255.0
+            # Convert ground truth to NumPy and normalize to [0,1]
+            gt_mask_np = np.array(gt_mask) / 255.0
 
-        #     # Create transparent green overlay
-        #     green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
-        #     green_overlay[..., 1] = 1.0  # green channel
-        #     green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
+            # Create transparent green overlay
+            green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
+            green_overlay[..., 1] = 1.0  # green channel
+            green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
 
-        #     # Overlay ground truth
-        #     ax.imshow(green_overlay)
+            # Overlay ground truth
+            ax.imshow(green_overlay)
 
-        #     # Show predicted masks
-        #     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
-        #         show_mask(out_mask, ax, obj_id=out_obj_id)
+            # Show predicted masks
+            for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+                show_mask(out_mask, ax, obj_id=out_obj_id)
 
-        #     save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
-        #     plt.tight_layout()
-        #     plt.savefig(save_path, dpi=150)
+            save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
+            plt.tight_layout()
+            plt.savefig(save_path, dpi=150)
             
-        #     plt.close(fig) 
+            plt.close(fig) 
          #---------------------------------Save Prediction - END --------------------------------------  
         
     predictor.reset_state(inference_state)
@@ -1296,6 +1330,9 @@ def main():
 
 
     for n_video, video_name in enumerate(current_chunk):
+        
+        if video_name != '0005_0030':
+            continue
                
        
         L_post_defer_list = []
@@ -1360,13 +1397,7 @@ def main():
             prompt=args.prompt,
             )
         
-        # for idx, value in confidence_scores_first.items():
-        #     score = float(value[0][0])  # Extract float from array([[value]])
-        #     if idx not in combined_scores:
-        #         combined_scores[idx] = {}
-        #     combined_scores[idx][folder_name] = score
-        #     frame_indices.add(idx)
-            
+ 
         
             
         
@@ -1380,17 +1411,7 @@ def main():
         else:
             binary_masks_first = None
             
-        # img_list=[]
-        # for f_name in frame_names:
-        #     input_f_path = os.path.join(args.base_video_dir, video_name, f"{f_name}.jpg")
-        #     if os.path.exists(input_f_path):
-        #         input_f, _ = load_ann_png(input_f_path)
-        #         img_list.append(input_f)
-        
-        # Uncorrected downstream loss
-        #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
-
-        # Uncorrected downstream loss
+   
         L_no_defer, L_no_defer_sam_loss, L_no_defer_focal_loss = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
         clip_frames = []
@@ -1409,16 +1430,7 @@ def main():
         
         for second_prompt in range (initial_prompt+1, len(frame_names)):
             
-            # if (second_prompt >= initial_prompt + half_window) and (second_prompt < len(frame_names) - half_window):
-            #     # GOOD → continue normal processing
-            #     pass
-            # else:
-            #     continue  # Skip this second_promptsecond_prompt >=initial_prompt+half_window)) or (second_prompt < (len(frame_names)-half_window)):
-                
-            
-            # if second_prompt >6:
-            #     continue
-            #if second_prompt in mask_img_list_with_obj:
+
             print("second_prompt: ", second_prompt)
             logging.info("second_prompt: " + str(second_prompt))
         
@@ -1443,14 +1455,7 @@ def main():
                 prompt=args.prompt,
                 )
                    
-            
-            # for idx, value in confidence_scores_cor.items():
-            #     score = float(value[0][0])  # Extract float from array([[value]])
-            #     if idx not in combined_scores:
-            #         combined_scores[idx] = {}
-            #     combined_scores[idx][folder_name] = score
-                #frame_indices.add(idx)
-                
+                         
                 
             
             binary_masks_cor = []
@@ -1483,7 +1488,7 @@ def main():
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
             pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss, 'L_no_defer_focal_loss':L_no_defer_focal_loss, 'L_post_defer_focal_loss_list':L_post_defer_focal_loss_list}, f)
             
-        #break
+        break
    
                 
     
