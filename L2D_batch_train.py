@@ -475,6 +475,8 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     total_dice_loss = 0.0
     total_sam_loss = 0.0
     total_focal_loss = 0.0
+    total_iou_loss = 0.0
+    iou_loss_list = []
     # dice_loss_list = []
     # sam_loss_list = []
     # focal_loss_list = []
@@ -488,30 +490,18 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
         #     continue  # Skip out of range indices
 
         pred_mask = video_segments[idx]  # Assuming your video_segments store (frame_index, mask) tuples
-        gt_mask = gt_list[idx][0]            # Your gt_list stores (1, H, W) numpy arrays
+        gt_mask = gt_list[idx]           # Your gt_list stores (1, H, W) numpy arrays
 
         
-        dice_loss = dice_loss_calc(pred_mask, gt_mask, 1, loss_on_multimask=False)  # inputs, targets, num_objects, loss_on_multimask=False
-        focal_loss = sigmoid_focal_loss_calc(pred_mask, gt_mask, 1, loss_on_multimask=False)
-        sam_loss = dice_loss + 20*focal_loss
-
-        total_dice_loss += dice_loss
-        total_focal_loss += focal_loss
-        total_sam_loss += sam_loss
+        #Write for IOU
+        iou = compute_iou(pred_mask, gt_mask)
+        iou_loss = 1.0 - iou
+        total_iou_loss += iou_loss
+        iou_loss_list.append(iou_loss)
         
-        # dice_loss_list.append(dice_loss)
-        # focal_loss_list.append(focal_loss)
-        # sam_loss_list.append(sam_loss)
-        # valid_frames += 1
-        
-
-    # assert valid_frames != 0
-
-    avg_dice_loss = total_dice_loss / len(frame_indices_for_clip)
-    avg_sam_loss = total_sam_loss / len(frame_indices_for_clip)
-    avg_focal_loss = total_focal_loss / len(frame_indices_for_clip)
-    #downstream_loss = 1.0 - avg_iou
-    return avg_dice_loss, avg_sam_loss, avg_focal_loss
+    avg_iou_loss = total_iou_loss / len(frame_indices_for_clip)
+    
+    return  iou_loss_list
 
 
 def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
@@ -598,13 +588,6 @@ def add_point(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_n
     # green_overlay[..., 1] = 1.0  # green channel
     # green_overlay[..., 3] = gt_mask * 0.4  # alpha based on mask
     # plt.imshow(green_overlay)
-    
-    # # Show the predicted mask on top
-    # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
-    
-    # # Mark the blob centers on the image with a cross
-    # for center in blob_centers:
-    #     plt.plot(center[0], center[1], 'rx')  # 'rx' for red crosses
     
     
     
@@ -696,7 +679,7 @@ def keep_largest_blob(mask):
 #     y_min, y_max = ys.min(), ys.max()
 #     return (x_min, y_min, x_max, y_max)
 
-def get_bounding_box(mask):
+def get_bounding_box(mask, box_factor):
     """Return (x_min, y_min, x_max, y_max) of a box triple the size of the foreground blob in a binary mask."""
     ys, xs = np.where(mask)  # y = row, x = column
     if len(xs) == 0 or len(ys) == 0:
@@ -712,8 +695,8 @@ def get_bounding_box(mask):
     height = y_max - y_min + 1
 
     # Triple the size
-    new_width = width * 2
-    new_height = height * 2
+    new_width = width * box_factor
+    new_height = height * box_factor    
 
     # New box coordinates
     new_x_min = int(round(cx - new_width / 2))
@@ -746,6 +729,7 @@ def vos_inference(
     per_obj_png_file=False,
     save_palette_png=False,
     prompt="mask",
+    model_type = "Auto"
     
 ):
     
@@ -854,9 +838,18 @@ def vos_inference(
                 if n_clean != 1:
                     raise SystemExit("Exiting with error due to multiple objects in the first frame.")
                     print("Multiple objects in the first frame.")
-                    return None, None  
+                    return None, None 
                 
-                bbox = get_bounding_box(cleaned_mask)
+                if model_type == "Auto":
+                    box_factor = 2
+                elif model_type == "Expert":
+                    box_factor = 1.2
+                else:
+                    raise SystemExit("Exiting with error due to invalid model type.")
+                    print("Invalid model type.")
+                    return None, None
+                    
+                bbox = get_bounding_box(cleaned_mask, box_factor)
                 labels = np.ones(1)
                 if bbox:
                     out_obj_ids_prompt,out_mask_logits_prompt = add_box(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
@@ -915,7 +908,16 @@ def vos_inference(
                         print("Multiple objects in the first frame.")
                         return None, None  
                     
-                    bbox = get_bounding_box(cleaned_mask)
+                    if model_type == "Auto":    
+                        box_factor = 2
+                    elif model_type == "Expert":
+                        box_factor = 1.2
+                    else:
+                        raise SystemExit("Exiting with error due to invalid model type.")
+                        print("Invalid model type.")
+                        return None, None
+                    
+                    bbox = get_bounding_box(cleaned_mask, box_factor)
                     labels = np.ones(1)
                     if bbox:
                         out_obj_ids_prompt,out_mask_logits_prompt = add_box(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
@@ -1325,17 +1327,23 @@ def main():
     
     #--------------------------Loop though vidoes----------------------------------
 
-
     window_size = 8  # number of frames per clip
 
+    # Create CSV file for storing all video data
+    csv_filename = os.path.join(args.output_mask_dir, f'{args.experiment_name}_{args.array_id}_results.csv')
+    
+    # We'll create headers dynamically based on the first video's data
+    csv_headers = ['video_name', 'folder_name']  # Base headers
+    csv_writer = None  # Will be initialized after first video
 
     for n_video, video_name in enumerate(current_chunk):
         
-        if video_name != '0005_0030':
-            continue
-               
+        # if video_name != '0005_0030':
+        #     continue
+           
        
         L_post_defer_list = []
+        L_post_defer_sep_list = []
         L_post_defer_sam_loss_list = []
         L_post_defer_focal_loss_list = []
         clips = []
@@ -1374,10 +1382,10 @@ def main():
                     gt = input_mask > 0
                 gt = np.expand_dims(gt, axis=0) 
                 gt_list.append(gt)
-            
+        
         # -------------------- Prompt on First frame ------------------------------
 
-        folder_name = str(initial_prompt)
+        folder_name = "p0_" + str(initial_prompt)
         print ("Inital Prompt: ", folder_name)
         folder_name_list.append(folder_name)
         output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
@@ -1395,24 +1403,38 @@ def main():
             per_obj_png_file=args.per_obj_png_file,
             save_palette_png=args.save_palette_png,
             prompt=args.prompt,
+            model_type = "Auto"
             )
         
  
-        
-            
-        
+
         if video_segments_first != None:
-            binary_masks_first = []
+            binary_masks_first = {}
             for frame_index, segment in video_segments_first.items():
                 mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
                 binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
-                binary_masks_first.append(binary_mask)
-                  
+                binary_masks_first[frame_index] = binary_mask                
         else:
             binary_masks_first = None
             
    
-        L_no_defer, L_no_defer_sam_loss, L_no_defer_focal_loss = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        iou_loss_list_frame_machine = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        
+        L_no_defer = np.mean(iou_loss_list_frame_machine)
+        
+        # Initialize CSV writer if this is the first video
+        if csv_writer is None:
+            csvfile = open(csv_filename, 'w', newline='')
+            csv_writer = csv.writer(csvfile)
+            # Create headers with dynamic iou_loss columns
+            csv_headers = ['video_name', 'folder_name']
+            csv_headers.extend([f'iou_loss_{i}' for i in range(len(iou_loss_list_frame_machine))])
+            csv_headers.extend(['mean_iou_loss', 'sep_mean_iou_loss'])
+            csv_writer.writerow(csv_headers)
+        
+        # Write initial prompt data
+        row_data = [video_name, folder_name] + iou_loss_list_frame_machine +[L_no_defer, L_no_defer]
+        csv_writer.writerow(row_data)
         
         clip_frames = []
         for idx in frame_indices_for_clip:
@@ -1421,22 +1443,19 @@ def main():
             frame_mask = Image.fromarray(frame_mask)
             frame_mask = timesformer_transform(frame_mask)
             clip_frames.append(frame_mask)
-                                
+                                    
         clip = torch.stack(clip_frames, dim=1)
-        
-        
         
         # -------------------Correction Prompts -------------------------------------
         
-        for second_prompt in range (initial_prompt+1, len(frame_names)):
+        for second_prompt in range (initial_prompt, len(frame_names)):
             
-
             print("second_prompt: ", second_prompt)
             logging.info("second_prompt: " + str(second_prompt))
         
-            input_frame_inds = [initial_prompt, second_prompt]
+            input_frame_inds = [second_prompt]
             
-            folder_name = "_".join(map(str, input_frame_inds))
+            folder_name = "pi_" + str(second_prompt)
             folder_name_list.append(folder_name)
             output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
             
@@ -1453,45 +1472,57 @@ def main():
                 per_obj_png_file=args.per_obj_png_file,
                 save_palette_png=args.save_palette_png,
                 prompt=args.prompt,
+                model_type = "Expert"
                 )
                    
-                         
-                
+                             
             
-            binary_masks_cor = []
-            
+            binary_masks_cor = {}
+
             if video_segments_cor is None:
                 binary_masks_cor = None
             else:
                 for frame_index, segment in video_segments_cor.items():
                     mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
                     binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
-                    binary_masks_cor.append(binary_mask)
+                    binary_masks_cor[frame_index] = binary_mask
 
             # Corrected downstream loss
-            L_post_defer, L_post_defer_sam_loss, L_post_defer_focal_loss = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
-            
-            
-            L_post_defer_list.append(L_post_defer)
-            L_post_defer_sam_loss_list.append(L_post_defer_sam_loss)
-            L_post_defer_focal_loss_list.append(L_post_defer_focal_loss)
-            # ll_post_dice.append(L_post_defer_dice_loss_list)
-            # ll_post_sam.append(L_post_defer_sam_loss_list_cor)
-            # ll_post_focal.append(L_post_defer_focal_loss_list_cor)
+            iou_loss_list_frame_expert= compute_downstream_loss(binary_masks_cor, gt_list,frame_indices_for_clip[second_prompt:])
+    
 
-             
-      
+            post_df_iou_list = iou_loss_list_frame_machine[:second_prompt] + iou_loss_list_frame_expert
+        
+            if second_prompt == initial_prompt:
+                sep_mean_iou_loss = np.mean(iou_loss_list_frame_expert)
+            else: 
+                sep_mean_iou_loss = (np.mean(iou_loss_list_frame_machine[:second_prompt]) + np.mean(iou_loss_list_frame_expert))/2
                 
+                
+            L_post_defer = np.mean(post_df_iou_list)
+                
+            L_post_defer_list.append(L_post_defer)
+            L_post_defer_sep_list.append(sep_mean_iou_loss)
+            
+            # Write correction prompt data
+            row_data = [video_name, folder_name] + post_df_iou_list + [L_post_defer, sep_mean_iou_loss]
+            csv_writer.writerow(row_data)
+        
+
+
+                       
         # Save all lists in a single file
         data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
-            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sam_loss_list':L_post_defer_sam_loss_list, 'L_no_defer_sam_loss':L_no_defer_sam_loss, 'L_no_defer_focal_loss':L_no_defer_focal_loss, 'L_post_defer_focal_loss_list':L_post_defer_focal_loss_list}, f)
-            
-        break
+            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sep_list':L_post_defer_sep_list}, f)
+        
    
-                
-    
+   
+    # Close CSV file
+    if csv_writer is not None:
+        csvfile.close()
+
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
 
