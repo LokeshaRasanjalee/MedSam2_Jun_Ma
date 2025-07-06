@@ -67,8 +67,8 @@ class ClipDataset(Dataset):
         return (
             torch.from_numpy(data['masks']),
             torch.from_numpy(data['global_no_df_loss_complement']),
-            torch.from_numpy(data['global_post_df_loss_complement']),
-            info['npz_file']
+            torch.from_numpy(data['global_post_df_loss_complement'][1:]), #removed initial frame correction
+            os.path.basename(info['npz_file'])
         )
         
 def get_max_index_distribution(dataset):

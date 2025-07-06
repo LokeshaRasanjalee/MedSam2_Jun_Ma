@@ -319,7 +319,7 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     
     return torch.mean(total_loss)
 
-def deferral_loss_mozannar(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta):
+def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta):
     """
     Cost-sensitive cross-entropy loss for learning to defer.
     
@@ -361,6 +361,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
 
     all_best_actions = []
     all_chosen_actions = []
+    all_video_names = []  # Add list to collect video names
     rank_distances = []
     total_chosen_acc = 0.0
     total_best_acc = 0.0
@@ -378,7 +379,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = deferral_loss_mozannar(no_df_dice_batch, rej_logits, post_df_dice_batch, beta)
+        loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta)
    
         # Backward pass
         loss.backward()
@@ -433,6 +434,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             # Store results
             all_best_actions.append(best_actions.cpu())
             all_chosen_actions.append(chosen_actions.cpu())
+            all_video_names.extend(video_name_batch)  # Collect video names
     
     if (epoch+1) % save_every == 0:
         avg_loss = total_loss / len(loader)
@@ -447,9 +449,9 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         # Calculate top-k accuracies
         topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-        return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies
+        return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names
     else:
-        return None, None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None, None
 
 def infer_deferral_action(rejector_logits):
     """
@@ -512,6 +514,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
 
     all_best_actions = []
     all_chosen_actions = []
+    all_video_names = []  # Add list to collect video names
     rank_distances = []  # <-- new list to store rank distances
     total_chosen_acc = 0.0
     total_best_acc = 0.0
@@ -530,7 +533,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = deferral_loss_mozannar(no_df_dice_batch, rej_logits, post_df_dice_batch, beta)
+            val_loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
@@ -576,6 +579,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             # Store results
             all_best_actions.append(best_actions.cpu())
             all_chosen_actions.append(chosen_actions.cpu())
+            all_video_names.extend(video_name_batch)  # Collect video names
 
     selection_accuracy = correct / total_samples
     mean_regret = total_regret / total_samples
@@ -589,7 +593,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
     # Calculate top-k accuracies
     topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies
+    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names
 
 
 # def validate_one_epoch(model, loader, criterion, device,logging):
@@ -1537,14 +1541,14 @@ def main():
         # Start epoch runtime tracking
         epoch_start_time = time.time()
         
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
         if (epoch+1) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values)
+            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -1605,13 +1609,20 @@ def main():
             logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
             logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
-            # Log training best action and chosen action for 10 samples
+            # Log training best action and chosen action for 10 samples with video names
             logging.info(f"Training Best Actions: {train_best_actions[:10]}")
             logging.info(f"Training Chosen Actions: {train_chosen_actions[:10]}")
+            logging.info(f"Training Video Names: {video_names[:10]}")
+            
+          
 
-            # Log validation best action and chosen action for 10 samples
+            # Log validation best action and chosen action for 10 samples with video names
             logging.info(f"Validation Best Actions: {val_best_actions[:10]}")
             logging.info(f"Validation Chosen Actions: {val_chosen_actions[:10]}")
+            logging.info(f"Validation Video Names: {val_video_names[:10]}")
+            
+            
+            
             print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             # print(f"Epoch [{epoch+1}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
             print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
