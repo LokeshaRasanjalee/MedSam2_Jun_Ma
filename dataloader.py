@@ -42,6 +42,8 @@ class ClipDataset(Dataset):
             self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_sam')
         elif args.loss_type == "dice":
             self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_dice')
+        elif args.loss_type == "iou":
+            self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_iou')
         os.makedirs(self.npz_dir, exist_ok=True)
         
         global_p1 = args.p1
@@ -108,6 +110,9 @@ class ClipDataset(Dataset):
                     Loss_no_defer = np.array([data['L_no_defer_sam_loss']], dtype=object)  # single-element list
                     Loss_post_defer = np.array(data['L_post_defer_sam_loss_list'], dtype=object)
                 elif self.args.loss_type == "dice":
+                    Loss_no_defer = np.array([data['L_no_defer']], dtype=object)  # single-element list
+                    Loss_post_defer = np.array(data['L_post_defer_list'], dtype=object)
+                elif self.args.loss_type == "iou":
                     Loss_no_defer = np.array([data['L_no_defer']], dtype=object)  # single-element list
                     Loss_post_defer = np.array(data['L_post_defer_list'], dtype=object)
 
