@@ -9,6 +9,7 @@ import os
 from collections import defaultdict
 import datetime
 import torch.nn.functional as F
+import random
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -841,9 +842,9 @@ def vos_inference(
                     return None, None 
                 
                 if model_type == "Auto":
-                    box_factor = 2
+                    box_factor = random.uniform(1.2, 2)
                 elif model_type == "Expert":
-                    box_factor = 1.2
+                    box_factor = random.uniform(1.1, 1.5)
                 else:
                     raise SystemExit("Exiting with error due to invalid model type.")
                     print("Invalid model type.")
