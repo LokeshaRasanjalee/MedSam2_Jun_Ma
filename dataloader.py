@@ -168,27 +168,28 @@ class ClipDataset(Dataset):
                 local_no_df_loss_complement = 1 - local_no_df_loss_norm
                 local_post_df_loss_complement = 1 - local_post_df_loss_norm
                 
-                # Pre-compute normalized and permuted masks
+                # resized masks
                 masks = self.mask_transform(data['Masks'])
                 
                 # masks: torch.Tensor of shape (1, 7, 112, 112)
-                masks_np = masks.numpy()  # Convert to numpy for easy percentile computation
+                masks_np = masks.numpy()  # Convert to numpy
+                masks_binary = masks_np > 0.5  # apply threshold for binary mask
 
                 # Initialize array for normalized masks with same shape
-                normalized_masks = np.empty_like(masks_np)
+                # normalized_masks = np.empty_like(masks_np)
 
-                for i in range(masks_np.shape[1]):  # iterate over 7 images
-                    img = masks_np[0, i]  # shape (112, 112)
-                    p1 = np.percentile(img, 1)
-                    p99 = np.percentile(img, 99)
+                # for i in range(masks_np.shape[1]):  # iterate over 7 images
+                #     img = masks_np[0, i]  # shape (112, 112)
+                #     p1 = np.percentile(img, 1)
+                #     p99 = np.percentile(img, 99)
                     
-                    norm_img = (img - p1) / (p99 - p1 + 1e-6)
-                    norm_img = np.clip(norm_img, 0, 1)
+                #     norm_img = (img - p1) / (p99 - p1 + 1e-6)
+                #     norm_img = np.clip(norm_img, 0, 1)
                     
-                    normalized_masks[0, i] = norm_img
+                #     normalized_masks[0, i] = norm_img
 
                 # Convert back to torch.Tensor if needed
-                masks = torch.from_numpy(normalized_masks).float()
+                masks = torch.from_numpy(masks_binary).float()
                 
                 images_np = images.numpy()
                 combined = np.concatenate([masks, images_np], axis=0)
