@@ -1617,9 +1617,9 @@ def main():
           
 
             # Log validation best action and chosen action for 10 samples with video names
-            logging.info(f"Validation Best Actions: {val_best_actions[:10]}")
-            logging.info(f"Validation Chosen Actions: {val_chosen_actions[:10]}")
-            logging.info(f"Validation Video Names: {val_video_names[:10]}")
+            logging.info(f"Validation Best Actions: {val_best_actions[:80]}")
+            logging.info(f"Validation Chosen Actions: {val_chosen_actions[:80]}")
+            logging.info(f"Validation Video Names: {val_video_names[:80]}")
             
             
             
