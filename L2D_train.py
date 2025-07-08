@@ -1618,9 +1618,9 @@ def main():
             logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
             # Log training best action and chosen action for 10 samples with video names
-            logging.info(f"Training Best Actions: {train_best_actions[:10]}")
-            logging.info(f"Training Chosen Actions: {train_chosen_actions[:10]}")
-            logging.info(f"Training Video Names: {video_names[:10]}")
+            logging.info(f"Training Best Actions: {train_best_actions[:80]}")
+            logging.info(f"Training Chosen Actions: {train_chosen_actions[:80]}")
+            logging.info(f"Training Video Names: {video_names[:80]}")
             
           
 
