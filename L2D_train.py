@@ -357,7 +357,7 @@ def logistic_loss(z):
 def square_loss(z):
     return (1 - z) ** 2
 
-def frame_wise_loss(i, no_df_dice_batch, rejector_logits, post_df_dice_batch, beta, loss_type="logistic"):
+def frame_wise_loss(i, no_df_dice_batch, rejector_logits, post_df_dice_batch, beta, distance_loss, loss_type="logistic"):
     B, n_e = rejector_logits.shape
     if loss_type == "logistic":
         phi_pos = logistic_loss(rejector_logits)
@@ -369,7 +369,7 @@ def frame_wise_loss(i, no_df_dice_batch, rejector_logits, post_df_dice_batch, be
         raise ValueError(f"Unknown loss_type: {loss_type}")
     
     predictor_losses = (1-no_df_dice_batch).unsqueeze(1)
-    expert_costs = ((1-post_df_dice_batch[:,i-1])+beta).unsqueeze(1) 
+    expert_costs = ((1-post_df_dice_batch[:,i-1])+beta+distance_loss[i-1]).unsqueeze(1) 
     
     # Equation: L_phi_j = l * phi(r) + c * phi(-r)
     L_phi_j = predictor_losses * phi_pos + expert_costs * phi_neg
@@ -383,7 +383,7 @@ def frame_wise_loss(i, no_df_dice_batch, rejector_logits, post_df_dice_batch, be
     
     
 
-def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5]):
+def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
     rejector.train()
     total_loss = 0
     correct = 0
@@ -416,7 +416,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             mask_with_pad[:, 0, i:, :, :] = 0
             mask_with_pad = mask_with_pad.to(device)
             rej_logits = rejector(mask_with_pad)
-            loss = frame_wise_loss(i, no_df_dice_batch, rej_logits, post_df_dice_batch, beta, loss_type="logistic")
+            loss = frame_wise_loss(i, no_df_dice_batch, rej_logits, post_df_dice_batch, beta,distance_loss, loss_type="logistic")
             loss_for_the_video += loss
             pred_logits.append(rej_logits)
         loss = loss_for_the_video/len(post_df_dice_batch[0])   # this should be L
@@ -445,7 +445,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
 
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta
+            adjusted_gain = post_df_dice_batch - beta -distance_loss
             # All possible accuracies: base + n_e frames with adjusted gain
             all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
@@ -453,13 +453,8 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
-            try:
-                correct += (chosen_actions.to(device) == best_actions.to(device)).sum().item()
-            except Exception as e:
-                print(f"Failed for video batch: {video_name_batch}")
-                print(f"Chosen actions: {chosen_actions}")
-                print(f"Best actions: {best_actions}")
-                raise e
+            correct += (chosen_actions == best_actions).sum().item()
+            
             regret = torch.abs(best_accs - chosen_accs)
             total_regret += regret.sum().item()
             total_samples += clips_batch.size(0)
@@ -569,7 +564,7 @@ def calculate_topk_accuracy(rejector_logits, best_actions, k_values=[1, 3, 5]):
     
     return topk_accuracies
 
-def validate_one_epoch(rejector, epoch, loader, criterion, alpha, beta, device, logging=None, topk_values=[1, 3, 5]):
+def validate_one_epoch(rejector, epoch, loader, criterion, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=10):
     rejector.eval()
     total_samples = 0
     total_regret = 0.0
@@ -603,7 +598,7 @@ def validate_one_epoch(rejector, epoch, loader, criterion, alpha, beta, device, 
                 mask_with_pad[:, 0, i:, :, :] = 0
                 mask_with_pad = mask_with_pad.to(device)
                 rej_logits = rejector(mask_with_pad)
-                loss = frame_wise_loss(i, no_df_dice_batch, rej_logits, post_df_dice_batch, beta, loss_type="logistic")
+                loss = frame_wise_loss(i, no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss, loss_type="logistic")
                 loss_for_the_video += loss
                 pred_logits.append(rej_logits)
             loss = loss_for_the_video/len(post_df_dice_batch[0])   # this should be L
@@ -619,8 +614,8 @@ def validate_one_epoch(rejector, epoch, loader, criterion, alpha, beta, device, 
             chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
 
 
-            # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta
+            # Calculate adjusted gain by subtracting beta and distance_loss from post_df_dice_batch
+            adjusted_gain = post_df_dice_batch - beta - distance_loss
             # All possible accuracies: base + n_e frames with adjusted gain
             all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
@@ -1609,19 +1604,26 @@ def main():
     val_acc_ma_queue = deque(maxlen=2)
     best_ma_val_acc = 0.0
     best_epoch = 0
+    distance_loss = []
+    for t in range(1, 10):  # Adjust based on the length of the video 
+        distace_cost = 0.3*(np.exp(-0.3 * (t - 1)))  #find good values for distance factor and value inside exp term
+        distance_loss.append(distace_cost)
+    distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
+    distance_loss = distance_loss.to(device)
+    logging.info(f"Distance loss: {distance_loss}")
     
     for epoch in range(start_epoch, args.num_epochs):
         # Start epoch runtime tracking
         epoch_start_time = time.time()
         
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc,  video_names = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc,  video_names = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
         if (epoch+1) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_video_names = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values)
+            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_video_names = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -1683,9 +1685,9 @@ def main():
             logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
             # Log training best action and chosen action for 10 samples with video names
-            logging.info(f"Training Best Actions: {train_best_actions[:10]}")
-            logging.info(f"Training Chosen Actions: {train_chosen_actions[:10]}")
-            logging.info(f"Training Video Names: {video_names[:10]}")
+            logging.info(f"Training Best Actions: {train_best_actions[:80]}")
+            logging.info(f"Training Chosen Actions: {train_chosen_actions[:80]}")
+            logging.info(f"Training Video Names: {video_names[:80]}")
             
           
 
