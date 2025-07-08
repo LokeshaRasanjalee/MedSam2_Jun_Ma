@@ -417,26 +417,18 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             mask_with_pad = mask_with_pad.to(device)
             rej_logits = rejector(mask_with_pad)
             loss = frame_wise_loss(i, no_df_dice_batch, rej_logits, post_df_dice_batch, beta,distance_loss, loss_type="logistic")
-            loss_for_the_video += loss
+            #loss_for_the_video += loss
             pred_logits.append(rej_logits)
-        loss = loss_for_the_video/len(post_df_dice_batch[0])   # this should be L
-        
-        loss = loss.mean()
-        
-        # Backward pass
-        loss.backward()
-        
-        # for name, param in rejector.named_parameters():
-        #     if param.grad is not None:
-        #         print(f"{name} has gradient with mean  {param.grad.abs().mean()}")
-        #     else:
-        #         print(f"{name} has no gradient")
-        
-        optimizer.step()
+            
+            loss = loss.mean()
+            
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
         
         if (epoch+1) % save_every == 0:        
-            total_loss += loss.item()
-
+            
             # Calculate accuracy metrics
             chosen_actions = infer_deferral_action(pred_logits)
             all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
@@ -480,7 +472,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             all_video_names.extend(video_name_batch)  # Collect video names
     
     if (epoch+1) % save_every == 0:
-        avg_loss = total_loss / len(loader)
+        avg_loss = total_loss / (len(loader)*len(post_df_dice_batch[0]))
         selection_accuracy = correct / total_samples
         mean_regret = total_regret / total_samples
         avg_rank_distance = sum(rank_distances) / len(rank_distances)
@@ -599,13 +591,12 @@ def validate_one_epoch(rejector, epoch, loader, criterion, alpha, beta, device, 
                 mask_with_pad = mask_with_pad.to(device)
                 rej_logits = rejector(mask_with_pad)
                 loss = frame_wise_loss(i, no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss, loss_type="logistic")
-                loss_for_the_video += loss
                 pred_logits.append(rej_logits)
-            loss = loss_for_the_video/len(post_df_dice_batch[0])   # this should be L
             
-            loss = loss.mean()
             
-            total_val_loss += loss.item()
+                loss = loss.mean()
+                
+                total_val_loss += loss.item()
 
             # Inference based on rule: defer or not
             chosen_actions = infer_deferral_action(pred_logits)          # [B], 0 = no def, 1... = defer to frame j-1
@@ -651,7 +642,7 @@ def validate_one_epoch(rejector, epoch, loader, criterion, alpha, beta, device, 
 
     selection_accuracy = correct / total_samples
     mean_regret = total_regret / total_samples
-    avg_val_loss = total_val_loss / len(loader)
+    avg_val_loss = total_val_loss / (len(loader)*len(post_df_dice_batch[0]))
     avg_rank_distance = sum(rank_distances) / len(rank_distances)
     all_best_actions = torch.cat(all_best_actions)
     all_chosen_actions = torch.cat(all_chosen_actions)
