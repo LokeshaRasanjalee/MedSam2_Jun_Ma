@@ -453,7 +453,13 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
-            correct += (chosen_actions == best_actions).sum().item()
+            try:
+                correct += (chosen_actions.to(device) == best_actions.to(device)).sum().item()
+            except Exception as e:
+                print(f"Failed for video batch: {video_name_batch}")
+                print(f"Chosen actions: {chosen_actions}")
+                print(f"Best actions: {best_actions}")
+                raise e
             regret = torch.abs(best_accs - chosen_accs)
             total_regret += regret.sum().item()
             total_samples += clips_batch.size(0)
