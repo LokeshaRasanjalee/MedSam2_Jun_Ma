@@ -319,7 +319,7 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     
     return torch.mean(total_loss)
 
-def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta):
+def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
     """
     Cost-sensitive cross-entropy loss for learning to defer.
     
@@ -334,10 +334,10 @@ def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, 
     """
     B, num_classes = rejector_logits.shape  # num_classes = J + 1
     J = num_classes - 1
-
+    
     # 1. Compute total cost vector: c(i) = 1 - acc(i) + lambda (only for deferred)
     c0 = 1.0 - acc_no_def_batch                         # [B] for no deferral
-    c_defer = 1.0 - acc_post_def_batch + beta        # [B, J] with deferral cost added
+    c_defer = 1.0 - acc_post_def_batch + beta + distance_loss       # [B, J] with deferral cost added
 
     # 2. Combine into full cost matrix [B, J+1]
     cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)  # [B, J+1]
@@ -352,7 +352,7 @@ def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, 
     return loss.mean()
     
 
-def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5]):
+def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
     rejector.train()
     total_loss = 0
     correct = 0
@@ -379,7 +379,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta)
+        loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
    
         # Backward pass
         loss.backward()
@@ -403,7 +403,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
 
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta
+            adjusted_gain = post_df_dice_batch - beta - distance_loss
             # All possible accuracies: base + n_e frames with adjusted gain
             all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
@@ -505,7 +505,7 @@ def calculate_topk_accuracy(rejector_logits, best_actions, k_values=[1, 3, 5]):
     
     return topk_accuracies
 
-def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, logging=None, topk_values=[1, 3, 5]):
+def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=10):
     model.eval()
     total_samples = 0
     total_regret = 0.0
@@ -533,7 +533,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta)
+            val_loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
@@ -547,7 +547,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
 
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta
+            adjusted_gain = post_df_dice_batch - beta - distance_loss
             # All possible accuracies: base + n_e frames with adjusted gain
             all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
@@ -1536,19 +1536,27 @@ def main():
     val_acc_ma_queue = deque(maxlen=2)
     best_ma_val_acc = 0.0
     best_epoch = 0
+    distance_loss = []
+    for t in range(1, 10):  # Adjust based on the length of the video 
+        distace_cost = 0.3*(np.exp(-0.3 * (t - 1)))  #find good values for distance factor and value inside exp term
+        distance_loss.append(distace_cost)
+    distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
+    distance_loss = distance_loss.to(device)
+    logging.info(f"Distance loss: {distance_loss}")
     
     for epoch in range(start_epoch, args.num_epochs):
         # Start epoch runtime tracking
         epoch_start_time = time.time()
+
         
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
         if (epoch+1) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values)
+            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
