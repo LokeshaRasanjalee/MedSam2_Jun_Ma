@@ -350,7 +350,51 @@ def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, 
     log_probs = F.log_softmax(rejector_logits, dim=1)   # [B, J+1]
     loss = -torch.sum(weights * log_probs, dim=1)       # [B]
     return loss.mean()
+   
+def onetime_deferal_loss_normalized_weights(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
+    B, num_classes = rejector_logits.shape
+    J = num_classes - 1
+    c0 = 1.0 - acc_no_def_batch
+    c_defer = 1.0 - acc_post_def_batch + beta + distance_loss
+    cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)
+    max_c, _ = cost.max(dim=1, keepdim=True)
+    weights = (max_c - cost) / (max_c + 1e-8)  # Normalize by c_max
+    log_probs = F.log_softmax(rejector_logits, dim=1)
+    loss = -torch.sum(weights * log_probs, dim=1)
+    return loss.mean() 
+
+def onetime_deferal_loss_normalized_weights_0_1(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
+    """
+    Compute one-time deferral loss with normalized weights.
     
+    Args:
+        acc_no_def_batch (torch.Tensor): [B] tensor of no-deferral accuracies.
+        rejector_logits (torch.Tensor): [B, J+1] tensor of logits for deferral decisions.
+        acc_post_def_batch (torch.Tensor): [B, J] tensor of post-deferral accuracies.
+        beta (float): Deferral cost penalty.
+        distance_loss (torch.Tensor): [B, J] tensor of distance-based penalties.
+    
+    Returns:
+        torch.Tensor: Mean loss across the batch.
+    """
+    B, num_classes = rejector_logits.shape
+    J = num_classes - 1
+    
+    # Compute costs
+    c0 = 1.0 - acc_no_def_batch  # [B]
+    c_defer = 1.0 - acc_post_def_batch + beta + distance_loss  # [B, J]
+    cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)  # [B, J+1]
+    
+    # Compute normalized weights
+    max_c, _ = cost.max(dim=1, keepdim=True)  # [B, 1]
+    weights = max_c - cost  # [B, J+1]
+    weights_sum = weights.sum(dim=1, keepdim=True) + 1e-8  # [B, 1], avoid division by zero
+    weights = weights / weights_sum  # Normalize weights to sum to 1
+    
+    # Compute loss
+    log_probs = F.log_softmax(rejector_logits, dim=1)  # [B, J+1]
+    loss = -torch.sum(weights * log_probs, dim=1)  # [B]
+    return loss.mean()
 
 def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
     rejector.train()
