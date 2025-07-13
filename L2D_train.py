@@ -198,9 +198,10 @@ def onetime_deferal_loss_normalized_weights_0_1(acc_no_def_batch, rejector_logit
     # Compute normalized weights
     max_c, _ = cost.max(dim=1, keepdim=True)  # [B, 1]
     weights = max_c - cost  # [B, J+1]
+    weights = torch.exp(weights)
     weights_sum = weights.sum(dim=1, keepdim=True) + 1e-8  # [B, 1], avoid division by zero
     weights = weights / weights_sum  # Normalize weights to sum to 1
-    
+        
     # Compute loss
     log_probs = F.log_softmax(rejector_logits, dim=1)  # [B, J+1]
     loss = -torch.sum(weights * log_probs, dim=1)  # [B]
