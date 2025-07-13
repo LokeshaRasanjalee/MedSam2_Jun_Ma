@@ -233,7 +233,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = onetime_deferal_loss_normalized_weights_0_1(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+        loss = onetime_deferal_loss_normalized_weights(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
    
         # Backward pass
         loss.backward()
@@ -387,7 +387,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = onetime_deferal_loss_normalized_weights_0_1(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+            val_loss = onetime_deferal_loss_normalized_weights(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
