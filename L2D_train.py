@@ -129,7 +129,7 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
     
     return torch.mean(total_loss)
 
-def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
+def onetime_deferal_loss_mae(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
     """
     Cost-sensitive cross-entropy loss for learning to defer.
     
@@ -156,9 +156,13 @@ def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, 
     max_c, _ = cost.max(dim=1, keepdim=True)            # [B, 1]
     weights = max_c - cost                              # [B, J+1]
 
-    # 4. Cross-entropy with custom weights
-    log_probs = F.log_softmax(rejector_logits, dim=1)   # [B, J+1]
-    loss = -torch.sum(weights * log_probs, dim=1)       # [B]
+   # 4. Compute MAE surrogate psi_mae for each class
+    exp_logits = torch.exp(rejector_logits)             # [B, J+1]
+    denominator = torch.sum(exp_logits, dim=1, keepdim=True)  # [B, 1]
+    psi_mae = 1 - (exp_logits / denominator)            # [B, J+1]
+
+    # 5. Compute the weighted loss using psi_mae
+    loss = torch.sum(weights * psi_mae, dim=1)          # [B]
     return loss.mean()
    
 def onetime_deferal_loss_normalized_weights(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
@@ -233,7 +237,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = onetime_deferal_loss_normalized_weights_0_1(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+        loss = onetime_deferal_loss_mae(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
    
         # Backward pass
         loss.backward()
@@ -387,7 +391,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = onetime_deferal_loss_normalized_weights_0_1(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+            val_loss = onetime_deferal_loss_mae(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
