@@ -1261,15 +1261,15 @@ def main():
                     val_losses=val_losses,
                     train_accs=train_accs,
                     val_accs=val_accs,
-                    current_ma_val_acc=current_ma_val_acc,
-                    best_ma_val_acc=best_ma_val_acc,
+                    current_ma_val_acc=val_chosen_acc,
+                    best_ma_val_acc=best_chosen_val_acc,
                     args=args,
                     timestamp=timestamp,
                     save_dir=args.output_mask_dir,
                     experiment_name=args.experiment_name
                     )
-                if current_ma_val_acc > best_ma_val_acc:
-                    best_ma_val_acc = current_ma_val_acc
+                if val_chosen_acc > best_chosen_val_acc:
+                    best_chosen_val_acc = val_chosen_acc
 
     # Calculate and log total runtime
     total_runtime = time.time() - total_start_time
