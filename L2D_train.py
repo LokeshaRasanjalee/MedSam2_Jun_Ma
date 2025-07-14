@@ -155,6 +155,9 @@ def onetime_deferal_loss_mae(acc_no_def_batch, rejector_logits, acc_post_def_bat
     # 3. Compute softmax weights: w(i) = max(c) - c(i)
     max_c, _ = cost.max(dim=1, keepdim=True)            # [B, 1]
     weights = max_c - cost                              # [B, J+1]
+    weights_sum = weights.sum(dim=1, keepdim=True) + 1e-8  # [B, 1], avoid division by zero
+    weights = weights / weights_sum  # Normalize weights to sum to 1
+    
 
    # 4. Compute MAE surrogate psi_mae for each class
     exp_logits = torch.exp(rejector_logits)             # [B, J+1]
