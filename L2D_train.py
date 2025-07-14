@@ -1149,6 +1149,7 @@ def main():
     # Initialize moving average queue for validation accuracy
     val_acc_ma_queue = deque(maxlen=2)
     best_ma_val_acc = 0.0
+    best_chosen_val_acc = 0.0
     best_epoch = 0
     distance_loss = []
     for t in range(1, 10):  # Adjust based on the length of the video 
@@ -1279,8 +1280,8 @@ def main():
     total_runtime = time.time() - total_start_time
     logging.info(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
     print(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
-    logging.info(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
-    print(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
+    # logging.info(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
+    # print(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
 
     # print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     # logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
