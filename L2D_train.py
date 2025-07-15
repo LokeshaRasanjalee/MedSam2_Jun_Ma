@@ -76,7 +76,7 @@ def compute_costs(acc_post_def_batch, alpha, beta):
     return cost
 
 
-def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0, distance_loss=10):
+def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0, distance_loss=10):  
     """
     Surrogate deferral loss adapted from Mao et al. (2023), L_exp in predictor-rejector setting.
 
@@ -111,7 +111,7 @@ def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch,
 
         # Cost calculation with clamping to prevent negative losses
         # cost = torch.clamp(alpha * (1 - acc_post_def_batch[:, j]) + beta, max=1.0)
-        cost = alpha * (1 - acc_post_def_batch[:, j]) + beta + distance_loss
+        cost = torch.clamp(alpha * (1 - acc_post_def_batch[:, j]) + beta + distance_loss[j], max=1.0)
         c_bar = 1 - cost  # This will now always be >= 0
 
         loss_term2 += c_bar * penalty  # [B]
@@ -316,17 +316,19 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
 
 def infer_deferral_action(rejector_logits):
     """
-    Given logits over deferral actions, return the index of the inferred best action.
+    Adds a zero as the first column to represent 'no deferral',
+    then returns the index of the minimum value as the chosen action.
 
     Parameters:
-    - rejector_logits: Tensor of shape [B, N] where:
-        - B = batch size
-        - N = number of deferral options (e.g., 0 = no deferral, 1..J = frame-specific prompts)
+    - rejector_logits: Tensor of shape [B, N]
 
     Returns:
-    - action_idx: Tensor of shape [B] — index of the best action per sample
+    - action_idx: Tensor of shape [B]
     """
-    action_idx = torch.argmax(rejector_logits, dim=1)  # shape [B]
+    B = rejector_logits.size(0)
+    zero_col = torch.zeros((B, 1), device=rejector_logits.device, dtype=rejector_logits.dtype)
+    extended_logits = torch.cat([zero_col, rejector_logits], dim=1)  # shape [B, N+1]
+    action_idx = torch.argmin(extended_logits, dim=1)
     return action_idx
 
 
