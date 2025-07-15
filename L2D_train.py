@@ -1158,7 +1158,7 @@ def main():
     best_epoch = 0
     distance_loss = []
     for t in range(1, 10):  # Adjust based on the length of the video 
-        distace_cost = 0.3*(np.exp(-0.3 * (t - 1)))  #find good values for distance factor and value inside exp term
+        distace_cost = 0.3*(np.exp(-0.2 * (t - 1)))  #find good values for distance factor and value inside exp term
         distance_loss.append(distace_cost)
     distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
     distance_loss = distance_loss.to(device)
