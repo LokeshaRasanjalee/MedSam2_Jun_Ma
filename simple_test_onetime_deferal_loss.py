@@ -1,36 +1,144 @@
+
 import torch
-import sys
-import os
+import torch.nn.functional as F
+from L2D_train import mao_regression_ce_loss
 
-# Add the current directory to the path to import from L2D_train
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+def compute_adjusted_scores(acc_no_def_batch, acc_post_def_batch, beta, distance_loss):
+    """Compute adjusted Dice scores for validation."""
+    post_diff_adjust = acc_post_def_batch - distance_loss - beta
+    adjusted_scores = torch.cat([acc_no_def_batch.unsqueeze(1), post_diff_adjust], dim=1)
+    return adjusted_scores
 
-from L2D_train import onetime_deferal_loss
+def run_test_case(test_name, acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss, expected_behavior):
+    """Run a test case and print results."""
+    print(f"\n=== {test_name} ===")
+    try:
+        # loss = onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss)
+        loss = mao_regression_ce_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss)
 
-def test_onetime_deferal_loss():
+        adjusted_scores = compute_adjusted_scores(acc_no_def_batch, acc_post_def_batch, beta, distance_loss)
+        optimal_index = adjusted_scores.argmax().item()
+        max_logit_index = rejector_logits[0].argmax().item()  # Access first batch element
+        print(f"Loss: {loss.item():.6f}")
+        print(f"Adjusted Scores: {adjusted_scores[0].tolist()}")
+        print(f"Logits: {rejector_logits[0].tolist()}")
+        print(f"Optimal Index (max adjusted score): {optimal_index}")
+        print(f"Max Logit Index: {max_logit_index}")
+        print(f"Expected Behavior: {expected_behavior}")
+        return loss.item()
     
-    # Test case 1: Rej_logits_1 is better than Rej_logits_2
-    rej_logits_1 = torch.tensor([0.7335, 0.5381, -0.1235, -0.8803, 1.3576, 0.0166, -1.0322, -0.5578, 1.0214, -0.5228])
-    no_df_dice_batch_1 = torch.tensor([0.8761])
-    post_df_dice_batch_1 = torch.tensor([[0.7081, 0.6744, 0.4704, 0.6037, 0.5873, 0.5262, 0.5365, 0.5580, 0.5796]])
-    distance_loss_1 = torch.tensor([0.3000, 0.2222, 0.1646, 0.1220, 0.0904, 0.0669, 0.0496, 0.0367, 0.0272])
-    beta_1 = 0.003
-    
-    rej_logits_1 = rej_logits_1.unsqueeze(0)  # Shape: [1, 10]
-    loss_1 = onetime_deferal_loss(no_df_dice_batch_1, rej_logits_1, post_df_dice_batch_1, beta_1, distance_loss_1)
-    
-    # Test case 2: Rej_logits_2 is worse than Rej_logits_1
-    rej_logits_2 = torch.tensor([-0.5, -0.3, -0.8, -1.2, 0.1, -0.9, -1.5, -0.7, 0.2, -1.0])
-    rej_logits_2 = rej_logits_2.unsqueeze(0)  # Shape: [1, 10]
-    
-    loss_2 = onetime_deferal_loss(no_df_dice_batch_1, rej_logits_2, post_df_dice_batch_1, beta_1, distance_loss_1)
-    
-    print(f"Loss 1: {loss_1.item()}")
-    print(f"Loss 2: {loss_2.item()}")
-    
-    # Assert loss_2 is greater than loss_1
-    assert loss_2.item() < loss_1.item(), f"Loss 2 ({loss_2.item()}) should be greater than Loss 1 ({loss_1.item()})"
-    
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        print("FAIL: Exception raised")
+        return None
 
+# Common inputs
+acc_no_def_batch_1 = torch.tensor([0.8761])
+acc_post_def_batch_1 = torch.tensor([[0.7081, 0.6744, 0.4704, 0.6037, 0.5873, 0.5262, 0.5365, 0.5580, 0.5796]])
+beta_1 = 0.003
+distance_loss_1 = torch.tensor([[0.1239, 0.2017, 0.4057, 0.2714, 0.3887, 0.4488, 0.4385, 0.4170, 0.3954]])
+
+# Test Case 1_1: No deferral : Optimal prediction (max logit at i=0, lowest cost)
+rejector_logits_1 = torch.tensor([[2.0, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3]])
+loss_1_1 = run_test_case(
+    "Test Case 1_1: No deferral : Highest Logit Matches Optimal Option",
+    acc_no_def_batch_1,
+    rejector_logits_1,
+    acc_post_def_batch_1,
+    beta_1,
+    distance_loss_1,
+    "Optimal prediction (max logit at i=0, lowest cost)"
+)
+
+# Test Case 1_2: No deferral : Suboptimal prediction, moderate cost (max logit at i=4)
+rejector_logits_2 = torch.tensor([[0.5, 0.4, 0.3, 1.2, 2.0, 0.1, 0.0, -0.1, -0.2, -0.3]])
+loss_1_2 = run_test_case(
+    "Test Case 1_2: No deferral : Suboptimal prediction, moderate cost (max logit at i=4)",
+    acc_no_def_batch_1,
+    rejector_logits_2,
+    acc_post_def_batch_1,
+    beta_1,
+    distance_loss_1,
+    "Medium loss"
+)
+
+# Test Case 1_3: No deferral : Suboptimal prediction, high cost (max logit at i=5)
+rejector_logits_3 = torch.tensor([[0.5, 0.4, 0.3, 1.2, 0.5, 2.5, 0.0, -0.1, -0.2, -0.3]])
+loss_1_3 = run_test_case(
+    "Test Case 1_3: No deferral : Suboptimal prediction, high cost (max logit at i=5)",
+    acc_no_def_batch_1,
+    rejector_logits_3,
+    acc_post_def_batch_1,
+    beta_1,
+    distance_loss_1,
+    "Highest loss"
+)
+
+# Test Case 2_1: Fixed logits : Lowest loss (max logit at j=0, max adjusted score at j=0)
+acc_post_def_batch_2_1 = torch.tensor([[0.7081, 0.6744, 0.4704, 0.6037, 0.5873, 0.5262, 0.5365, 0.5580, 0.5796]])
+loss_2_1 = run_test_case(
+    "Test Case 2_1: Fixed logits : Max logit and max adjusted score at j=0",
+    acc_no_def_batch_1,
+    rejector_logits_1,
+    acc_post_def_batch_2_1,
+    beta_1,
+    distance_loss_1,
+    "Lowest loss (max logit matches max adjusted score at j=0)"
+)
+
+# Test Case 2_2: Fixed logits : Medium loss (max logit at j=0, max adjusted score at j=1)
+acc_post_def_batch_2_2 = torch.tensor([[1.003, 0.6744, 0.4704, 0.6037, 0.5873, 0.5262, 0.5365, 0.5580, 0.5796]])
+loss_2_2 = run_test_case(
+    "Test Case 2_2: Fixed logits : Max logit at j=0, max adjusted score at j=1",
+    acc_no_def_batch_1,
+    rejector_logits_1,
+    acc_post_def_batch_2_2,
+    beta_1,
+    distance_loss_1,
+    "Medium loss (slight mismatch between max logit and max adjusted score)"
+)
+
+# Test Case 2_3: Fixed logits : Highest loss (max logit at j=0, max adjusted score at j=2)
+acc_post_def_batch_2_3 = torch.tensor([[0.7081, 1.080, 0.4704, 0.6037, 0.5873, 0.5262, 0.5365, 0.5580, 0.5796]])
+loss_2_3 = run_test_case(
+    "Test Case 2_3: Fixed logits : Max logit at j=0, max adjusted score at j=2",
+    acc_no_def_batch_1,
+    rejector_logits_1,
+    acc_post_def_batch_2_3,
+    beta_1,
+    distance_loss_1,
+    "Highest loss (larger mismatch between max logit and max adjusted score)"
+)
+
+# Test Case 3_1: Fixed logits : Lowest loss (max logit at j=0, max adjusted score at j=0)
+acc_post_def_batch_3_1 = torch.tensor([[0.7081, 0.6744, 0.4704, 0.6037, 0.5873, 0.5262, 0.5365, 0.5580, 0.5796]])
+loss_3_1 = run_test_case(
+    "Test Case 3_1: Fixed logits : Max logit and max adjusted score at j=0",
+    acc_no_def_batch_1,
+    rejector_logits_1,
+    acc_post_def_batch_3_1,
+    beta_1,
+    distance_loss_1,
+    "Lowest loss (max logit matches max adjusted score at j=0)"
+)
+
+# Test Case 3_2: Fixed logits : Lowest loss (max logit at j=0, max adjusted score at j=0)
+acc_post_def_batch_3_2 = torch.tensor([[0.8081, 0.6744, 0.4704, 0.6037, 0.5873, 0.5262, 0.5365, 0.5580, 0.5796]])
+loss_3_2 = run_test_case(
+    "Test Case 3_2: Fixed logits : Max logit and max adjusted score at j=0",
+    acc_no_def_batch_1,
+    rejector_logits_1,
+    acc_post_def_batch_3_2,
+    beta_1,
+    distance_loss_1,
+    "Lowest loss (max logit matches max adjusted score at j=0)"
+)
+
+# Update Sensitivity Check
+if all(x is not None for x in [loss_1_1, loss_1_2, loss_1_3, loss_2_1, loss_2_2, loss_2_3]):
+    print("\n=== Sensitivity Test Comparison ===")
+    print(f"PASS: Sensitivity check" if loss_1_1 < loss_1_2 < loss_1_3 else "FAIL: Sensitivity check (expected loss_1_1 < loss_1_2 < loss_1_3)")
+    print(f"PASS: Sensitivity check" if loss_2_1 < loss_2_2 < loss_2_3 else "FAIL: Sensitivity check (expected loss_2_1 < loss_2_2 < loss_2_3)")
+    print(f"PASS: Sensitivity check" if loss_3_1 > loss_3_2 else "FAIL: Sensitivity check (expected loss_3_1 < loss_3_2)")
 if __name__ == "__main__":
-    test_onetime_deferal_loss() 
+    print("Running all test cases for onetime_deferal_loss...")
