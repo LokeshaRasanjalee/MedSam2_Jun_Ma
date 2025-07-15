@@ -76,7 +76,7 @@ def compute_costs(acc_post_def_batch, alpha, beta):
     return cost
 
 
-def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0):
+def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0, distance_loss=10):
     """
     Surrogate deferral loss adapted from Mao et al. (2023), L_exp in predictor-rejector setting.
 
@@ -111,7 +111,7 @@ def deferral_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1
 
         # Cost calculation with clamping to prevent negative losses
         # cost = torch.clamp(alpha * (1 - acc_post_def_batch[:, j]) + beta, max=1.0)
-        cost = alpha * (1 - acc_post_def_batch[:, j]) + beta
+        cost = alpha * (1 - acc_post_def_batch[:, j]) + beta + distance_loss
         c_bar = 1 - cost  # This will now always be >= 0
 
         loss_term2 += c_bar * penalty  # [B]
@@ -134,7 +134,7 @@ def onetime_deferal_loss_mae(acc_no_def_batch, rejector_logits, acc_post_def_bat
     Cost-sensitive cross-entropy loss for learning to defer.
     
     Parameters:
-    - acc_no_def_batch: [B] — Dice scores for predictions using only prompt at f₀
+    - acc_no_def_batch: c— Dice scores for predictions using only prompt at f₀
     - rejector_logits:  [B, J+1] — model logits for deferral decisions (0 = no deferral, 1..J = frame-specific deferral)
     - acc_post_def_batch: [B, J] — Dice scores using f₀ + fⱼ, for j=1..J
     - alpha: scalar — constant deferral cost to be added to each post-deferral option
@@ -240,7 +240,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = onetime_deferal_loss_mae(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+        loss = mao_deferral_loss_exp(no_df_dice_batch, rej_logits, post_df_dice_batch,alpha, beta, distance_loss)
    
         # Backward pass
         loss.backward()
@@ -394,7 +394,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = onetime_deferal_loss_mae(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+            val_loss = mao_deferral_loss_exp(no_df_dice_batch, rej_logits, post_df_dice_batch,alpha, beta, distance_loss)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
