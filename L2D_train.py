@@ -1167,8 +1167,7 @@ def main():
     for epoch in range(start_epoch, args.num_epochs):
         # Start epoch runtime tracking
         epoch_start_time = time.time()
-
-        
+gi        
         train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
