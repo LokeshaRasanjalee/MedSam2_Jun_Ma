@@ -350,6 +350,48 @@ def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, 
     log_probs = F.log_softmax(rejector_logits, dim=1)   # [B, J+1]
     loss = -torch.sum(weights * log_probs, dim=1)       # [B]
     return loss.mean()
+
+def mao_regression_ce_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch,beta, distance_loss):
+    """
+    Hierarchical deferral loss L^h_ℓ from the equation provided.
+
+    Args:
+        acc_no_def_batch: [B] — Dice score (or 1 - loss) using only h(x) (i.e., no deferral)
+        rejector_logits:  [B, J+1] — logits over [no deferral, expert 1..J]
+        acc_post_def_batch: [B, J] — Dice scores using expert j (j=1..J)
+        distance_loss: [B, J] — additional cost for each deferral option (e.g., temporal distance)
+    
+    Returns:
+        Scalar loss averaged over batch
+    """
+    B, num_actions = rejector_logits.shape
+    n_e = num_actions - 1  # first index is no deferral (0)
+    
+    log_probs = -F.log_softmax(rejector_logits, dim=1)  # [B, J+1]
+    
+    #Term 1
+
+    # Step 1: compute c_j(x, y) = 1 - acc + distance_loss for j=1..J
+    cj = (1.0 - acc_post_def_batch) + beta + distance_loss  # [B, J]
+    cj_sum_1 = torch.sum(cj, dim=1, keepdim=True)        # [B, 1] — sum over all expert costs for no deferral path
+
+    # Step 2: loss for no deferral (r(x, 0)) — uses c0 as weight
+    loss_term1 = cj_sum_1.squeeze(1) * log_probs[:, 0]  # [B]
+    
+    
+    #Term 2
+    loss_term2 = torch.zeros_like(loss_term1)         # [B]
+    for j in range(n_e):
+        l_j = log_probs[:, j+1]      # [B, 1]
+        mask = torch.ones(n_e, dtype=torch.bool, device=rejector_logits.device)
+        mask[j] = False
+        cj_sum = torch.sum(cj[:, mask], dim=1) # [B]
+        loss_term2 += ((cj_sum + acc_no_def_batch) * l_j) # [B]
+                   
+    # Combine both terms
+    total_loss = loss_term1 + loss_term2    
+
+    return total_loss.mean()
     
 
 def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
@@ -379,7 +421,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+        loss = mao_regression_ce_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
    
         # Backward pass
         loss.backward()
@@ -533,7 +575,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+            val_loss = mao_regression_ce_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
