@@ -213,6 +213,68 @@ def onetime_deferal_loss_normalized_weights_0_1(acc_no_def_batch, rejector_logit
     loss = -torch.sum(weights * log_probs, dim=1)  # [B]
     return loss.mean()
 
+def mao_deferral_loss_log(
+    acc_no_def_batch,          # [B]
+    rejector_logits,           # [B, n_e]
+    acc_post_def_batch,        # [B, n_e]
+    alpha: float = 1.0,
+    beta:  float = 1.0,
+    distance_loss=10          # scalar or length-n_e iterable/tensor
+):
+    """
+    Surrogate deferral loss (ℓ_log) from Mao et al. (2023).
+
+    Args
+    ----
+    acc_no_def_batch   : 1 {h(x)=y}  – accuracy with *no* deferral        (shape [B])
+    rejector_logits    : r_j(x)      – logits from rejector               (shape [B, n_e])
+    acc_post_def_batch : accuracy if we defer to frame j                  (shape [B, n_e])
+    alpha, beta        : weighting terms exactly as in ℓ_exp
+    distance_loss      : extra per-frame penalty (scalar or length n_e)
+
+    Returns
+    -------
+    Mean loss over the batch (scalar).
+    """
+    B, n_e = rejector_logits.shape
+    device  = rejector_logits.device
+    dtype   = rejector_logits.dtype
+
+    # ------------------------------------------------------------------
+    # 1) Common factor  S = 1 + Σ_i e^{-r_i(x)}   and its log
+    # ------------------------------------------------------------------
+    exp_neg_r = torch.exp(-rejector_logits)                 # [B, n_e]
+    S         = 1.0 + exp_neg_r.sum(dim=1, keepdim=True)    # [B, 1]
+    log_S     = torch.log(S)                                # [B, 1]
+
+    # ------------------------------------------------------------------
+    # 2) First term:  1_{h=y} · log S
+    # ------------------------------------------------------------------
+    loss_term1 = acc_no_def_batch.unsqueeze(1) * log_S      # [B, 1]
+
+    # ------------------------------------------------------------------
+    # 3) Second term: Σ_j  c̄_j · ( r_j + log S )
+    #     c̄_j = 1 − clamp( α(1−acc_post_def_j) + β + d_j , max=1 )
+    # ------------------------------------------------------------------
+    # distance_loss -> tensor broadcastable to [B, n_e]
+    # if not torch.is_tensor(distance_loss):
+    #     distance_loss = torch.tensor(distance_loss, dtype=dtype, device=device)
+    # distance_loss = distance_loss.view(1, -1)               # [1, n_e]  (scalar stays [1,1])
+
+    # cost_j ≤ 1  ⇒  c̄_j ≥ 0
+    cost   = torch.clamp(
+        alpha * (1.0 - acc_post_def_batch) + beta + distance_loss, max=1.0
+    )                                                       # [B, n_e]
+    c_bar  = 1.0 - cost                                     # [B, n_e]
+
+    loss_term2 = (c_bar * (rejector_logits + log_S)).sum(dim=1, keepdim=True)  # [B, 1]
+
+    # ------------------------------------------------------------------
+    # 4) Combine and average
+    # ------------------------------------------------------------------
+    total_loss = (loss_term1 + loss_term2).mean()           # scalar
+    return total_loss
+
 def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
     rejector.train()
     total_loss = 0
@@ -240,7 +302,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = mao_deferral_loss_exp(no_df_dice_batch, rej_logits, post_df_dice_batch,alpha, beta, distance_loss)
+        loss = mao_deferral_loss_log(no_df_dice_batch, rej_logits, post_df_dice_batch,alpha, beta, distance_loss)
    
         # Backward pass
         loss.backward()
@@ -396,7 +458,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = mao_deferral_loss_exp(no_df_dice_batch, rej_logits, post_df_dice_batch,alpha, beta, distance_loss)
+            val_loss = mao_deferral_loss_log(no_df_dice_batch, rej_logits, post_df_dice_batch,alpha, beta, distance_loss)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
@@ -1167,7 +1229,7 @@ def main():
     for epoch in range(start_epoch, args.num_epochs):
         # Start epoch runtime tracking
         epoch_start_time = time.time()
-gi        
+                
         train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
