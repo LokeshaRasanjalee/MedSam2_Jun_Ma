@@ -53,7 +53,197 @@ def check_cuda():
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
 
+def load_ann_png(path):
+    """Load a PNG file as a mask and its palette."""
+    mask = Image.open(path)
+    palette = mask.getpalette()
+    mask = np.array(mask).astype(np.uint8)
+    return mask, palette
 
+
+def save_ann_png(path, mask, palette):
+    """Save a mask as a PNG file with the given palette and confidence value."""
+    assert mask.dtype == np.uint8
+    assert mask.ndim == 2
+    output_mask = Image.fromarray(mask)
+    output_mask.putpalette(palette)
+    output_mask.save(path)
+
+
+def get_per_obj_mask(mask):
+    """Split a mask into per-object masks."""
+    
+    if mask.ndim == 3:
+    # RGB mask → binary mask
+        mask = np.any(mask != 0, axis=-1)
+    elif mask.ndim == 2:
+        # Already 2D, just ensure it's boolean
+        mask = mask != 0
+    else:
+        raise ValueError(f"Unexpected mask shape: {mask.shape}")  
+    object_ids = np.unique(mask).astype(int)
+    object_ids = object_ids[object_ids > 0].tolist()
+    
+    pixel_counts = {}
+    for obj_id in object_ids:
+        pixel_counts[obj_id] = np.sum(mask == obj_id)
+    
+    # print(pixel_counts)
+    
+    per_obj_mask = {object_id: (mask == object_id) for object_id in object_ids}
+    return per_obj_mask
+
+
+def put_per_obj_mask(per_obj_mask, height, width):
+    """Combine per-object masks into a single mask."""
+    mask = np.zeros((height, width), dtype=np.uint8)
+    object_ids = sorted(per_obj_mask)[::-1]
+    for object_id in object_ids:
+        object_mask = per_obj_mask[object_id]
+        object_mask = object_mask.reshape(height, width)
+        mask[object_mask] = object_id
+    return mask
+
+
+def show_mask(mask, ax, obj_id=None, random_color=False):
+    if random_color:
+        color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
+    else:
+        cmap = plt.get_cmap("tab10")
+        cmap_idx = 0 if obj_id is None else obj_id
+        color = np.array([*cmap(cmap_idx)[:3], 0.6])
+    h, w = mask.shape[-2:]
+    mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
+    ax.imshow(mask_image)
+
+
+def load_masks_from_dir(
+    input_mask_dir, video_name, frame_name, per_obj_png_file, allow_missing=False
+):
+    """Load masks from a directory as a dict of per-object masks."""
+    if not per_obj_png_file:
+        input_mask_path = os.path.join(input_mask_dir, video_name, f"{frame_name}.png")
+        if allow_missing and not os.path.exists(input_mask_path):
+            return {}, None
+        input_mask, input_palette = load_ann_png(input_mask_path)
+        per_obj_input_mask = get_per_obj_mask(input_mask)
+    else:
+        per_obj_input_mask = {}
+        input_palette = None
+        # each object is a directory in "{object_id:%03d}" format
+        for object_name in os.listdir(os.path.join(input_mask_dir, video_name)):
+            object_id = int(object_name)
+            input_mask_path = os.path.join(
+                input_mask_dir, video_name, object_name, f"{frame_name}.png"
+            )
+            if allow_missing and not os.path.exists(input_mask_path):
+                continue
+            input_mask, input_palette = load_ann_png(input_mask_path)
+            per_obj_input_mask[object_id] = input_mask > 0
+
+    return per_obj_input_mask, input_palette
+
+
+def save_palette_masks_to_dir(
+    output_mask_dir,
+    video_name,
+    frame_name,
+    per_obj_output_mask,
+    height,
+    width,
+    per_obj_png_file,
+    output_palette,
+    confidence_scores,
+):
+    """Save masks to a directory as PNG files."""
+    os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
+    if not per_obj_png_file:
+        output_mask = put_per_obj_mask(per_obj_output_mask, height, width)
+        output_mask_path = os.path.join(
+            output_mask_dir, video_name, f"{frame_name}.png"
+        )
+        save_ann_png(output_mask_path, output_mask, output_palette)
+    else:
+        for object_id, object_mask in per_obj_output_mask.items():
+            object_name = f"{object_id:03d}"
+            os.makedirs(
+                os.path.join(output_mask_dir, video_name, object_name),
+                exist_ok=True,
+            )
+            output_mask = object_mask.reshape(height, width).astype(np.uint8)
+            output_mask_path = os.path.join(
+                output_mask_dir, video_name, object_name, f"{frame_name}.png"
+            )
+            save_ann_png(output_mask_path, output_mask, output_palette)
+
+
+def save_masks_to_dir(
+    output_mask_dir,
+    video_name,
+    frame_name,
+    per_obj_output_mask,
+    height,
+    width,
+    per_obj_png_file,
+    confidence_scores,
+):
+    """Save masks to a directory as greyscale PNG files."""
+    os.makedirs(os.path.join(output_mask_dir, video_name), exist_ok=True)
+    if not per_obj_png_file:
+        output_mask = put_per_obj_mask(per_obj_output_mask, height, width)
+        output_mask_path = os.path.join(
+            output_mask_dir, video_name, f"{frame_name}.png"
+        )
+        assert output_mask.dtype == np.uint8
+        assert output_mask.ndim == 2
+        
+        # Convert to binary mask (0 or 255) for better visibility
+        output_mask = (output_mask > 0).astype(np.uint8) * 255
+        output_mask = Image.fromarray(output_mask)
+        output_mask.save(output_mask_path)
+    else:
+        for object_id, object_mask in per_obj_output_mask.items():
+            object_name = f"{object_id:03d}"
+            os.makedirs(
+                os.path.join(output_mask_dir, video_name, object_name),
+                exist_ok=True,
+            )
+            output_mask = object_mask.reshape(height, width).astype(np.uint8)
+            output_mask_path = os.path.join(
+                output_mask_dir, video_name, object_name, f"{frame_name}.png"
+            )
+            assert output_mask.dtype == np.uint8
+            assert output_mask.ndim == 2
+            
+            # Convert to binary mask (0 or 255) for better visibility
+            output_mask = (output_mask > 0).astype(np.uint8) * 255
+            output_mask = Image.fromarray(output_mask)
+            output_mask.save(output_mask_path)
+            
+def get_frame_names(video_dir):
+    frame_names = [
+        os.path.splitext(p)[0]
+        for p in os.listdir(video_dir)
+        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+    ]
+    frame_names = list(sorted(frame_names))
+    return frame_names  
+
+def get_mask_img_list_with_obj(args, frame_names, video_name):
+    mask_img_list = [
+        name
+        for idx, name in enumerate(frame_names)
+        if os.path.exists(
+            os.path.join(args.input_mask_dir, video_name, f"{name}.png")
+        )
+    ]
+    mask_img_list_with_obj = sorted([
+        idx
+        for idx, name in enumerate(mask_img_list)
+        if np.any(np.array(Image.open(os.path.join(args.input_mask_dir, video_name, f"{name}.png")).convert('L')) > 0)
+    ])
+
+    return mask_img_list_with_obj
 
 
 
@@ -160,52 +350,7 @@ def onetime_deferal_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch, 
     log_probs = F.log_softmax(rejector_logits, dim=1)   # [B, J+1]
     loss = -torch.sum(weights * log_probs, dim=1)       # [B]
     return loss.mean()
-   
-def onetime_deferal_loss_normalized_weights(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
-    B, num_classes = rejector_logits.shape
-    J = num_classes - 1
-    c0 = 1.0 - acc_no_def_batch
-    c_defer = 1.0 - acc_post_def_batch + beta + distance_loss
-    cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)
-    max_c, _ = cost.max(dim=1, keepdim=True)
-    weights = (max_c - cost) / (max_c + 1e-8)  # Normalize by c_max
-    log_probs = F.log_softmax(rejector_logits, dim=1)
-    loss = -torch.sum(weights * log_probs, dim=1)
-    return loss.mean() 
-
-def onetime_deferal_loss_normalized_weights_0_1(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
-    """
-    Compute one-time deferral loss with normalized weights.
     
-    Args:
-        acc_no_def_batch (torch.Tensor): [B] tensor of no-deferral accuracies.
-        rejector_logits (torch.Tensor): [B, J+1] tensor of logits for deferral decisions.
-        acc_post_def_batch (torch.Tensor): [B, J] tensor of post-deferral accuracies.
-        beta (float): Deferral cost penalty.
-        distance_loss (torch.Tensor): [B, J] tensor of distance-based penalties.
-    
-    Returns:
-        torch.Tensor: Mean loss across the batch.
-    """
-    B, num_classes = rejector_logits.shape
-    J = num_classes - 1
-    
-    # Compute costs
-    c0 = 1.0 - acc_no_def_batch  # [B]
-    c_defer = 1.0 - acc_post_def_batch + beta + distance_loss  # [B, J]
-    cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)  # [B, J+1]
-    
-    # Compute normalized weights
-    max_c, _ = cost.max(dim=1, keepdim=True)  # [B, 1]
-    weights = max_c - cost  # [B, J+1]
-    weights = torch.exp(weights)
-    weights_sum = weights.sum(dim=1, keepdim=True) + 1e-8  # [B, 1], avoid division by zero
-    weights = weights / weights_sum  # Normalize weights to sum to 1
-        
-    # Compute loss
-    log_probs = F.log_softmax(rejector_logits, dim=1)  # [B, J+1]
-    loss = -torch.sum(weights * log_probs, dim=1)  # [B]
-    return loss.mean()
 
 def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
     rejector.train()
@@ -234,7 +379,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = onetime_deferal_loss_normalized_weights_0_1(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+        loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
    
         # Backward pass
         loss.backward()
@@ -388,7 +533,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = onetime_deferal_loss_normalized_weights_0_1(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
+            val_loss = onetime_deferal_loss(no_df_dice_batch, rej_logits, post_df_dice_batch, beta, distance_loss)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
@@ -451,7 +596,251 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
     return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names
 
 
+# def validate_one_epoch(model, loader, criterion, device,logging):
+#     model.eval()  # Set model to evaluation mode
+#     correct = 0
+#     total_regret = 0.0
+#     total_samples = 0
 
+#     with torch.no_grad():
+#         for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
+#             clips_batch = clips_batch.to(device)
+#             no_df_dice_batch = no_df_dice_batch.to(device)
+#             post_df_dice_batch = post_df_dice_batch.to(device)
+
+#             rej_logits = model(clips_batch.permute(0, 2, 1, 3, 4))
+         
+#             chosen_actions = torch.argmax(rej_logits, dim=1)
+            
+#             # Get best actions
+#             all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
+#             best_actions = torch.argmax(all_accs, dim=1)
+#             # logging.info("Best Actions:", best_actions)
+#             # logging.info("Chosen Actions:", chosen_actions)
+            
+#             # Calculate metrics
+#             correct += (chosen_actions == best_actions).sum().item()
+            
+#             # Calculate regret
+#             chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
+#             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
+#             regret = best_accs - chosen_accs
+#             total_regret += regret.sum().item()
+            
+#             total_samples += clips_batch.shape[0]
+    
+#     selection_accuracy = correct / total_samples
+#     mean_regret = total_regret / total_samples
+    
+#     return selection_accuracy, mean_regret, best_actions, chosen_actions
+
+            
+
+
+@torch.inference_mode()
+@torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+def vos_inference(
+    predictor,
+    base_video_dir,
+    input_mask_dir,
+    output_mask_dir,
+    video_name,
+    input_frame_inds,
+    score_thresh=0.0,
+    use_all_masks=False,
+    per_obj_png_file=False,
+    save_palette_png=False,
+):
+    """Run inference on a single video with the given predictor."""
+    # load the video frames and initialize the inference state on this video
+    video_dir = os.path.join(base_video_dir, video_name)
+    frame_names = [
+        os.path.splitext(p)[0]
+        for p in os.listdir(video_dir)
+        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+    ]
+    frame_names = list(sorted(frame_names))
+    inference_state = predictor.init_state(
+        video_path=video_dir, async_loading_frames=False
+    )
+    predictor.reset_state(inference_state)
+    height = inference_state["video_height"]
+    width = inference_state["video_width"]
+    input_palette = None
+    
+        
+    # check and make sure we got at least one input frame
+    if len(input_frame_inds) == 0:
+        raise RuntimeError(
+            f"In {video_name=}, got no input masks in {input_mask_dir=}. "
+            "Please make sure the input masks are available in the correct format."
+        )
+    input_frame_inds = sorted(set(input_frame_inds))
+
+    # add those input masks to SAM 2 inference state before propagation
+    
+    object_ids_set = None
+    for input_frame_idx in input_frame_inds:
+        try:
+            per_obj_input_mask, input_palette = load_masks_from_dir(
+                input_mask_dir=input_mask_dir,
+                video_name=video_name,
+                frame_name=frame_names[input_frame_idx],
+                per_obj_png_file=per_obj_png_file,
+            )
+        except FileNotFoundError as e:
+            raise RuntimeError(
+                f"In {video_name=}, failed to load input mask for frame {input_frame_idx=}. "
+                "Please add the `--track_object_appearing_later_in_video` flag "
+                "for VOS datasets that don't have all objects to track appearing "
+                "in the first frame (such as LVOS or YouTube-VOS)."
+            ) from e
+        
+        # get the list of object ids to track from the first input frame
+        if object_ids_set is None:
+            object_ids_set = set(per_obj_input_mask)
+        for object_id, object_mask in per_obj_input_mask.items():
+            # check and make sure no new object ids appear only in later frames
+            if object_id not in object_ids_set:
+                raise RuntimeError(
+                    f"In {video_name=}, got a new {object_id=} appearing only in a "
+                    f"later {input_frame_idx=} (but not appearing in the first frame). "
+                    "Please add the `--track_object_appearing_later_in_video` flag "
+                    "for VOS datasets that don't have all objects to track appearing "
+                    "in the first frame (such as LVOS or YouTube-VOS)."
+                )
+            _, out_obj_ids, out_mask_logits = predictor.add_new_mask(
+                inference_state=inference_state,
+                frame_idx=input_frame_idx,
+                obj_id=object_id,
+                mask=object_mask,
+            )
+            
+            #------------------Save Images------------------------------
+            
+            # os.makedirs(output_mask_dir, exist_ok=True)
+            # plt.figure(figsize=(9, 6))
+            # plt.title(f"frame {input_frame_idx}")
+            # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+            # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+            # print(out_mask_logits.shape)
+            
+            # # Save the visualization image
+            # vis_path = os.path.join(output_mask_dir, f"vis_add_{frame_names[input_frame_idx]}.png")
+            # plt.savefig(vis_path)
+            # plt.close()  # Close the figure to free memory
+            
+            #-----------------Save Images - End-------------------------
+
+        # check and make sure we have at least one object to track
+        if object_ids_set is None or len(object_ids_set) == 0:
+            raise RuntimeError(
+                f"In {video_name=}, got no object ids on {input_frame_inds=}. "
+                "Please add the `--track_object_appearing_later_in_video` flag "
+                "for VOS datasets that don't have all objects to track appearing "
+                "in the first frame (such as LVOS or YouTube-VOS)."
+            )
+        
+        # run propagation throughout the video and collect the results in a dict
+        output_palette = input_palette or DAVIS_PALETTE
+        video_segments = {}  # video_segments contains the per-frame segmentation results
+        confidence_scores = {}
+        video_segments_logits = {}
+
+        for out_frame_idx, out_obj_ids, out_mask_logits, object_score_logits in predictor.propagate_in_video(
+            inference_state
+        ):
+            #print (out_frame_idx)
+            per_obj_output_mask = {
+                out_obj_id: (out_mask_logits[i] > score_thresh).cpu().numpy()
+                for i, out_obj_id in enumerate(out_obj_ids)
+            }
+            
+            per_obj_output_mask_logits = {
+                out_obj_id: (out_mask_logits[i]).cpu().numpy()
+                for i, out_obj_id in enumerate(out_obj_ids)
+            }
+            
+            video_segments_logits[out_frame_idx] = per_obj_output_mask_logits
+            video_segments[out_frame_idx] = per_obj_output_mask
+            confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
+          
+        #---------------------------------Save Prediction--------------------------------------  
+        # vis_frame_stride = 1   
+        # for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
+        #     frame_name = frame_names[out_frame_idx]
+        #     # print(frame_name)
+        #     # print(out_frame_idx)
+        #     # Load RGB frame
+        #     img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
+
+        #     # Load ground truth mask image (you can convert it to grayscale if needed)
+        #     gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
+        #     gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
+
+        #     fig, ax = plt.subplots(figsize=(8, 6))
+        #     #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
+
+        #     # Show the input image
+        #     ax.imshow(img)
+        #     ax.set_title("Predicted + Ground Truth")
+        #     ax.axis("off")  
+
+        #     # Convert ground truth to NumPy and normalize to [0,1]
+        #     gt_mask_np = np.array(gt_mask) / 255.0
+
+        #     # Create transparent green overlay
+        #     green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
+        #     green_overlay[..., 1] = 1.0  # green channel
+        #     green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
+
+        #     # Overlay ground truth
+        #     ax.imshow(green_overlay)
+
+        #     # Show predicted masks
+        #     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+        #         show_mask(out_mask, ax, obj_id=out_obj_id)
+
+        #     save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
+        #     plt.tight_layout()
+        #     plt.savefig(save_path, dpi=150)
+            
+        #     plt.close(fig) 
+         #---------------------------------Save Prediction - END --------------------------------------  
+        
+    predictor.reset_state(inference_state)
+
+    # # write the output masks as palette PNG files to output_mask_dir
+    # for out_frame_idx, per_obj_output_mask in video_segments.items():
+    #     if save_palette_png:
+    #         # save palette PNG prediction results
+    #         save_palette_masks_to_dir(
+    #             output_mask_dir=output_mask_dir,
+    #             video_name=video_name,
+    #             frame_name=frame_names[out_frame_idx],
+    #             per_obj_output_mask=per_obj_output_mask,
+    #             height=height,
+    #             width=width,
+    #             per_obj_png_file=per_obj_png_file,
+    #             output_palette=output_palette,
+    #             confidence_scores=confidence_scores[out_frame_idx][0],
+    #         )
+    #     else:
+    #         # save raw prediction results
+    #         save_masks_to_dir(
+    #             output_mask_dir=output_mask_dir,
+    #             video_name=video_name,
+    #             frame_name=frame_names[out_frame_idx],
+    #             per_obj_output_mask=per_obj_output_mask,
+    #             height=height,
+    #             width=width,
+    #             per_obj_png_file=per_obj_png_file,
+    #             confidence_scores=confidence_scores[out_frame_idx][0],
+    #         )
+        
+    #     print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
+    
+    return video_segments_logits, confidence_scores
 
         
 def calculate_auc(model, data_loader, device):
@@ -712,7 +1101,7 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
 
 
 def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_accs, val_accs, 
-                    current_choosen_val_acc, best_choosen_val_acc, args, timestamp, save_dir, experiment_name):
+                    current_ma_val_acc, best_ma_val_acc, args, timestamp, save_dir, experiment_name):
     """
     Save model checkpoint and training history.
     
@@ -724,8 +1113,7 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
         val_losses: List of validation losses
         train_accs: List of training accuracies
         val_accs: List of validation accuracies
-        current_choosen_val_acc: Current validation accuracy
-        best_choosen_val_acc: Best validation accuracy
+        current_ma_val_acc: Current moving average validation accuracy
         args: Training arguments
         timestamp: Timestamp for the run
         save_dir: Directory to save the checkpoint
@@ -752,7 +1140,7 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
     
     
     # Save new checkpoint
-    checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_last_epoch_{epoch}_acc_{current_choosen_val_acc:.4f}.pth")
+    checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_last_epoch_{epoch}_ma_acc_{current_ma_val_acc:.4f}.pth")
     torch.save(checkpoint, checkpoint_path)
     
     # Save training history
@@ -761,7 +1149,7 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
         'val_losses': val_losses,
         'train_accs': train_accs,
         'val_accs': val_accs,
-        'val_acc_choosen': current_choosen_val_acc,
+        'val_acc_ma': current_ma_val_acc,
         'best_epoch': epoch,
         'args': vars(args),
         'timestamp': timestamp
@@ -782,12 +1170,12 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
     with open(history_path, 'w') as f:
         json.dump(history, f, indent=4)
     
-    logging.info(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_choosen_val_acc:.4f}")
-    print(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_choosen_val_acc:.4f}")
+    logging.info(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+    print(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
     
-    if current_choosen_val_acc >= best_choosen_val_acc:
-        logging.info(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_choosen_val_acc:.4f}")
-        print(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_choosen_val_acc:.4f}")
+    if current_ma_val_acc >= best_ma_val_acc:
+        logging.info(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
+        print(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
         
         # Delete existing checkpoint file with the same experiment name
         old_checkpoint = os.path.join(save_dir, f"model_{experiment_name}_best_epoch_*.pth")
@@ -802,7 +1190,7 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
             print(f"Failed to delete old checkpoint: {str(e)}")
             
         # Save new checkpoint
-        checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_best_epoch_{epoch}_acc_{current_choosen_val_acc:.4f}.pth")
+        checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_best_epoch_{epoch}_ma_acc_{current_ma_val_acc:.4f}.pth")
         torch.save(checkpoint, checkpoint_path)
         
         # Delete existing history file with the same experiment name
@@ -1145,8 +1533,9 @@ def main():
     
     train_losses, train_accs, val_losses, val_accs = [], [], [], []
     # Initialize moving average queue for validation accuracy
-    val_acc_ma_queue = deque(maxlen=3)
+    val_acc_ma_queue = deque(maxlen=2)
     best_ma_val_acc = 0.0
+    best_chosen_val_acc = 0.0
     best_epoch = 0
     distance_loss = []
     for t in range(1, 10):  # Adjust based on the length of the video 
@@ -1175,15 +1564,16 @@ def main():
             train_accs.append(train_acc)
             val_accs.append(val_acc)
             
-            # # Update moving average of validation accuracy
-            # val_acc_ma_queue.append(val_chosen_acc)
-            # current_ma_choosen_val_acc = sum(val_acc_ma_queue) / len(val_acc_ma_queue)
+            # Update moving average of validation accuracy
+            val_acc_ma_queue.append(val_acc)
+            current_ma_val_acc = sum(val_acc_ma_queue) / len(val_acc_ma_queue)
             
             if args.tensorboard_status:
                 writer.add_scalar('Loss/train', train_loss, epoch)
                 writer.add_scalar('Loss/val', val_loss, epoch)
                 writer.add_scalar('Accuracy/train', train_acc, epoch)
                 writer.add_scalar('Accuracy/val', val_acc, epoch)
+                writer.add_scalar('Accuracy/val_moving_avg', current_ma_val_acc, epoch)
                 writer.add_scalar('Regret/train', train_regret, epoch)
                 writer.add_scalar('Regret/val', mean_regret, epoch)
                 writer.add_scalar('Time/epoch_runtime', epoch_runtime, epoch)
@@ -1226,6 +1616,7 @@ def main():
             val_topk_str = "/".join([f"{val_topk_accuracies[k]:.4f}" for k in args.topk_values])
             logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
             logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
+            logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
             # Log training best action and chosen action for 10 samples with video names
             logging.info(f"Training Best Actions: {train_best_actions[:80]}")
@@ -1244,7 +1635,7 @@ def main():
             print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             # print(f"Epoch [{epoch+1}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
             print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
-       
+            print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
             # Log memory usage
             log_memory_usage(device, epoch=epoch, logger=logging, writer=writer if args.tensorboard_status else None)
@@ -1261,21 +1652,23 @@ def main():
                     val_losses=val_losses,
                     train_accs=train_accs,
                     val_accs=val_accs,
-                    current_choosen_val_acc=val_chosen_acc,
-                    best_choosen_val_acc=best_choosen_val_acc,
+                    current_ma_val_acc=val_chosen_acc,
+                    best_ma_val_acc=best_chosen_val_acc,
                     args=args,
                     timestamp=timestamp,
                     save_dir=args.output_mask_dir,
                     experiment_name=args.experiment_name
                     )
-                if val_chosen_acc > best_choosen_val_acc:
-                    best_choosen_val_acc = val_chosen_acc
+                if val_chosen_acc > best_chosen_val_acc:
+                    best_chosen_val_acc = val_chosen_acc
 
     # Calculate and log total runtime
     total_runtime = time.time() - total_start_time
     logging.info(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
     print(f"Total training runtime: {total_runtime:.2f} seconds ({total_runtime/60:.2f} minutes)")
-    
+    # logging.info(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
+    # print(f"Best model was from epoch {best_epoch} with moving average validation accuracy: {best_ma_val_acc:.4f}")
+
     # print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     # logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     
