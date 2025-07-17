@@ -386,7 +386,7 @@ def mao_regression_ce_loss(acc_no_def_batch, rejector_logits, acc_post_def_batch
         mask = torch.ones(n_e, dtype=torch.bool, device=rejector_logits.device)
         mask[j] = False
         cj_sum = torch.sum(cj[:, mask], dim=1) # [B]
-        loss_term2 += ((cj_sum + acc_no_def_batch) * l_j) # [B]
+        loss_term2 += ((cj_sum + (1-acc_no_def_batch)) * l_j) # [B]
                    
     # Combine both terms
     total_loss = loss_term1 + loss_term2    
