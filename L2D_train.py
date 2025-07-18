@@ -213,68 +213,6 @@ def onetime_deferal_loss_normalized_weights_0_1(acc_no_def_batch, rejector_logit
     loss = -torch.sum(weights * log_probs, dim=1)  # [B]
     return loss.mean()
 
-def mao_deferral_loss_log(
-    acc_no_def_batch,          # [B]
-    rejector_logits,           # [B, n_e]
-    acc_post_def_batch,        # [B, n_e]
-    alpha: float = 1.0,
-    beta:  float = 1.0,
-    distance_loss=10          # scalar or length-n_e iterable/tensor
-):
-    """
-    Surrogate deferral loss (ℓ_log) from Mao et al. (2023).
-
-    Args
-    ----
-    acc_no_def_batch   : 1 {h(x)=y}  – accuracy with *no* deferral        (shape [B])
-    rejector_logits    : r_j(x)      – logits from rejector               (shape [B, n_e])
-    acc_post_def_batch : accuracy if we defer to frame j                  (shape [B, n_e])
-    alpha, beta        : weighting terms exactly as in ℓ_exp
-    distance_loss      : extra per-frame penalty (scalar or length n_e)
-
-    Returns
-    -------
-    Mean loss over the batch (scalar).
-    """
-    B, n_e = rejector_logits.shape
-    device  = rejector_logits.device
-    dtype   = rejector_logits.dtype
-
-    # ------------------------------------------------------------------
-    # 1) Common factor  S = 1 + Σ_i e^{-r_i(x)}   and its log
-    # ------------------------------------------------------------------
-    exp_neg_r = torch.exp(-rejector_logits)                 # [B, n_e]
-    S         = 1.0 + exp_neg_r.sum(dim=1, keepdim=True)    # [B, 1]
-    log_S     = torch.log(S)                                # [B, 1]
-
-    # ------------------------------------------------------------------
-    # 2) First term:  1_{h=y} · log S
-    # ------------------------------------------------------------------
-    loss_term1 = acc_no_def_batch.unsqueeze(1) * log_S      # [B, 1]
-
-    # ------------------------------------------------------------------
-    # 3) Second term: Σ_j  c̄_j · ( r_j + log S )
-    #     c̄_j = 1 − clamp( α(1−acc_post_def_j) + β + d_j , max=1 )
-    # ------------------------------------------------------------------
-    # distance_loss -> tensor broadcastable to [B, n_e]
-    # if not torch.is_tensor(distance_loss):
-    #     distance_loss = torch.tensor(distance_loss, dtype=dtype, device=device)
-    # distance_loss = distance_loss.view(1, -1)               # [1, n_e]  (scalar stays [1,1])
-
-    # cost_j ≤ 1  ⇒  c̄_j ≥ 0
-    cost   = torch.clamp(
-        alpha * (1.0 - acc_post_def_batch) + beta + distance_loss, max=1.0
-    )                                                       # [B, n_e]
-    c_bar  = 1.0 - cost                                     # [B, n_e]
-
-    loss_term2 = (c_bar * (rejector_logits + log_S)).sum(dim=1, keepdim=True)  # [B, 1]
-
-    # ------------------------------------------------------------------
-    # 4) Combine and average
-    # ------------------------------------------------------------------
-    total_loss = (loss_term1 + loss_term2).mean()           # scalar
-    return total_loss
-
 def mao_deferral_loss_mae(
     acc_no_def_batch,          # [B]
     rejector_logits,           # [B, n_e]
@@ -325,7 +263,6 @@ def mao_deferral_loss_mae(
     total_loss = term1 + term2                               # [B, 1]
     return total_loss.mean()
 
-
 def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
     rejector.train()
     total_loss = 0
@@ -339,6 +276,8 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
     rank_distances = []
     total_chosen_acc = 0.0
     total_best_acc = 0.0
+    total_chosen_cost = 0.0
+    total_best_cost = 0.0
     
     # Add top-k accuracy tracking
     total_topk_correct = {k: 0 for k in topk_values}
@@ -383,6 +322,12 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             # Best accuracy (oracle) using argmax on adjusted gains
             best_actions = torch.argmax(all_accs_adjusted, dim=1)
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
+            
+            #Chosen cost
+            all_costs = torch.cat([torch.zeros(1, device=device), beta + distance_loss])
+            all_costs = all_costs.unsqueeze(0).repeat(all_accs.size(0), 1) 
+            chosen_cost = torch.gather(all_costs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
+            best_cost = torch.gather(all_costs, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
             correct += (chosen_actions == best_actions).sum().item()
@@ -391,6 +336,8 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             total_samples += clips_batch.size(0)
             total_chosen_acc += chosen_accs.sum().item()
             total_best_acc += best_accs.sum().item()
+            total_chosen_cost += chosen_cost.sum().item()
+            total_best_cost += best_cost.sum().item()
             
             # Compute top-k accuracy
             topk_accuracies = calculate_topk_accuracy(rej_logits, best_actions, topk_values)
@@ -399,7 +346,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             
             # Compute rank distance per sample in batch
             for i in range(all_accs.size(0)):
-                accs = all_accs[i]
+                accs = all_accs_adjusted[i]
                 chosen_idx = chosen_actions[i].item()
                 sorted_indices = torch.argsort(accs, descending=True)
                 rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
@@ -419,13 +366,15 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         all_chosen_actions = torch.cat(all_chosen_actions)
         avg_chosen_acc = total_chosen_acc / total_samples
         avg_best_acc = total_best_acc / total_samples
+        avg_chosen_cost = total_chosen_cost / total_samples
+        avg_best_cost = total_best_cost / total_samples
         
         # Calculate top-k accuracies
         topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-        return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names
+        return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost
     else:
-        return None, None, None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None, None,None, None
 
 def infer_deferral_action(rejector_logits):
     """
@@ -494,6 +443,8 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
     rank_distances = []  # <-- new list to store rank distances
     total_chosen_acc = 0.0
     total_best_acc = 0.0
+    total_chosen_cost = 0.0
+    total_best_cost = 0.0
     
     # Add top-k accuracy tracking
     total_topk_correct = {k: 0 for k in topk_values}
@@ -529,6 +480,12 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             # Best accuracy (oracle) using argmax on adjusted gains
             best_actions = torch.argmax(all_accs_adjusted, dim=1)
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
+            
+            #Chosen cost
+            all_costs = torch.cat([torch.zeros(1, device=device), beta + distance_loss])
+            all_costs = all_costs.unsqueeze(0).repeat(all_accs.size(0), 1) 
+            chosen_cost = torch.gather(all_costs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
+            best_cost = torch.gather(all_costs, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
             correct += (chosen_actions == best_actions).sum().item()
@@ -537,7 +494,9 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             total_samples += clips_batch.size(0)
             total_chosen_acc += chosen_accs.sum().item()
             total_best_acc += best_accs.sum().item()
-            
+            total_chosen_cost += chosen_cost.sum().item()
+            total_best_cost += best_cost.sum().item()
+
             # Compute top-k accuracy
             topk_accuracies = calculate_topk_accuracy(rej_logits, best_actions, topk_values)
             for k, acc in topk_accuracies.items():
@@ -565,11 +524,13 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
     all_chosen_actions = torch.cat(all_chosen_actions)
     avg_chosen_acc = total_chosen_acc / total_samples
     avg_best_acc = total_best_acc / total_samples
+    avg_chosen_cost = total_chosen_cost / total_samples
+    avg_best_cost = total_best_cost / total_samples
     
     # Calculate top-k accuracies
     topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names
+    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost   
 
 
 
@@ -905,7 +866,7 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
     logging.info(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
     print(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
     
-    if current_ma_val_acc >= best_ma_val_acc:
+    if current_ma_val_acc > best_ma_val_acc:
         logging.info(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
         print(f"Saved new best model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
         
@@ -1270,8 +1231,9 @@ def main():
     best_chosen_val_acc = 0.0
     best_epoch = 0
     distance_loss = []
+    N=9
     for t in range(1, 10):  # Adjust based on the length of the video 
-        distace_cost = 0.3*(np.exp(-0.2 * (t - 1)))  #find good values for distance factor and value inside exp term
+        distace_cost = 0.4 * ((N - t + 1) / N) ** 2  #find good values for distance factor and value inside exp term
         distance_loss.append(distace_cost)
     distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
     distance_loss = distance_loss.to(device)
@@ -1280,15 +1242,15 @@ def main():
     for epoch in range(start_epoch, args.num_epochs):
         # Start epoch runtime tracking
         epoch_start_time = time.time()
-                
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
+       
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
         if (epoch+1) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
+            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -1314,6 +1276,10 @@ def main():
                 writer.add_scalar('Accuracy/best_train', train_best_acc, epoch)
                 writer.add_scalar('Accuracy/chosen_val', val_chosen_acc, epoch)
                 writer.add_scalar('Accuracy/best_val', val_best_acc, epoch)
+                writer.add_scalar('Cost/chosen_train', train_chosen_cost, epoch)
+                writer.add_scalar('Cost/best_train', train_best_cost, epoch)
+                writer.add_scalar('Cost/chosen_val', val_chosen_cost, epoch)
+                writer.add_scalar('Cost/best_val', val_best_cost, epoch)
                 # Add top-k accuracy tracking
                 for k in args.topk_values:
                     writer.add_scalar(f'Top{k} Accuracy/train', topk_accuracies[k], epoch)
@@ -1334,6 +1300,10 @@ def main():
                     "Train Chosen Acc": train_chosen_acc,
                     "Val Best Acc": val_best_acc,
                     "Val Chosen Acc": val_chosen_acc,
+                    "Train Chosen Cost": train_chosen_cost,
+                    "Train Best Cost": train_best_cost,
+                    "Val Chosen Cost": val_chosen_cost,
+                    "Val Best Cost": val_best_cost,
                 })
                 
                 # Add top-k accuracies to wandb
