@@ -213,6 +213,56 @@ def onetime_deferal_loss_normalized_weights_0_1(acc_no_def_batch, rejector_logit
     loss = -torch.sum(weights * log_probs, dim=1)  # [B]
     return loss.mean()
 
+def mao_deferral_loss_mae(
+    acc_no_def_batch,          # [B]
+    rejector_logits,           # [B, n_e]
+    acc_post_def_batch,        # [B, n_e]
+    alpha=1.0,
+    beta=1.0,
+    distance_loss=10
+):
+    """
+    ℓ_mae surrogate loss from Mao et al. (2024).
+
+    Args:
+        acc_no_def_batch: [B] binary, 1 if machine prediction is correct
+        rejector_logits: [B, n_e] - logits for each deferral expert
+        acc_post_def_batch: [B, n_e] - accuracy after deferring to expert j
+        alpha, beta: loss weights
+        distance_loss: scalar or tensor of shape [n_e] for extra deferral penalty
+
+    Returns:
+        Mean loss over batch
+    """
+    B, n_e = rejector_logits.shape
+    device = rejector_logits.device
+    dtype = rejector_logits.dtype
+
+    exp_neg_r = torch.exp(-rejector_logits)                  # [B, n_e]
+    Z = 1.0 + torch.sum(exp_neg_r, dim=1, keepdim=True)      # [B, 1]
+
+    # First term: machine loss = 1 - (1 / Z)
+    machine_term = 1.0 - (1.0 / Z)                            # [B, 1]
+    term1 = acc_no_def_batch.unsqueeze(1) * machine_term     # [B, 1]
+
+    # Handle distance loss
+    # if not torch.is_tensor(distance_loss):
+    #     distance_loss = torch.tensor(distance_loss, dtype=dtype, device=device)
+    # distance_loss = distance_loss.view(1, -1)                # [1, n_e]
+
+    # cost = α * (1 - acc) + β + distance_loss
+    cost = torch.clamp(alpha * (1.0 - acc_post_def_batch) + beta + distance_loss, max=1.0)  # [B, n_e]
+    c_bar = 1.0 - cost                                       # [B, n_e]
+
+    # Second term: expert loss = 1 - e^{-r_j} / Z
+    prob_j = exp_neg_r / Z                                   # [B, n_e]
+    expert_term = 1.0 - prob_j                               # [B, n_e]
+
+    term2 = torch.sum(c_bar * expert_term, dim=1, keepdim=True)  # [B, 1]
+
+    total_loss = term1 + term2                               # [B, 1]
+    return total_loss.mean()
+
 def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
     rejector.train()
     total_loss = 0
@@ -266,11 +316,12 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
 
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta - distance_loss
+            adjusted_cost = alpha*(1-post_df_dice_batch) + beta + distance_loss
+            adjusted_cost = torch.clamp(adjusted_cost,min=0.0, max=1.0)
             # All possible accuracies: base + n_e frames with adjusted gain
-            all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
+            all_cost_adjusted = torch.cat([(1-no_df_dice_batch).unsqueeze(1), adjusted_cost], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
-            best_actions = torch.argmax(all_accs_adjusted, dim=1)
+            best_actions = torch.argmin(all_cost_adjusted, dim=1)
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
             
             #Chosen cost
@@ -296,7 +347,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             
             # Compute rank distance per sample in batch
             for i in range(all_accs.size(0)):
-                accs = all_accs_adjusted[i]
+                accs = (1-all_cost_adjusted[i])
                 chosen_idx = chosen_actions[i].item()
                 sorted_indices = torch.argsort(accs, descending=True)
                 rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
@@ -424,11 +475,12 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
 
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta - distance_loss
+            adjusted_cost = alpha*(1-post_df_dice_batch) + beta + distance_loss
+            adjusted_cost = torch.clamp(adjusted_cost,min=0.0, max=1.0)
             # All possible accuracies: base + n_e frames with adjusted gain
-            all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
+            all_cost_adjusted = torch.cat([(1-no_df_dice_batch).unsqueeze(1), adjusted_cost], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
-            best_actions = torch.argmax(all_accs_adjusted, dim=1)
+            best_actions = torch.argmin(all_cost_adjusted, dim=1)
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
             
             #Chosen cost
@@ -455,11 +507,12 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             
              # Compute rank distance per sample in batch
             for i in range(all_accs.size(0)):
-                accs = all_accs[i]
+                accs = (1-all_cost_adjusted[i])
                 chosen_idx = chosen_actions[i].item()
                 sorted_indices = torch.argsort(accs, descending=True)
                 rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
                 rank_distances.append(rank)
+                
 
             # Store results
             all_best_actions.append(best_actions.cpu())
