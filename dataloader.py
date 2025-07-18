@@ -40,6 +40,8 @@ class ClipDataset(Dataset):
             self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_sam')
         elif args.loss_type == "dice":
             self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_dice')
+        elif args.loss_type == "iou":
+            self.npz_dir = os.path.join(os.path.dirname(os.path.dirname(pickle_file)), 'data_npz_4_iou')
         os.makedirs(self.npz_dir, exist_ok=True)
         
         global_p1 = args.p1
@@ -108,6 +110,9 @@ class ClipDataset(Dataset):
                 elif self.args.loss_type == "dice":
                     Loss_no_defer = np.array([data['L_no_defer']], dtype=object)  # single-element list
                     Loss_post_defer = np.array(data['L_post_defer_list'], dtype=object)
+                elif self.args.loss_type == "iou":
+                    Loss_no_defer = np.array([data['L_no_defer']], dtype=object)  # single-element list
+                    Loss_post_defer = np.array(data['L_post_defer_list'], dtype=object)
 
                 # Concatenate: (N+1,) with first element no_defer
                 all_losses = np.concatenate([Loss_no_defer, Loss_post_defer])
@@ -166,22 +171,24 @@ class ClipDataset(Dataset):
                 
                 # masks: torch.Tensor of shape (1, 7, 112, 112)
                 masks_np = masks.numpy()  # Convert to numpy for easy percentile computation
+                
+                masks_binary = masks_np > 0.5  # apply threshold for binary mask
 
                 # Initialize array for normalized masks with same shape
-                normalized_masks = np.empty_like(masks_np)
+                # normalized_masks = np.empty_like(masks_np)
 
-                for i in range(masks_np.shape[1]):  # iterate over 7 images
-                    img = masks_np[0, i]  # shape (112, 112)
-                    p1 = np.percentile(img, 1)
-                    p99 = np.percentile(img, 99)
+                # for i in range(masks_np.shape[1]):  # iterate over 7 images
+                #     img = masks_np[0, i]  # shape (112, 112)
+                #     p1 = np.percentile(img, 1)
+                #     p99 = np.percentile(img, 99)
                     
-                    norm_img = (img - p1) / (p99 - p1 + 1e-6)
-                    norm_img = np.clip(norm_img, 0, 1)
+                #     norm_img = (img - p1) / (p99 - p1 + 1e-6)
+                #     norm_img = np.clip(norm_img, 0, 1)
                     
-                    normalized_masks[0, i] = norm_img
+                #     normalized_masks[0, i] = norm_img
 
-                # Convert back to torch.Tensor if needed
-                masks = torch.from_numpy(normalized_masks).float()
+                # # Convert back to torch.Tensor if needed
+                # masks = torch.from_numpy(normalized_masks).float()
                 
                 images_np = images.numpy()
                 combined = np.concatenate([masks, images_np], axis=0)
