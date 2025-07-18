@@ -138,90 +138,6 @@ def mao_deferral_loss_log(
     total_loss = (loss_term1 + loss_term2).mean()           # scalar
     return total_loss
 
-def onetime_deferal_loss_mae(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
-    """
-    Cost-sensitive cross-entropy loss for learning to defer.
-    
-    Parameters:
-    - acc_no_def_batch: c— Dice scores for predictions using only prompt at f₀
-    - rejector_logits:  [B, J+1] — model logits for deferral decisions (0 = no deferral, 1..J = frame-specific deferral)
-    - acc_post_def_batch: [B, J] — Dice scores using f₀ + fⱼ, for j=1..J
-    - alpha: scalar — constant deferral cost to be added to each post-deferral option
-    
-    Returns:
-    - scalar loss (mean over batch)
-    """
-    B, num_classes = rejector_logits.shape  # num_classes = J + 1
-    J = num_classes - 1
-    
-    # 1. Compute total cost vector: c(i) = 1 - acc(i) + lambda (only for deferred)
-    c0 = 1.0 - acc_no_def_batch                         # [B] for no deferral
-    c_defer = 1.0 - acc_post_def_batch + beta + distance_loss       # [B, J] with deferral cost added
-
-    # 2. Combine into full cost matrix [B, J+1]
-    cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)  # [B, J+1]
-
-    # 3. Compute softmax weights: w(i) = max(c) - c(i)
-    max_c, _ = cost.max(dim=1, keepdim=True)            # [B, 1]
-    weights = max_c - cost                              # [B, J+1]
-    weights_sum = weights.sum(dim=1, keepdim=True) + 1e-8  # [B, 1], avoid division by zero
-    weights = weights / weights_sum  # Normalize weights to sum to 1
-    
-
-   # 4. Compute MAE surrogate psi_mae for each class
-    exp_logits = torch.exp(rejector_logits)             # [B, J+1]
-    denominator = torch.sum(exp_logits, dim=1, keepdim=True)  # [B, 1]
-    psi_mae = 1 - (exp_logits / denominator)            # [B, J+1]
-
-    # 5. Compute the weighted loss using psi_mae
-    loss = torch.sum(weights * psi_mae, dim=1)          # [B]
-    return loss.mean()
-   
-def onetime_deferal_loss_normalized_weights(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
-    B, num_classes = rejector_logits.shape
-    J = num_classes - 1
-    c0 = 1.0 - acc_no_def_batch
-    c_defer = 1.0 - acc_post_def_batch + beta + distance_loss
-    cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)
-    max_c, _ = cost.max(dim=1, keepdim=True)
-    weights = (max_c - cost) / (max_c + 1e-8)  # Normalize by c_max
-    log_probs = F.log_softmax(rejector_logits, dim=1)
-    loss = -torch.sum(weights * log_probs, dim=1)
-    return loss.mean() 
-
-def onetime_deferal_loss_normalized_weights_0_1(acc_no_def_batch, rejector_logits, acc_post_def_batch, beta, distance_loss):
-    """
-    Compute one-time deferral loss with normalized weights.
-    
-    Args:
-        acc_no_def_batch (torch.Tensor): [B] tensor of no-deferral accuracies.
-        rejector_logits (torch.Tensor): [B, J+1] tensor of logits for deferral decisions.
-        acc_post_def_batch (torch.Tensor): [B, J] tensor of post-deferral accuracies.
-        beta (float): Deferral cost penalty.
-        distance_loss (torch.Tensor): [B, J] tensor of distance-based penalties.
-    
-    Returns:
-        torch.Tensor: Mean loss across the batch.
-    """
-    B, num_classes = rejector_logits.shape
-    J = num_classes - 1
-    
-    # Compute costs
-    c0 = 1.0 - acc_no_def_batch  # [B]
-    c_defer = 1.0 - acc_post_def_batch + beta + distance_loss  # [B, J]
-    cost = torch.cat([c0.unsqueeze(1), c_defer], dim=1)  # [B, J+1]
-    
-    # Compute normalized weights
-    max_c, _ = cost.max(dim=1, keepdim=True)  # [B, 1]
-    weights = max_c - cost  # [B, J+1]
-    weights_sum = weights.sum(dim=1, keepdim=True) + 1e-8  # [B, 1], avoid division by zero
-    weights = weights / weights_sum  # Normalize weights to sum to 1
-    
-    # Compute loss
-    log_probs = F.log_softmax(rejector_logits, dim=1)  # [B, J+1]
-    loss = -torch.sum(weights * log_probs, dim=1)  # [B]
-    return loss.mean()
-
 def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
     rejector.train()
     total_loss = 0
@@ -275,11 +191,12 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
 
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta - distance_loss
+            adjusted_cost = alpha*(1-post_df_dice_batch) + beta + distance_loss
+            adjusted_cost = torch.clamp(adjusted_cost,min=0.0, max=1.0)
             # All possible accuracies: base + n_e frames with adjusted gain
-            all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
+            all_cost_adjusted = torch.cat([(1-no_df_dice_batch).unsqueeze(1), adjusted_cost], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
-            best_actions = torch.argmax(all_accs_adjusted, dim=1)
+            best_actions = torch.argmin(all_cost_adjusted, dim=1)
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
             
             #Chosen cost
@@ -305,7 +222,7 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
             
             # Compute rank distance per sample in batch
             for i in range(all_accs.size(0)):
-                accs = all_accs_adjusted[i]
+                accs = (1-all_cost_adjusted[i])
                 chosen_idx = chosen_actions[i].item()
                 sorted_indices = torch.argsort(accs, descending=True)
                 rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
@@ -433,11 +350,12 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
 
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
-            adjusted_gain = post_df_dice_batch - beta - distance_loss
+            adjusted_cost = alpha*(1-post_df_dice_batch) + beta + distance_loss
+            adjusted_cost = torch.clamp(adjusted_cost,min=0.0, max=1.0)
             # All possible accuracies: base + n_e frames with adjusted gain
-            all_accs_adjusted = torch.cat([no_df_dice_batch.unsqueeze(1), adjusted_gain], dim=1)
+            all_cost_adjusted = torch.cat([(1-no_df_dice_batch).unsqueeze(1), adjusted_cost], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
-            best_actions = torch.argmax(all_accs_adjusted, dim=1)
+            best_actions = torch.argmin(all_cost_adjusted, dim=1)
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
             
             #Chosen cost
@@ -464,11 +382,12 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             
              # Compute rank distance per sample in batch
             for i in range(all_accs.size(0)):
-                accs = all_accs[i]
+                accs = (1-all_cost_adjusted[i])
                 chosen_idx = chosen_actions[i].item()
                 sorted_indices = torch.argsort(accs, descending=True)
                 rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
                 rank_distances.append(rank)
+                
 
             # Store results
             all_best_actions.append(best_actions.cpu())
