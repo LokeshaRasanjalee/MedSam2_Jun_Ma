@@ -213,6 +213,121 @@ def onetime_deferal_loss_normalized_weights_0_1(acc_no_def_batch, rejector_logit
     loss = -torch.sum(weights * log_probs, dim=1)  # [B]
     return loss.mean()
 
+def mao_deferral_loss_log(
+    acc_no_def_batch,          # [B]
+    rejector_logits,           # [B, n_e]
+    acc_post_def_batch,        # [B, n_e]
+    alpha: float = 1.0,
+    beta:  float = 1.0,
+    distance_loss=10          # scalar or length-n_e iterable/tensor
+):
+    """
+    Surrogate deferral loss (ℓ_log) from Mao et al. (2023).
+
+    Args
+    ----
+    acc_no_def_batch   : 1 {h(x)=y}  – accuracy with *no* deferral        (shape [B])
+    rejector_logits    : r_j(x)      – logits from rejector               (shape [B, n_e])
+    acc_post_def_batch : accuracy if we defer to frame j                  (shape [B, n_e])
+    alpha, beta        : weighting terms exactly as in ℓ_exp
+    distance_loss      : extra per-frame penalty (scalar or length n_e)
+
+    Returns
+    -------
+    Mean loss over the batch (scalar).
+    """
+    B, n_e = rejector_logits.shape
+    device  = rejector_logits.device
+    dtype   = rejector_logits.dtype
+
+    # ------------------------------------------------------------------
+    # 1) Common factor  S = 1 + Σ_i e^{-r_i(x)}   and its log
+    # ------------------------------------------------------------------
+    exp_neg_r = torch.exp(-rejector_logits)                 # [B, n_e]
+    S         = 1.0 + exp_neg_r.sum(dim=1, keepdim=True)    # [B, 1]
+    log_S     = torch.log(S)                                # [B, 1]
+
+    # ------------------------------------------------------------------
+    # 2) First term:  1_{h=y} · log S
+    # ------------------------------------------------------------------
+    loss_term1 = acc_no_def_batch.unsqueeze(1) * log_S      # [B, 1]
+
+    # ------------------------------------------------------------------
+    # 3) Second term: Σ_j  c̄_j · ( r_j + log S )
+    #     c̄_j = 1 − clamp( α(1−acc_post_def_j) + β + d_j , max=1 )
+    # ------------------------------------------------------------------
+    # distance_loss -> tensor broadcastable to [B, n_e]
+    # if not torch.is_tensor(distance_loss):
+    #     distance_loss = torch.tensor(distance_loss, dtype=dtype, device=device)
+    # distance_loss = distance_loss.view(1, -1)               # [1, n_e]  (scalar stays [1,1])
+
+    # cost_j ≤ 1  ⇒  c̄_j ≥ 0
+    cost   = torch.clamp(
+        alpha * (1.0 - acc_post_def_batch) + beta + distance_loss, max=1.0
+    )                                                       # [B, n_e]
+    c_bar  = 1.0 - cost                                     # [B, n_e]
+
+    loss_term2 = (c_bar * (rejector_logits + log_S)).sum(dim=1, keepdim=True)  # [B, 1]
+
+    # ------------------------------------------------------------------
+    # 4) Combine and average
+    # ------------------------------------------------------------------
+    total_loss = (loss_term1 + loss_term2).mean()           # scalar
+    return total_loss
+
+def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0, distance_loss=10):  
+    """
+    Surrogate deferral loss adapted from Mao et al. (2023), L_exp in predictor-rejector setting.
+
+    Args:
+        acc_no_def_batch: [B] - segmentation accuracy from base model (no deferral), like 1_{h(x) == y}
+        rejector_logits:  [B, n_e] - logits from rejector model (one per candidate frame)
+        acc_post_def_batch: [B, n_e] - accuracy if frame j is chosen (complement of cost)
+        alpha, beta: weights to balance no-deferral and deferral components
+
+    Returns:
+        scalar loss
+    """
+    B, n_e = rejector_logits.shape
+    #rejector_logits = torch.clamp(rejector_logits, min=-10, max=10) # extra addition my me
+
+
+    # First term: alpha * acc_no_def_batch * sum_i e^{-r_i}
+    exp_neg_r = torch.exp(-rejector_logits)           # [B, n_e]
+    term1 = torch.sum(exp_neg_r, dim=1)               # [B]
+    loss_term1 = acc_no_def_batch * term1     # [B]
+
+    # Second term: beta * sum_j acc_post_def * [sum_{i≠j} e^{r_j - r_i} + e^{r_j}]
+    loss_term2 = torch.zeros_like(loss_term1)         # [B]
+    for j in range(n_e):
+        r_j = rejector_logits[:, j].unsqueeze(1)      # [B, 1]
+        r_diff = r_j - rejector_logits                # [B, n_e]
+        mask = torch.ones(n_e, dtype=torch.bool, device=rejector_logits.device)
+        mask[j] = False
+        exp_diff = torch.sum(torch.exp(r_diff[:, mask]), dim=1)  # [B]
+        exp_rj = torch.exp(r_j.squeeze(1))            # [B]
+        penalty = exp_diff + (n_e-1)*exp_rj                   # [B]
+
+        # Cost calculation with clamping to prevent negative losses
+        # cost = torch.clamp(alpha * (1 - acc_post_def_batch[:, j]) + beta, max=1.0)
+        cost = torch.clamp(alpha * (1 - acc_post_def_batch[:, j]) + beta + distance_loss[j], max=1.0)
+        c_bar = 1 - cost  # This will now always be >= 0
+
+        loss_term2 += c_bar * penalty  # [B]
+
+    # Combine both terms
+    total_loss = loss_term1 + loss_term2              # [B]
+    
+    # print("=== DEBUG LOGS ===")
+    # print("Rejector logits:\n", rejector_logits[:3])
+    # print("acc_no_def_batch:\n", acc_no_def_batch[:3])
+    # print("acc_post_def_batch:\n", acc_post_def_batch[:3])
+    # print("loss_term1:\n", loss_term1[:3])
+    # print("loss_term2:\n", loss_term2[:3])
+    # print("total_loss:\n", total_loss[:3])
+    
+    return torch.mean(total_loss)
+
 def mao_deferral_loss_mae(
     acc_no_def_batch,          # [B]
     rejector_logits,           # [B, n_e]
@@ -263,7 +378,7 @@ def mao_deferral_loss_mae(
     total_loss = term1 + term2                               # [B, 1]
     return total_loss.mean()
 
-def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
+def train_one_epoch(loss_type,rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
     rejector.train()
     total_loss = 0
     correct = 0
@@ -281,6 +396,15 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
     
     # Add top-k accuracy tracking
     total_topk_correct = {k: 0 for k in topk_values}
+    
+    if loss_type == "mae":
+        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_mae(no_df, logits, post_df, alpha, beta, distance_loss)
+    elif loss_type == "log":
+        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_log(no_df, logits, post_df, alpha, beta, distance_loss)
+    elif loss_type == "exp":
+        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_exp(no_df, logits, post_df, alpha, beta, distance_loss)
+    else:
+        raise ValueError(f"Invalid loss_type: {loss_type}")
 
     for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
         clips_batch = clips_batch.to(device)
@@ -292,8 +416,8 @@ def train_one_epoch(rejector,epoch, loader, criterion, optimizer,save_every, alp
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
-        loss = mao_deferral_loss_mae(no_df_dice_batch, rej_logits, post_df_dice_batch,alpha, beta, distance_loss)
-   
+        loss = loss_fn(no_df_dice_batch, rej_logits, post_df_dice_batch)
+        
         # Backward pass
         loss.backward()
         
@@ -431,7 +555,7 @@ def calculate_topk_accuracy(rejector_logits, best_actions, k_values=[1, 3, 5]):
     
     return topk_accuracies
 
-def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=10):
+def validate_one_epoch(loss_type, model, epoch, loader, criterion, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=10):
     model.eval()
     total_samples = 0
     total_regret = 0.0
@@ -449,6 +573,16 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
     
     # Add top-k accuracy tracking
     total_topk_correct = {k: 0 for k in topk_values}
+    
+    
+    if loss_type == "mae":
+        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_mae(no_df, logits, post_df, alpha, beta, distance_loss)
+    elif loss_type == "log":
+        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_log(no_df, logits, post_df, alpha, beta, distance_loss)
+    elif loss_type == "exp":
+        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_exp(no_df, logits, post_df, alpha, beta, distance_loss)
+    else:
+        raise ValueError(f"Invalid loss_type: {loss_type}")
 
     with torch.no_grad():
         for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
@@ -461,7 +595,7 @@ def validate_one_epoch(model, epoch, loader, criterion, alpha, beta, device, log
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = mao_deferral_loss_mae(no_df_dice_batch, rej_logits, post_df_dice_batch,alpha, beta, distance_loss)
+            val_loss = loss_fn(no_df_dice_batch, rej_logits, post_df_dice_batch)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
@@ -743,35 +877,65 @@ def log_memory_usage(device, epoch=None, logger=None, writer=None):
     if torch.cuda.is_available():
         torch.cuda.reset_peak_memory_stats(device)
         
-def build_r2plus1d_model(num_classes=4, dropout_p=0.5, freeze_until='layer3'):
+def build_r2plus1d_model(num_classes=4, dropout_p=0.5, rgb_input=False):
     # Load pretrained R(2+1)D model
     model = r2plus1d_18(weights=R2Plus1D_18_Weights.KINETICS400_V1)
 
     # Modify first convolutional layer to accept 1-channel input
     old_conv = model.stem[0]
-    new_conv = nn.Conv3d(
-        in_channels=2,  # change if using different input channels
+    
+    if rgb_input:
+        
+        new_conv = nn.Conv3d(
+        in_channels=4,  # change if using different input channels
         out_channels=old_conv.out_channels,
         kernel_size=old_conv.kernel_size,
         stride=old_conv.stride,
         padding=old_conv.padding,
         bias=(old_conv.bias is not None)
-    )
+        )
 
-    # Copy pretrained weights
-    with torch.no_grad():
-        rgb_weights = old_conv.weight  # [out_channels, 3, T, H, W]
+        # Copy pretrained weights
+        with torch.no_grad():
+            rgb_weights = old_conv.weight  # [out_channels, 3, T, H, W]
+        
+            # Channel 0: grayscale initialized by averaging across RGB channels
+            new_conv.weight[:, 0, :, :, :] = rgb_weights.mean(dim=1)
+            
+            # Channels 1–3: copy RGB weights directly
+            new_conv.weight[:, 1, :, :, :] = rgb_weights[:, 0, :, :, :]
+            new_conv.weight[:, 2, :, :, :] = rgb_weights[:, 1, :, :, :]
+            new_conv.weight[:, 3, :, :, :] = rgb_weights[:, 2, :, :, :]
+
+            # 3. Copy bias if exists
+            if old_conv.bias is not None:
+                new_conv.bias[:] = old_conv.bias
+        
     
-        # Initialize both grayscale channels with the average of RGB pretrained weights
-        gray_avg = rgb_weights.mean(dim=1, keepdim=True)  # shape: [out, 1, T, H, W]
+    else:
+        new_conv = nn.Conv3d(
+            in_channels=2,  # change if using different input channels
+            out_channels=old_conv.out_channels,
+            kernel_size=old_conv.kernel_size,
+            stride=old_conv.stride,
+            padding=old_conv.padding,
+            bias=(old_conv.bias is not None)
+        )
 
-        # Broadcast average weights to both grayscale channels
-        new_conv.weight[:, 0, :, :, :] = gray_avg[:, 0, :, :, :]
-        new_conv.weight[:, 1, :, :, :] = gray_avg[:, 0, :, :, :]
+        # Copy pretrained weights
+        with torch.no_grad():
+            rgb_weights = old_conv.weight  # [out_channels, 3, T, H, W]
+        
+            # Initialize both grayscale channels with the average of RGB pretrained weights
+            gray_avg = rgb_weights.mean(dim=1, keepdim=True)  # shape: [out, 1, T, H, W]
 
-        # 3. Copy bias if exists
-        if old_conv.bias is not None:
-            new_conv.bias[:] = old_conv.bias
+            # Broadcast average weights to both grayscale channels
+            new_conv.weight[:, 0, :, :, :] = gray_avg[:, 0, :, :, :]
+            new_conv.weight[:, 1, :, :, :] = gray_avg[:, 0, :, :, :]
+
+            # 3. Copy bias if exists
+            if old_conv.bias is not None:
+                new_conv.bias[:] = old_conv.bias
 
     # Replace the first conv layer
     model.stem[0] = new_conv
@@ -1074,13 +1238,13 @@ def main():
     parser.add_argument(
         "--dropout",
         type=float,
-        default=0.5,
+        default=0,
         help="Dropout rate for the model (default: 0.5)",
     )
     parser.add_argument(
         "--save_every",
         type=int,
-        default=10,
+        default=1,
         help="Save model every N epochs (default: 2)",
     )
     
@@ -1100,7 +1264,7 @@ def main():
     parser.add_argument(
         "--num_classes",
         type=int,
-        default=10,
+        default=9,
         help="Number of classes for the model (default: 10)",
     )
     parser.add_argument(
@@ -1117,6 +1281,20 @@ def main():
         default=[1, 3, 5],
         help="Top-k values to track for accuracy (default: [1, 3, 5])",
     )
+    parser.add_argument(
+        "--loss_type",
+        type=str,
+        default="mae",
+        help="Loss type (default: mae, log, exp)",
+    )
+    parser.add_argument(
+        "--rgb_input",
+        type=bool,
+        default=False,
+        help="RGB input (default: False)",
+    )
+    
+    
     
     
     
@@ -1203,7 +1381,7 @@ def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Load pretrained R(2+1)D model
-    model = build_r2plus1d_model(num_classes=args.num_classes, dropout_p=args.dropout)
+    model = build_r2plus1d_model(num_classes=args.num_classes, dropout_p=args.dropout, rgb_input=args.rgb_input)
     start_epoch = 0
     if args.load_model_path is not None:
         checkpoint = torch.load(args.load_model_path)
@@ -1246,14 +1424,14 @@ def main():
         # Start epoch runtime tracking
         epoch_start_time = time.time()
        
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
         if (epoch+1) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
+            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
