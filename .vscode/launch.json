@@ -75,7 +75,7 @@
             "request": "launch",
             "program": "L2D_train.py",
             "console": "integratedTerminal",
-            "args": "--base_video_dir ./Barrets_dataset_len-10_frameinterval-5_interclipstride-1-all/Images/ --input_mask_dir ./sun_dataset/Barrets_dataset_len-10_frameinterval-5_interclipstride-1-all/Masks/ --data_npz_dir_train ./l2d_models/vtus_data/data_npz_4_iou_tmp/ --data_npz_dir_test ./l2d_models/vtus_data/data_npz_4_iou_tmp/  -o ./sun_dataset/out/ --experiment_name 'exp_loss_run' --batch_size 3 --num_epochs 30 --learning_rate 1e-6 --alpha 0.75 --beta 0.003 --train_test_split True --topk_values 3 --num_classes 9"
+            "args": "--base_video_dir ./Barrets_dataset_len-10_frameinterval-5_interclipstride-1-all/Images/ --input_mask_dir ./sun_dataset/Barrets_dataset_len-10_frameinterval-5_interclipstride-1-all/Masks/ --data_npz_dir_train ./l2d_models/sunseg/data_npz_4_iou/ --data_npz_dir_test ./l2d_models/sunseg/data_npz_4_iou/  -o ./sun_dataset/out/ --experiment_name 'exp_loss_run' --batch_size 3 --num_epochs 30 --learning_rate 1e-6 --alpha 0.75 --beta 0.003 --train_test_split True --topk_values 3 --num_classes 9 --loss_type 'log' --rgb_input True"
         },
         {
             "name": "L2D_debug",
