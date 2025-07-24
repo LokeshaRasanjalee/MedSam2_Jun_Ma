@@ -729,7 +729,9 @@ def vos_inference(
     per_obj_png_file=False,
     save_palette_png=False,
     prompt="mask",
-    model_type = "Auto"
+    model_type = "Auto",
+    human_prompt = 1.2,
+    machine_prompt = 2
     
 ):
     
@@ -841,9 +843,9 @@ def vos_inference(
                     return None, None 
                 
                 if model_type == "Auto":
-                    box_factor = 2
+                    box_factor = machine_prompt
                 elif model_type == "Expert":
-                    box_factor = 1.2
+                    box_factor = human_prompt
                 else:
                     raise SystemExit("Exiting with error due to invalid model type.")
                     print("Invalid model type.")
@@ -909,9 +911,9 @@ def vos_inference(
                         return None, None  
                     
                     if model_type == "Auto":    
-                        box_factor = 2
+                        box_factor =  machine_prompt
                     elif model_type == "Expert":
-                        box_factor = 1.2
+                        box_factor =  human_prompt
                     else:
                         raise SystemExit("Exiting with error due to invalid model type.")
                         print("Invalid model type.")
@@ -1220,6 +1222,19 @@ def main():
         default=["mask"],
         help="prompt type(s) for first prompt (e.g., mask point box). Pass one or more."
     )
+    parser.add_argument(
+        "--human_prompt",
+        type=float,
+        default=1.2,
+        help="human prompt box size.",
+    )
+    parser.add_argument(
+        "--machine_prompt",
+        type=float,
+        default=2,
+        help="machine prompt box size.",
+    )
+    
     
 
     args = parser.parse_args()
@@ -1403,7 +1418,9 @@ def main():
             per_obj_png_file=args.per_obj_png_file,
             save_palette_png=args.save_palette_png,
             prompt=args.prompt,
-            model_type = "Auto"
+            model_type = "Auto",
+            human_prompt = args.human_prompt,
+            machine_prompt = args.machine_prompt
             )
         
  
@@ -1472,7 +1489,9 @@ def main():
                 per_obj_png_file=args.per_obj_png_file,
                 save_palette_png=args.save_palette_png,
                 prompt=args.prompt,
-                model_type = "Expert"
+                model_type = "Expert",
+                human_prompt = args.human_prompt,
+                machine_prompt = args.machine_prompt
                 )
                    
                              
@@ -1507,6 +1526,8 @@ def main():
             # Write correction prompt data
             row_data = [video_name, folder_name] + post_df_iou_list + [L_post_defer, sep_mean_iou_loss]
             csv_writer.writerow(row_data)
+            
+        
         
 
 
