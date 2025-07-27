@@ -1333,6 +1333,12 @@ def main():
         default=False,
         help="RGB input (default: False)",
     )
+    parser.add_argument(
+        "--distance_type",
+        type=str,
+        default="quad",
+        help="Distance type (default: exp, quad)",
+    )
     
     args = parser.parse_args()
     
@@ -1451,7 +1457,10 @@ def main():
     distance_loss = []
     N=9
     for t in range(1, 10):  # Adjust based on the length of the video 
-        distace_cost = 0.4 * ((N - t + 1) / N) ** 2  #find good values for distance factor and value inside exp term
+        if args.distance_type == "exp":
+            distace_cost = 0.4*(np.exp(-0.157 * (t - 1)))
+        elif args.distance_type == "quad":
+            distace_cost = 0.4 * ((N - t + 1) / N) ** 2  #find good values for distance factor and value inside exp term
         distance_loss.append(distace_cost)
     distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
     distance_loss = distance_loss.to(device)
