@@ -1339,6 +1339,12 @@ def main():
         default="quad",
         help="Distance type (default: exp, quad)",
     )
+    parser.add_argument(
+        "--distance_weight",
+        type=float,
+        default=0.4,
+        help="Distance weight (default: 0.4)",
+    )
     
     args = parser.parse_args()
     
@@ -1458,9 +1464,9 @@ def main():
     N=9
     for t in range(1, 10):  # Adjust based on the length of the video 
         if args.distance_type == "exp":
-            distace_cost = 0.4*(np.exp(-0.157 * (t - 1)))
+            distace_cost = args.distance_weight*(np.exp(-0.157 * (t - 1)))
         elif args.distance_type == "quad":
-            distace_cost = 0.4 * ((N - t + 1) / N) ** 2  #find good values for distance factor and value inside exp term
+            distace_cost = args.distance_weight * ((N - t + 1) / N) ** 2  #find good values for distance factor and value inside exp term
         distance_loss.append(distace_cost)
     distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
     distance_loss = distance_loss.to(device)
