@@ -125,10 +125,7 @@ class ClipDataset(Dataset):
                  # Normalize using percentiles
                 global_normalized = (replaced_losses - global_p1) / (global_p99 - global_p1 + 1e-6)
                 global_normalized = np.clip(global_normalized, 0, 1)
-                
-                # if torch.sum(global_normalized == 1) > 1 or torch.sum(global_normalized == 0) > 1:
-                #     print(f"{video_name} : More than one 1 or 0 in global_normalized. {global_normalized}")
-                #     continue
+
                 
                 global_no_df_loss_norm = global_normalized[0]
                 global_post_df_loss_norm = global_normalized[1:]
@@ -173,23 +170,7 @@ class ClipDataset(Dataset):
                 masks_np = masks.numpy()  # Convert to numpy for easy percentile computation
                 
                 masks_binary = masks_np > 0.5  # apply threshold for binary mask
-
-                # Initialize array for normalized masks with same shape
-                # normalized_masks = np.empty_like(masks_np)
-
-                # for i in range(masks_np.shape[1]):  # iterate over 7 images
-                #     img = masks_np[0, i]  # shape (112, 112)
-                #     p1 = np.percentile(img, 1)
-                #     p99 = np.percentile(img, 99)
-                    
-                #     norm_img = (img - p1) / (p99 - p1 + 1e-6)
-                #     norm_img = np.clip(norm_img, 0, 1)
-                    
-                #     normalized_masks[0, i] = norm_img
-
-                # # Convert back to torch.Tensor if needed
-                # masks = torch.from_numpy(normalized_masks).float()
-                
+               
                 images_np = images.numpy()
                 combined = np.concatenate([masks, images_np], axis=0)
                 
@@ -217,11 +198,6 @@ class ClipDataset(Dataset):
                 
         print(f"Loaded metadata for {len(self.video_metadata)} videos.")
 
-    # @lru_cache(maxsize=1000)  # Keep last 1000 files in cache for maximum speed
-    # def load_pickle_data(self, pickle_file):
-    #     """Cache the pickle file data to avoid repeated disk reads."""
-    #     with open(pickle_file, 'rb') as f:
-    #         return pickle.load(f)
 
     def __len__(self):
         return len(self.video_metadata)
@@ -240,40 +216,4 @@ class ClipDataset(Dataset):
 def get_dataloaders(pickle_file_folder, args, batch_size=8, split_ratio=0.8):
     dataset = ClipDataset(pickle_file_folder, args)
 
-    # # Simple random split instead of stratified split
-    # dataset_size = len(dataset)
-    # indices = list(range(dataset_size))
-    # split = int(np.floor(split_ratio * dataset_size))
-    
-    # # Shuffle indices
-    # np.random.seed(42)
-    # np.random.shuffle(indices)
-    
-    # train_idx, val_idx = indices[:split], indices[split:]
-
-    # train_dataset = Subset(dataset, train_idx)
-    # val_dataset = Subset(dataset, val_idx)
-
-    # # Optimized DataLoader configuration for speed
-    # train_loader = DataLoader(
-    #     train_dataset,
-    #     batch_size=batch_size,
-    #     shuffle=True,
-    #     num_workers=4,  # Increased workers for faster loading
-    #     pin_memory=True,
-    #     persistent_workers=True,
-    #     prefetch_factor=2,  # Increased prefetch for better throughput
-    #     drop_last=True
-    # )
-
-    # val_loader = DataLoader(
-    #     val_dataset,
-    #     batch_size=batch_size,
-    #     shuffle=False,
-    #     num_workers=4,
-    #     pin_memory=True,
-    #     persistent_workers=True,
-    #     prefetch_factor=2
-    # )
-
-    # return train_loader, val_loader
+   
