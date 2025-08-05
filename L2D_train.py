@@ -1,37 +1,24 @@
 import argparse
 import os
-from collections import defaultdict
 import datetime
 import subprocess
 import random
 import time  # Add time module import
 import json
-from collections import deque
 import glob
-from sam2.build_sam import build_sam2_video_predictor
 import wandb
-
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
-from PIL import Image
 import logging
 from torch.utils.tensorboard import SummaryWriter
 import pandas as pd
 import joblib
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import torchvision.transforms as T
 import torch.optim as optim
-import torchvision.models.video as models
 from PIL import Image
 from dataloader import get_dataloaders
-from sklearn.metrics import roc_auc_score
-from sklearn.metrics import roc_curve, auc
-from sklearn.metrics import confusion_matrix
-from collections import Counter
-from cnn_3d import Simple3DCNN
 from torchvision.models.video import r2plus1d_18, R2Plus1D_18_Weights
 import psutil
 
@@ -172,14 +159,10 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
     all_best_actions = []
     all_chosen_actions = []
     all_video_names = []  # Add list to collect video names
-    rank_distances = []
     total_chosen_acc = 0.0
     total_best_acc = 0.0
     total_chosen_cost = 0.0
     total_best_cost = 0.0
-    
-    # Add top-k accuracy tracking
-    total_topk_correct = {k: 0 for k in topk_values}
     
     if loss_type == "mae":
         loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_mae(no_df, logits, post_df, alpha, distance_loss)
@@ -234,19 +217,6 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
             total_best_acc += best_accs.sum().item()
             total_chosen_cost += chosen_cost.sum().item()
             total_best_cost += best_cost.sum().item()
-            
-            # Compute top-k accuracy
-            topk_accuracies = calculate_topk_accuracy(rej_logits, best_actions, topk_values)
-            for k, acc in topk_accuracies.items():
-                total_topk_correct[k] += acc * clips_batch.size(0)
-            
-            # Compute rank distance per sample in batch
-            for i in range(all_accs.size(0)):
-                accs = (1-all_cost_adjusted[i])
-                chosen_idx = chosen_actions[i].item()
-                sorted_indices = torch.argsort(accs, descending=True)
-                rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
-                rank_distances.append(rank)
 
             # Store results
             all_best_actions.append(best_actions.cpu())
@@ -256,20 +226,16 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
     if (epoch+1) % save_every == 0:
         avg_loss = total_loss / len(loader)
         mean_regret = total_regret / total_samples
-        avg_rank_distance = sum(rank_distances) / len(rank_distances)
         all_best_actions = torch.cat(all_best_actions)
         all_chosen_actions = torch.cat(all_chosen_actions)
         avg_chosen_acc = total_chosen_acc / total_samples
         avg_best_acc = total_best_acc / total_samples
         avg_chosen_cost = total_chosen_cost / total_samples
         avg_best_cost = total_best_cost / total_samples
-        
-        # Calculate top-k accuracies
-        topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-        return avg_loss, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost
+        return avg_loss, mean_regret, all_best_actions, all_chosen_actions, avg_chosen_acc, avg_best_acc, all_video_names, avg_chosen_cost, avg_best_cost
     else:
-        return None, None, None, None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None
 
 def infer_deferral_action(rejector_logits):
     """
@@ -289,32 +255,6 @@ def infer_deferral_action(rejector_logits):
     return action_idx
 
 
-def calculate_topk_accuracy(rejector_logits, best_actions, k_values=[1, 3, 5]):
-
-    topk_accuracies = {}
-    
-    for k in k_values:
-        if k == 1:
-            # For k=1, it's the same as regular accuracy
-            chosen_actions = torch.argmax(rejector_logits, dim=1)
-            correct = (chosen_actions == best_actions).float().mean().item()
-            topk_accuracies[k] = correct
-        else:
-            # Get top-k predicted actions
-            topk_values, topk_indices = torch.topk(rejector_logits, k, dim=1)  # [B, k]
-            
-            # Check if the correct action is in the top-k predictions
-            # Expand best_actions to match topk_indices shape for comparison
-            best_actions_expanded = best_actions.unsqueeze(1).expand_as(topk_indices)  # [B, k]
-            
-            # Check if any of the top-k predictions match the correct action
-            correct_in_topk = torch.any(topk_indices == best_actions_expanded, dim=1)  # [B]
-            
-            # Calculate accuracy
-            topk_accuracies[k] = correct_in_topk.float().mean().item()
-    
-    return topk_accuracies
-
 def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=None, topk_values=[1, 3, 5], distance_loss=10):
     model.eval()
     total_samples = 0
@@ -325,15 +265,10 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
     all_best_actions = []
     all_chosen_actions = []
     all_video_names = []  
-    rank_distances = [] 
     total_chosen_acc = 0.0
     total_best_acc = 0.0
     total_chosen_cost = 0.0
     total_best_cost = 0.0
-    
-    # Add top-k accuracy tracking
-    total_topk_correct = {k: 0 for k in topk_values}
-    
     
     if loss_type == "mae":
         loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_mae(no_df, logits, post_df, alpha, distance_loss)
@@ -351,7 +286,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
             post_df_dice_batch = post_df_dice_batch.to(device)          # [B, L]
 
             # Predict deferral logits
-            #input= clips_batch.permute(0, 2, 1, 3, 4)
+        
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
@@ -360,19 +295,13 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
 
             # Inference based on rule: defer or not
             chosen_actions = infer_deferral_action(rej_logits)          
-
-            # Calculate accuracy metrics
-            chosen_actions = infer_deferral_action(rej_logits)
             all_accs = torch.cat([no_df_dice_batch.unsqueeze(1), post_df_dice_batch], dim=1)
-            # Accuracy from chosen action
             chosen_accs = torch.gather(all_accs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
 
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
             adjusted_cost = (1-post_df_dice_batch) + alpha + distance_loss
-            # All possible accuracies: base + L frames with adjusted gain
             all_cost_adjusted = torch.cat([(1-no_df_dice_batch).unsqueeze(1), adjusted_cost], dim=1)
-            # Best accuracy (oracle) using argmax on adjusted gains
             best_actions = torch.argmin(all_cost_adjusted, dim=1)
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
             
@@ -383,7 +312,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
             best_cost = torch.gather(all_costs, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
-            correct += (chosen_actions == best_actions).sum().item()
+            
             regret = torch.abs(best_accs - chosen_accs)
             total_regret += regret.sum().item()
             total_samples += clips_batch.size(0)
@@ -392,44 +321,24 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
             total_chosen_cost += chosen_cost.sum().item()
             total_best_cost += best_cost.sum().item()
 
-            # Compute top-k accuracy
-            topk_accuracies = calculate_topk_accuracy(rej_logits, best_actions, topk_values)
-            for k, acc in topk_accuracies.items():
-                total_topk_correct[k] += acc * clips_batch.size(0)
-            
-            
-             # Compute rank distance per sample in batch
-            for i in range(all_accs.size(0)):
-                accs = (1-all_cost_adjusted[i])
-                chosen_idx = chosen_actions[i].item()
-                sorted_indices = torch.argsort(accs, descending=True)
-                rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
-                rank_distances.append(rank)
-                
-
             # Store results
             all_best_actions.append(best_actions.cpu())
             all_chosen_actions.append(chosen_actions.cpu())
             all_video_names.extend(video_name_batch)  # Collect video names
 
-    selection_accuracy = correct / total_samples
     mean_regret = total_regret / total_samples
     avg_val_loss = total_val_loss / len(loader)
-    avg_rank_distance = sum(rank_distances) / len(rank_distances)
     all_best_actions = torch.cat(all_best_actions)
     all_chosen_actions = torch.cat(all_chosen_actions)
     avg_chosen_acc = total_chosen_acc / total_samples
     avg_best_acc = total_best_acc / total_samples
     avg_chosen_cost = total_chosen_cost / total_samples
     avg_best_cost = total_best_cost / total_samples
-    
-    # Calculate top-k accuracies
-    topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost   
+    return avg_val_loss, mean_regret, all_best_actions, all_chosen_actions, avg_chosen_acc, avg_best_acc, all_video_names, avg_chosen_cost, avg_best_cost
 
 
-def plot_and_save_loss_accuracy_curves(train_losses, val_losses, val_accs, output_dir):
+def plot_and_save_loss_accuracy_curves(train_losses, val_losses, output_dir):
     # Create a figure for the plots
     plt.figure(figsize=(10, 5))
     
@@ -442,16 +351,8 @@ def plot_and_save_loss_accuracy_curves(train_losses, val_losses, val_accs, outpu
     plt.ylabel('Loss')
     plt.legend()
     
-    # Plot Accuracy Curves
-    plt.subplot(1, 2, 2)
-    plt.plot(val_accs, label='Validation Accuracy')
-    plt.title('Accuracy Curves')
-    plt.xlabel('Epochs')
-    plt.ylabel('Accuracy')
-    plt.legend()
-    
     # Save the plot to the specified directory
-    plot_path = os.path.join(output_dir, 'loss_accuracy_curves.png')
+    plot_path = os.path.join(output_dir, 'loss_curves.png')
     plt.savefig(plot_path)
     plt.close()  # Close the figure to free memory
 
@@ -617,27 +518,8 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, rgb_input=False):
     return model
 
 
-def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, val_accs, 
-                    current_ma_val_acc, best_ma_val_acc, current_val_loss, best_val_loss, args, timestamp, save_dir, experiment_name):
-    """
-    Save model checkpoint and training history.
-    
-    Args:
-        model: The model to save
-        optimizer: The optimizer state to save
-        epoch: Current epoch number
-        train_losses: List of training losses
-        val_losses: List of validation losses
-        val_accs: List of validation accuracies
-        current_ma_val_acc: Current moving average validation accuracy
-        best_ma_val_acc: Best moving average validation accuracy so far
-        current_val_loss: Current validation loss
-        best_val_loss: Best validation loss so far
-        args: Training arguments
-        timestamp: Timestamp for the run
-        save_dir: Directory to save the checkpoint
-        experiment_name: Name of the experiment
-    """
+def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, 
+                    current_val_loss, best_val_loss, args, timestamp, save_dir, experiment_name):
     # Save model checkpoint with all necessary information
     checkpoint = {
         'epoch': epoch,
@@ -659,15 +541,13 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, val_accs,
     
     
     # Save new checkpoint
-    checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_last_epoch_{epoch}_ma_acc_{current_ma_val_acc:.4f}.pth")
+    checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_last_epoch_{epoch}_val_loss_{current_val_loss:.6f}.pth")
     torch.save(checkpoint, checkpoint_path)
     
     # Save training history
     history = {
         'train_losses': train_losses,
         'val_losses': val_losses,
-        'val_accs': val_accs,
-        'val_acc_ma': current_ma_val_acc,
         'val_loss': current_val_loss,
         'best_epoch': epoch,
         'args': vars(args),
@@ -689,45 +569,8 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, val_accs,
     with open(history_path, 'w') as f:
         json.dump(history, f, indent=4)
     
-    logging.info(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
-    print(f"Saved last epoch model epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
-    
-    # Save best model based on validation accuracy
-    if current_ma_val_acc > best_ma_val_acc:
-        logging.info(f"Saved new best model (accuracy) epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
-        print(f"Saved new best model (accuracy) epoch {epoch} with moving average validation accuracy: {current_ma_val_acc:.4f}")
-        
-        # Delete existing checkpoint file with the same experiment name
-        old_checkpoint = os.path.join(save_dir, f"model_{experiment_name}_best_acc_epoch_*.pth")
-        try:
-            existing_files = glob.glob(old_checkpoint)
-            if existing_files:
-                os.remove(existing_files[0])
-                logging.info(f"Deleted old checkpoint: {existing_files[0]}")
-                print(f"Deleted old checkpoint: {existing_files[0]}")
-        except Exception as e:
-            logging.warning(f"Failed to delete old checkpoint: {str(e)}")
-            print(f"Failed to delete old checkpoint: {str(e)}")
-            
-        # Save new checkpoint
-        checkpoint_path = os.path.join(save_dir, f"model_{experiment_name}_best_acc_epoch_{epoch}_val_acc_{current_ma_val_acc:.4f}.pth")
-        torch.save(checkpoint, checkpoint_path)
-        
-        # Delete existing history file with the same experiment name
-        old_history = os.path.join(save_dir, f"history_{experiment_name}_best_acc_epoch_*.json")
-        try:
-            existing_files = glob.glob(old_history)
-            if existing_files:
-                os.remove(existing_files[0])
-                logging.info(f"Deleted old history: {existing_files[0]}")
-                print(f"Deleted old history: {existing_files[0]}")
-        except Exception as e:
-            logging.warning(f"Failed to delete old history: {str(e)}")
-            print(f"Failed to delete old history: {str(e)}")
-            
-        history_path = os.path.join(save_dir, f"history_{experiment_name}_best_acc_epoch_{epoch}.json")
-        with open(history_path, 'w') as f:
-            json.dump(history, f, indent=4)
+    logging.info(f"Saved last epoch model epoch {epoch} with validation loss: {current_val_loss:.6f}")
+    print(f"Saved last epoch model epoch {epoch} with validation loss: {current_val_loss:.6f}")
     
     # Save best model based on validation loss
     if current_val_loss < best_val_loss:
@@ -1095,10 +938,7 @@ def main():
      
     #--------------------------Train Model----------------------------------
     
-    train_losses, val_losses, val_accs = [], [], []
-    # Initialize moving average queue for validation accuracy
-    val_acc_ma_queue = deque(maxlen=2)
-    best_chosen_val_acc = 0.0
+    train_losses, val_losses = [], []
     best_val_loss = 100000  # Initialize best validation loss to infinity
     distance_loss = []
     N=9
@@ -1114,78 +954,47 @@ def main():
         # Start epoch runtime tracking
         epoch_start_time = time.time()
        
-        train_loss, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, optimizer, args.save_every, args.alpha, device, args.topk_values, distance_loss)
+        train_loss, train_regret, train_best_actions, train_chosen_actions, train_chosen_acc, train_best_acc, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, optimizer, args.save_every, args.alpha, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
         if (epoch+1) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, args.alpha,device, logging, args.topk_values, distance_loss)
+            val_loss, mean_regret, val_best_actions, val_chosen_actions, val_chosen_acc, val_best_acc, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, args.alpha,device, logging, args.topk_values, distance_loss)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
-            val_accs.append(val_acc)
-            
-            # Update moving average of validation accuracy
-            val_acc_ma_queue.append(val_acc)
-            current_ma_val_acc = sum(val_acc_ma_queue) / len(val_acc_ma_queue)
             
             if args.tensorboard_status:
                 writer.add_scalar('Loss/train', train_loss, epoch)
                 writer.add_scalar('Loss/val', val_loss, epoch)
-                writer.add_scalar('Accuracy/val', val_acc, epoch)
-                writer.add_scalar('Accuracy/val_moving_avg', current_ma_val_acc, epoch)
                 writer.add_scalar('Regret/train', train_regret, epoch)
                 writer.add_scalar('Regret/val', mean_regret, epoch)
                 writer.add_scalar('Time/epoch_runtime', epoch_runtime, epoch)
-                writer.add_scalar('Rank Distance/train', train_avg_rank_distance, epoch)
-                writer.add_scalar('Rank Distance/val', val_avg_rank_distance, epoch)
                 writer.add_scalar('Accuracy/chosen_train', train_chosen_acc, epoch)
                 writer.add_scalar('Accuracy/best_train', train_best_acc, epoch)
                 writer.add_scalar('Accuracy/chosen_val', val_chosen_acc, epoch)
                 writer.add_scalar('Accuracy/best_val', val_best_acc, epoch)
-                writer.add_scalar('Cost/chosen_train', train_chosen_cost, epoch)
-                writer.add_scalar('Cost/best_train', train_best_cost, epoch)
-                writer.add_scalar('Cost/chosen_val', val_chosen_cost, epoch)
-                writer.add_scalar('Cost/best_val', val_best_cost, epoch)
-                # Add top-k accuracy tracking
-                for k in args.topk_values:
-                    writer.add_scalar(f'Top{k} Accuracy/train', topk_accuracies[k], epoch)
-                    writer.add_scalar(f'Top{k} Accuracy/val', val_topk_accuracies[k], epoch)
+           
+
                
             if args.wandb_status:
                 wandb.log({
                     "Epoch": epoch+1,
                     "Train Loss": train_loss,
                     "Val Loss": val_loss,
-                    "Val Acc": val_acc,
                     "Train Regret": train_regret,
                     "Val Regret": mean_regret,
-                    "Train Avg Rank Distance": train_avg_rank_distance,
-                    "Val Avg Rank Distance": val_avg_rank_distance,
                     "Train Best Acc": train_best_acc,
                     "Train Chosen Acc": train_chosen_acc,
                     "Val Best Acc": val_best_acc,
                     "Val Chosen Acc": val_chosen_acc,
-                    "Train Chosen Cost": train_chosen_cost,
-                    "Train Best Cost": train_best_cost,
-                    "Val Chosen Cost": val_chosen_cost,
-                    "Val Best Cost": val_best_cost,
+                 
                 })
-                
-                # Add top-k accuracies to wandb
-                for k in args.topk_values:
-                    wandb.log({f"Train Top{k} Accuracy": topk_accuracies[k]})
-                    wandb.log({f"Val Top{k} Accuracy": val_topk_accuracies[k]})
 
-            logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
-            # # Log top-k accuracies
-            train_topk_str = "/".join([f"{topk_accuracies[k]:.4f}" for k in args.topk_values])
-            val_topk_str = "/".join([f"{val_topk_accuracies[k]:.4f}" for k in args.topk_values])
-            logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
+            logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Val Loss: {val_loss:.6f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
-            logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
             # Log training best action and chosen action for 10 samples with video names
             logging.info(f"Training Best Actions: {train_best_actions[:80]}")
@@ -1195,9 +1004,8 @@ def main():
             logging.info(f"Validation Best Actions: {val_best_actions[:80]}")
             logging.info(f"Validation Chosen Actions: {val_chosen_actions[:80]}")
                     
-            print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Val Loss: {val_loss:.6f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
-            print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
             # Log memory usage
             log_memory_usage(device, epoch=epoch, logger=logging, writer=writer if args.tensorboard_status else None)
@@ -1211,9 +1019,6 @@ def main():
                     epoch=epoch,
                     train_losses=train_losses,
                     val_losses=val_losses,
-                    val_accs=val_accs,
-                    current_ma_val_acc=val_chosen_acc,
-                    best_ma_val_acc=best_chosen_val_acc,
                     current_val_loss=val_loss,
                     best_val_loss=best_val_loss,
                     args=args,
@@ -1221,8 +1026,6 @@ def main():
                     save_dir=args.output_mask_dir,
                     experiment_name=args.experiment_name
                     )
-                if val_chosen_acc > best_chosen_val_acc:
-                    best_chosen_val_acc = val_chosen_acc
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
 
@@ -1233,7 +1036,7 @@ def main():
 
 
     # Plot and save loss and accuracy curves
-    plot_and_save_loss_accuracy_curves(train_losses, val_losses, val_accs, args.output_mask_dir)
+    plot_and_save_loss_accuracy_curves(train_losses, val_losses, args.output_mask_dir)
 
     # Close TensorBoard writer if it was initialized
     if writer is not None:
