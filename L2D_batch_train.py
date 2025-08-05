@@ -1,15 +1,7 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 import argparse
 import os
-from collections import defaultdict
 import datetime
 import torch.nn.functional as F
-
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
@@ -17,7 +9,6 @@ from PIL import Image
 from sam2.build_sam import build_sam2_video_predictor
 import csv
 import logging
-
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score
@@ -25,16 +16,10 @@ import pandas as pd
 from sklearn.preprocessing import StandardScaler
 import joblib
 import pickle
-
 import torch
-import torch.nn as nn
-from torchvision.models.video import r2plus1d_18
 import torchvision.transforms as T
-import torch.optim as optim
-import torchvision.models.video as models
 from PIL import Image
 from scipy.ndimage import label, center_of_mass
-from matplotlib.patches import Rectangle
 
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
@@ -73,8 +58,6 @@ def get_per_obj_mask(mask):
     pixel_counts = {}
     for obj_id in object_ids:
         pixel_counts[obj_id] = np.sum(mask == obj_id)
-    
-    # print(pixel_counts)
     
     per_obj_mask = {object_id: (mask == object_id) for object_id in object_ids}
     return per_obj_mask
@@ -242,51 +225,8 @@ def get_mask_img_list(args, frame_names, video_name):
     return mask_img_list
 
 
-# def compute_focal_loss(pred_mask, true_mask, alpha=0.25, gamma=2.0, eps=1e-6):
-#     if isinstance(pred_mask, np.ndarray):
-#         pred_mask = torch.from_numpy(pred_mask)
-#     if isinstance(true_mask, np.ndarray):
-#         true_mask = torch.from_numpy(true_mask)
-
-#     pred_mask = pred_mask.float()
-#     true_mask = true_mask.float()
-
-#     if true_mask.ndim == 2:
-#         true_mask = true_mask.unsqueeze(0)  # match shape: [1, H, W]
-
-#     prob = torch.sigmoid(pred_mask)
-#     prob = prob.clamp(min=eps, max=1. - eps)
-
-#     ce_loss = F.binary_cross_entropy_with_logits(pred_mask, true_mask, reduction='none')
-#     p_t = prob * true_mask + (1 - prob) * (1 - true_mask)
-#     alpha_t = alpha * true_mask + (1 - alpha) * (1 - true_mask)
-#     focal_weight = (1 - p_t) ** gamma
-
-#     loss = alpha_t * focal_weight * ce_loss
-#     return loss.mean()
-
-
-# def dice_score(pred_mask, true_mask, eps=1e-5):
-#     #print ("dice_score")
-#     pred = pred_mask.flatten()
-#     true = true_mask.flatten()
-#     intersection = (pred * true).sum()
-#     return (2. * intersection) / (pred.sum() + true.sum() + eps)
-
 def dice_loss_calc(inputs, targets, num_objects, loss_on_multimask=False):
-    """
-    Compute the DICE loss, similar to generalized IOU for masks
-    Args:
-        inputs: A float tensor of arbitrary shape.
-                The predictions for each example.
-        targets: A float tensor with the same shape as inputs. Stores the binary
-                 classification label for each element in inputs
-                (0 for the negative class and 1 for the positive class).
-        num_objects: Number of objects in the batch
-        loss_on_multimask: True if multimask prediction is enabled
-    Returns:
-        Dice loss tensor
-    """
+
     # Convert inputs to PyTorch tensor if it's a NumPy array
     if isinstance(inputs, np.ndarray):
         inputs = torch.from_numpy(inputs).float()
@@ -331,23 +271,7 @@ def sigmoid_focal_loss_calc(
     gamma: float = 2,
     loss_on_multimask=False,
 ):
-    """
-    Loss used in RetinaNet for dense detection: https://arxiv.org/abs/1708.02002.
-    Args:
-        inputs: A float tensor of arbitrary shape.
-                The predictions for each example.
-        targets: A float tensor with the same shape as inputs. Stores the binary
-                 classification label for each element in inputs
-                (0 for the negative class and 1 for the positive class).
-        num_objects: Number of objects in the batch
-        alpha: (optional) Weighting factor in range (0,1) to balance
-                positive vs negative examples. Default = -1 (no weighting).
-        gamma: Exponent of the modulating factor (1 - p_t) to
-               balance easy vs hard examples.
-        loss_on_multimask: True if multimask prediction is enabled
-    Returns:
-        focal loss tensor
-    """
+
     # Convert inputs to PyTorch tensor if it's a NumPy array
     if isinstance(inputs, np.ndarray):
         inputs = torch.from_numpy(inputs).float()
@@ -365,11 +289,7 @@ def sigmoid_focal_loss_calc(
         # If targets has extra dimension, squeeze it
         elif targets.dim() > inputs.dim():
             targets = targets.squeeze(0)
-            
-    # prob = inputs.sigmoid()
-    # ce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction="none")
-    # Use inputs directly since they're already between 0 and 1
- 
+             
     prob = inputs
     ce_loss = F.binary_cross_entropy(prob, targets, reduction="none")
     p_t = prob * targets + (1 - prob) * (1 - targets)
@@ -670,14 +590,6 @@ def keep_largest_blob(mask):
     largest_label = sizes.argmax()
     return labeled == largest_label
 
-# def get_bounding_box(mask):
-#     """Return (x_min, y_min, x_max, y_max) of the foreground blob in a binary mask."""
-#     ys, xs = np.where(mask)  # y = row, x = column
-#     if len(xs) == 0 or len(ys) == 0:
-#         return None  # no foreground
-#     x_min, x_max = xs.min(), xs.max()
-#     y_min, y_max = ys.min(), ys.max()
-#     return (x_min, y_min, x_max, y_max)
 
 def get_bounding_box(mask, box_factor):
     """Return (x_min, y_min, x_max, y_max) of a box triple the size of the foreground blob in a binary mask."""
@@ -749,8 +661,6 @@ def vos_inference(
         video_path=video_dir, async_loading_frames=False
     )
     predictor.reset_state(inference_state)
-    # height = inference_state["video_height"]
-    # width = inference_state["video_width"]
     input_palette = None
     
         
@@ -788,40 +698,7 @@ def vos_inference(
                     return None, None  
                 center = center_of_mass(cleaned_mask)[::-1]
                 labels = np.ones(1)
-                
-                #-----------Object ID Check -----------------
-                #This is to bipass multiobject scenario. Change it when you work with multiple objects
-                # try:
-                #     per_obj_input_mask, input_palette = load_masks_from_dir(
-                #         input_mask_dir=input_mask_dir,
-                #         video_name=video_name,
-                #         frame_name=frame_names[input_frame_idx],
-                #         per_obj_png_file=per_obj_png_file,
-                #     )
-                # except FileNotFoundError as e:
-                #     raise RuntimeError(
-                #         f"In {video_name=}, failed to load input mask for frame {input_frame_idx=}. "
-                #         "Please add the `--track_object_appearing_later_in_video` flag "
-                #         "for VOS datasets that don't have all objects to track appearing "
-                #         "in the first frame (such as LVOS or YouTube-VOS)."
-                #     ) from e
-                
-                # # get the list of object ids to track from the first input frame
-                # if object_ids_set is None:
-                #     object_ids_set = set(per_obj_input_mask)
-                    
-                # if len(object_ids_set) != 1:
-                #     raise SystemExit("Exiting with error due to multiple objects in the first frame.")
-                #     print("Multiple objects in the first frame.")
-                #     return None, None
-                    
-                #-----------Object ID Check - End -----------------
-                    
-                
-                
-                
-                
-                
+                         
                 if center:
                     out_obj_ids_prompt,out_mask_logits_prompt = add_point(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
                     input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state,
@@ -862,10 +739,7 @@ def vos_inference(
                     raise SystemExit("Exiting with error due to no mask or negative points.")
                     print("No mask or negative points")
                     return None, None   
-                
-                
-                
-                    
+                                
                 
         else:
             #Check if the output mask logit for relavant frame id have a gt mask or not
@@ -978,18 +852,6 @@ def vos_inference(
                     print("No mask or negative points")
                     return None, None
                     
-                    
-                
-                
-       
-                
-                
-       
-
-        #---------------------Mask Input End-----------------------------------
-        #---------------------------------------------------------------------
-
-        #---------------------Point Input Start--------------------------------
 
 
         # check and make sure we have at least one object to track
@@ -1069,37 +931,7 @@ def vos_inference(
          #---------------------------------Save Prediction - END --------------------------------------  
         
     predictor.reset_state(inference_state)
-
-    # # write the output masks as palette PNG files to output_mask_dir
-    # for out_frame_idx, per_obj_output_mask in video_segments.items():
-    #     if save_palette_png:
-    #         # save palette PNG prediction results
-    #         save_palette_masks_to_dir(
-    #             output_mask_dir=output_mask_dir,
-    #             video_name=video_name,
-    #             frame_name=frame_names[out_frame_idx],
-    #             per_obj_output_mask=per_obj_output_mask,
-    #             height=height,
-    #             width=width,
-    #             per_obj_png_file=per_obj_png_file,
-    #             output_palette=output_palette,
-    #             confidence_scores=confidence_scores[out_frame_idx][0],
-    #         )
-    #     else:
-    #         # save raw prediction results
-    #         save_masks_to_dir(
-    #             output_mask_dir=output_mask_dir,
-    #             video_name=video_name,
-    #             frame_name=frame_names[out_frame_idx],
-    #             per_obj_output_mask=per_obj_output_mask,
-    #             height=height,
-    #             width=width,
-    #             per_obj_png_file=per_obj_png_file,
-    #             confidence_scores=confidence_scores[out_frame_idx][0],
-    #         )
-        
-    #     print(f"confidence_scores frame {frame_names[out_frame_idx]}: ", confidence_scores[out_frame_idx][0])
-    
+   
     return video_segments_logits, confidence_scores
 
 
@@ -1148,10 +980,10 @@ def main():
         help="directory to save the output masks (as PNG files)",
     )
     parser.add_argument(
-        "--post_hoc_model_save_dir",
+        "--save_pkl_dir",
         type=str,
         required=True,
-        help="directory to save the post hoc model",
+        help="directory to save pkl files",
     )
     parser.add_argument(
         "--score_thresh",
@@ -1352,22 +1184,13 @@ def main():
     csv_writer = None  # Will be initialized after first video
 
     for n_video, video_name in enumerate(current_chunk):
-        
-        # if video_name != '0005_0030':
-        #     continue
-           
-       
+              
         L_post_defer_list = []
         L_post_defer_sep_list = []
         L_post_defer_sam_loss_list = []
         L_post_defer_focal_loss_list = []
         clips = []
-        # ll_post_dice = []
-        # ll_post_sam = []
-        # ll_post_focal = []
-        
-        # if video_name != 'seq4':
-        #     continue
+   
         
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         logging.info(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
@@ -1527,13 +1350,10 @@ def main():
             row_data = [video_name, folder_name] + post_df_iou_list + [L_post_defer, sep_mean_iou_loss]
             csv_writer.writerow(row_data)
             
-        
-        
-
-
+    
                        
         # Save all lists in a single file
-        data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")
+        data_pkl_folder = os.path.join(args.save_pkl_dir, "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
             pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'L_post_defer_sep_list':L_post_defer_sep_list}, f)

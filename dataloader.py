@@ -71,11 +71,7 @@ class ClipDataset(Dataset):
 
         video_tensor = torch.stack(video_frames)
         masks = info['masks']
-
-        
-        # Repeat single channel 3 times to create 3-channel mask
-        # masks = masks.repeat(3, 1, 1, 1)  # Repeat channel dimension 3 times
-        
+       
         masks = masks.permute(1, 0, 2, 3)  #((B, T, C, H, W))
         
         
