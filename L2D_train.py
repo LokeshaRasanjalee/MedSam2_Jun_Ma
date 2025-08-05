@@ -1,9 +1,3 @@
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-
-# This source code is licensed under the license found in the
-# LICENSE file in the root directory of this source tree.
-
 import argparse
 import os
 from collections import defaultdict
@@ -67,7 +61,7 @@ def mao_deferral_loss_log(
     rejector_logits,           # [B, L]
     acc_post_def_batch,        # [B, L]
     alpha: float = 1.0,
-    distance_loss=10          # scalar or length-n_e iterable/tensor
+    distance_loss=[]          # scalar or length-L iterable/tensor
 ):
     B, L = rejector_logits.shape
     device  = rejector_logits.device
@@ -93,11 +87,11 @@ def mao_deferral_loss_log(
     total_loss = torch.sum(weights * combined_terms, dim=1, keepdim=True)  # [B, 1]
     return total_loss.mean()
 
-def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, distance_loss=10):  
+def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, distance_loss=[]):  
 
     B, L = rejector_logits.shape
    
-    exp_neg_r = torch.exp(-rejector_logits)           # [B, n_e]
+    exp_neg_r = torch.exp(-rejector_logits)           # [B, L]
     machine_term = torch.sum(exp_neg_r, dim=1)               # [B]
     
     
@@ -116,7 +110,7 @@ def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch,
     loss_term2 = torch.zeros_like(machine_term)         # [B]
     for j in range(L):
         r_j = rejector_logits[:, j].unsqueeze(1)      # [B, 1]
-        r_diff = r_j - rejector_logits                # [B, n_e]
+        r_diff = r_j - rejector_logits                # [B, L]
         mask = torch.ones(L, dtype=torch.bool, device=rejector_logits.device)
         mask[j] = False
         exp_diff = torch.sum(torch.exp(r_diff[:, mask]), dim=1)  # [B]
@@ -135,10 +129,10 @@ def mao_deferral_loss_mae(
     rejector_logits,           # [B, L]
     acc_post_def_batch,        # [B, L]
     alpha=1.0,
-    distance_loss=10
+    distance_loss=[]
 ):
 
-    B, n_e = rejector_logits.shape
+    B, L = rejector_logits.shape
     device = rejector_logits.device
     dtype = rejector_logits.dtype
 
@@ -149,8 +143,8 @@ def mao_deferral_loss_mae(
     machine_term = 1.0 - (1.0 / Z)                            # [B, 1]
 
     # expert term: expert loss = 1 - e^{-r_j} / Z
-    prob_j = exp_neg_r / Z                                   # [B, n_e]
-    expert_term = 1.0 - prob_j                               # [B, n_e]
+    prob_j = exp_neg_r / Z                                   # [B, L]
+    expert_term = 1.0 - prob_j                               # [B, L]
     
     # machine cost     
     cost_no_def_batch = (1.0 - acc_no_def_batch).unsqueeze(1) # [B, 1]
@@ -202,21 +196,12 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
         post_df_dice_batch = post_df_dice_batch.to(device)
         
         optimizer.zero_grad()
-        
-        #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
         
         loss = loss_fn(no_df_dice_batch, rej_logits, post_df_dice_batch)
         
         # Backward pass
-        loss.backward()
-        
-        # for name, param in rejector.named_parameters():
-        #     if param.grad is not None:
-        #         print(f"{name} has gradient with mean  {param.grad.abs().mean()}")
-        #     else:
-        #         print(f"{name} has no gradient")
-        
+        loss.backward()        
         optimizer.step()
         
         if (epoch+1) % save_every == 0:        
@@ -231,9 +216,7 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
             adjusted_cost = (1-post_df_dice_batch) + alpha + distance_loss
-            # All possible accuracies: base + n_e frames with adjusted gain
             all_cost_adjusted = torch.cat([(1-no_df_dice_batch).unsqueeze(1), adjusted_cost], dim=1)
-            # Best accuracy (oracle) using argmax on adjusted gains
             best_actions = torch.argmin(all_cost_adjusted, dim=1)
             best_accs = torch.gather(all_accs, 1, best_actions.unsqueeze(1)).squeeze(1)
             
@@ -244,7 +227,6 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
             best_cost = torch.gather(all_costs, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
-            correct += (chosen_actions == best_actions).sum().item()
             regret = torch.abs(best_accs - chosen_accs)
             total_regret += regret.sum().item()
             total_samples += clips_batch.size(0)
@@ -273,7 +255,6 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
     
     if (epoch+1) % save_every == 0:
         avg_loss = total_loss / len(loader)
-        selection_accuracy = correct / total_samples
         mean_regret = total_regret / total_samples
         avg_rank_distance = sum(rank_distances) / len(rank_distances)
         all_best_actions = torch.cat(all_best_actions)
@@ -286,9 +267,9 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
         # Calculate top-k accuracies
         topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-        return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost
+        return avg_loss, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost
     else:
-        return None, None, None, None, None, None, None, None, None, None,None, None
+        return None, None, None, None, None, None, None, None, None, None, None
 
 def infer_deferral_action(rejector_logits):
     """
@@ -309,17 +290,7 @@ def infer_deferral_action(rejector_logits):
 
 
 def calculate_topk_accuracy(rejector_logits, best_actions, k_values=[1, 3, 5]):
-    """
-    Calculate top-k accuracy for deferral action prediction.
-    
-    Parameters:
-    - rejector_logits: Tensor of shape [B, N] — model logits for each action
-    - best_actions: Tensor of shape [B] — ground truth best actions
-    - k_values: list of ints — top-k values to consider (default: [1, 3, 5])
-    
-    Returns:
-    - topk_accuracies: dict — dictionary with k as key and accuracy as value
-    """
+
     topk_accuracies = {}
     
     for k in k_values:
@@ -353,8 +324,8 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
 
     all_best_actions = []
     all_chosen_actions = []
-    all_video_names = []  # Add list to collect video names
-    rank_distances = []  # <-- new list to store rank distances
+    all_video_names = []  
+    rank_distances = [] 
     total_chosen_acc = 0.0
     total_best_acc = 0.0
     total_chosen_cost = 0.0
@@ -377,7 +348,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
         for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
             clips_batch = clips_batch.to(device)                        # [B, T, C, H, W]
             no_df_dice_batch = no_df_dice_batch.to(device)              # [B]
-            post_df_dice_batch = post_df_dice_batch.to(device)          # [B, n_e]
+            post_df_dice_batch = post_df_dice_batch.to(device)          # [B, L]
 
             # Predict deferral logits
             #input= clips_batch.permute(0, 2, 1, 3, 4)
@@ -388,7 +359,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
-            chosen_actions = infer_deferral_action(rej_logits)          # [B], 0 = no def, 1... = defer to frame j-1
+            chosen_actions = infer_deferral_action(rej_logits)          
 
             # Calculate accuracy metrics
             chosen_actions = infer_deferral_action(rej_logits)
@@ -399,7 +370,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
             adjusted_cost = (1-post_df_dice_batch) + alpha + distance_loss
-            # All possible accuracies: base + n_e frames with adjusted gain
+            # All possible accuracies: base + L frames with adjusted gain
             all_cost_adjusted = torch.cat([(1-no_df_dice_batch).unsqueeze(1), adjusted_cost], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
             best_actions = torch.argmin(all_cost_adjusted, dim=1)
@@ -458,7 +429,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, device, logging=N
     return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost   
 
 
-def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, output_dir):
+def plot_and_save_loss_accuracy_curves(train_losses, val_losses, val_accs, output_dir):
     # Create a figure for the plots
     plt.figure(figsize=(10, 5))
     
@@ -473,7 +444,6 @@ def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val
     
     # Plot Accuracy Curves
     plt.subplot(1, 2, 2)
-    plt.plot(train_accs, label='Training Accuracy')
     plt.plot(val_accs, label='Validation Accuracy')
     plt.title('Accuracy Curves')
     plt.xlabel('Epochs')
@@ -647,7 +617,7 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, rgb_input=False):
     return model
 
 
-def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_accs, val_accs, 
+def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, val_accs, 
                     current_ma_val_acc, best_ma_val_acc, current_val_loss, best_val_loss, args, timestamp, save_dir, experiment_name):
     """
     Save model checkpoint and training history.
@@ -658,7 +628,6 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
         epoch: Current epoch number
         train_losses: List of training losses
         val_losses: List of validation losses
-        train_accs: List of training accuracies
         val_accs: List of validation accuracies
         current_ma_val_acc: Current moving average validation accuracy
         best_ma_val_acc: Best moving average validation accuracy so far
@@ -697,7 +666,6 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
     history = {
         'train_losses': train_losses,
         'val_losses': val_losses,
-        'train_accs': train_accs,
         'val_accs': val_accs,
         'val_acc_ma': current_ma_val_acc,
         'val_loss': current_val_loss,
@@ -901,7 +869,6 @@ def main():
         required=True,
         help="Name of the experiment for logging and identification purposes",
     )
-    # Add new arguments for training parameters
     parser.add_argument(
         "--batch_size",
         type=int,
@@ -925,12 +892,6 @@ def main():
         type=float,
         default=1.0,
         help="Alpha parameter for deferral loss (default: 1.0)",
-    )
-    parser.add_argument(
-        "--beta",
-        type=float,
-        default=0.0,
-        help="Beta parameter for deferral loss (default: 0.0)",
     )
     parser.add_argument(
         "--seed",
@@ -1134,18 +1095,16 @@ def main():
      
     #--------------------------Train Model----------------------------------
     
-    train_losses, train_accs, val_losses, val_accs = [], [], [], []
+    train_losses, val_losses, val_accs = [], [], []
     # Initialize moving average queue for validation accuracy
     val_acc_ma_queue = deque(maxlen=2)
-    best_ma_val_acc = 0.0
     best_chosen_val_acc = 0.0
     best_val_loss = 100000  # Initialize best validation loss to infinity
-    best_epoch = 0
     distance_loss = []
     N=9
     for t in range(1, 10):  # Adjust based on the length of the video 
         if args.distance_type == "quad":
-            distace_cost = args.distance_weight * ((N - t) / N) ** 2  #find good values for distance factor and value inside exp term
+            distace_cost = args.distance_weight * ((N - t) / N) ** 2  
         distance_loss.append(distace_cost)
     distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
     distance_loss = distance_loss.to(device)
@@ -1155,7 +1114,7 @@ def main():
         # Start epoch runtime tracking
         epoch_start_time = time.time()
        
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, optimizer, args.save_every, args.alpha, device, args.topk_values, distance_loss)
+        train_loss, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, optimizer, args.save_every, args.alpha, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
@@ -1166,7 +1125,6 @@ def main():
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
-            train_accs.append(train_acc)
             val_accs.append(val_acc)
             
             # Update moving average of validation accuracy
@@ -1176,7 +1134,6 @@ def main():
             if args.tensorboard_status:
                 writer.add_scalar('Loss/train', train_loss, epoch)
                 writer.add_scalar('Loss/val', val_loss, epoch)
-                writer.add_scalar('Accuracy/train', train_acc, epoch)
                 writer.add_scalar('Accuracy/val', val_acc, epoch)
                 writer.add_scalar('Accuracy/val_moving_avg', current_ma_val_acc, epoch)
                 writer.add_scalar('Regret/train', train_regret, epoch)
@@ -1201,7 +1158,6 @@ def main():
                 wandb.log({
                     "Epoch": epoch+1,
                     "Train Loss": train_loss,
-                    "Train Acc": train_acc,
                     "Val Loss": val_loss,
                     "Val Acc": val_acc,
                     "Train Regret": train_regret,
@@ -1223,7 +1179,7 @@ def main():
                     wandb.log({f"Train Top{k} Accuracy": topk_accuracies[k]})
                     wandb.log({f"Val Top{k} Accuracy": val_topk_accuracies[k]})
 
-            logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             # # Log top-k accuracies
             train_topk_str = "/".join([f"{topk_accuracies[k]:.4f}" for k in args.topk_values])
             val_topk_str = "/".join([f"{val_topk_accuracies[k]:.4f}" for k in args.topk_values])
@@ -1234,19 +1190,12 @@ def main():
             # Log training best action and chosen action for 10 samples with video names
             logging.info(f"Training Best Actions: {train_best_actions[:80]}")
             logging.info(f"Training Chosen Actions: {train_chosen_actions[:80]}")
-            #logging.info(f"Training Video Names: {video_names[:80]}")
-            
-          
-
+                       
             # Log validation best action and chosen action for 10 samples with video names
             logging.info(f"Validation Best Actions: {val_best_actions[:80]}")
             logging.info(f"Validation Chosen Actions: {val_chosen_actions[:80]}")
-            #logging.info(f"Validation Video Names: {val_video_names[:80]}")
-            
-            
-            
-            print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
-            # print(f"Epoch [{epoch+1}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
+                    
+            print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
             print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
@@ -1262,7 +1211,6 @@ def main():
                     epoch=epoch,
                     train_losses=train_losses,
                     val_losses=val_losses,
-                    train_accs=train_accs,
                     val_accs=val_accs,
                     current_ma_val_acc=val_chosen_acc,
                     best_ma_val_acc=best_chosen_val_acc,
@@ -1285,7 +1233,7 @@ def main():
 
 
     # Plot and save loss and accuracy curves
-    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
+    plot_and_save_loss_accuracy_curves(train_losses, val_losses, val_accs, args.output_mask_dir)
 
     # Close TensorBoard writer if it was initialized
     if writer is not None:
