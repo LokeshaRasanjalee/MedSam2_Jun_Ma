@@ -34,23 +34,13 @@ class ClipDataset(Dataset):
                  
             self.video_metadata.append({
                 'npz_file': npz_file,
-                # 'masks': torch.from_numpy(data['masks']),
-                # 'no_df_sam_complement': torch.from_numpy(data['no_df_sam_complement']),
-                # 'post_df_sam_complement': torch.from_numpy(data['post_df_sam_complement'])
             })
-                
-               
-                
+                      
             if not self.args.full_run and len(self.video_metadata) >= 1000:
                 break   
                 
         print(f"Loaded metadata for {len(self.video_metadata)} videos.")
 
-    # @lru_cache(maxsize=1000)  # Keep last 1000 files in cache for maximum speed
-    # def load_pickle_data(self, pickle_file):
-    #     """Cache the pickle file data to avoid repeated disk reads."""
-    #     with open(pickle_file, 'rb') as f:
-    #         return pickle.load(f)
 
     def __len__(self):
         return len(self.video_metadata)
@@ -58,11 +48,7 @@ class ClipDataset(Dataset):
     def __getitem__(self, idx):
         info = self.video_metadata[idx]
         data = np.load(info['npz_file'])
-        
-        # return (info['masks'],
-        #         info['no_df_sam_complement'],
-        #         info['post_df_sam_complement'],
-        #         info['npz_file'])
+
         
         return (
             torch.from_numpy(data['masks']),
