@@ -323,7 +323,9 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
     gt_list: list of ground truth masks (numpy arrays)
     frame_indices_for_clip: list of frame indices to calculate IoU # PASS THE LIST OF INDICES
     """
-    total_iou = 0.0
+    total_iou = []
+
+
     # valid_frames = 0
     
     for idx in frame_indices_for_clip:
@@ -334,14 +336,14 @@ def compute_downstream_loss(video_segments, gt_list, frame_indices_for_clip):
         gt_mask = gt_list[idx][0]            # Your gt_list stores (1, H, W) numpy arrays
 
         iou = dice_score(pred_mask, gt_mask)
-        total_iou += iou
+        total_iou.append(iou)
         # valid_frames += 1
 
     # assert valid_frames != 0
 
-    avg_iou = total_iou / len(frame_indices_for_clip)
+    avg_iou = np.mean(total_iou)
     #downstream_loss = 1.0 - avg_iou
-    return avg_iou
+    return avg_iou, total_iou
 
 
 def add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
@@ -700,13 +702,13 @@ def main():
     parser.add_argument(
         "--sam2_cfg",
         type=str,
-        default="configs/sam2.1_hiera_t512.yaml",
+        default="/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/checkpoints/sam2.1_hiera_t.yaml",
         help="MedSAM2  model configuration file",
     )
     parser.add_argument(
         "--sam2_checkpoint",
         type=str,
-        default="./checkpoints/MedSAM2_latest.pt",
+        default="/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/checkpoints/sam2.1_hiera_tiny.pt",
         help="path to the MedSAM2 model checkpoint",
     )
     parser.add_argument(
@@ -798,12 +800,40 @@ def main():
         required=True,
         help="array ID for the current batch processing",
     )
+    parser.add_argument(
+        "--num_chunks",
+        type=int,
+        default=1,
+        help="number of chunks for the current batch processing",
+    )
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        nargs='+',
+        default=["mask"],
+        help="prompt type(s) for first prompt (e.g., mask point box). Pass one or more."
+    )
+    parser.add_argument(
+        "--sample_factor",
+        type=int,
+        default=10,
+        help="sample factor for the video",
+    )
+    parser.add_argument(
+        "--len_video",
+        type=int,
+        default=100,
+        help="Length of the videos",
+        
+    )
+    
     args = parser.parse_args()
 
    
     
     # Add timestamp to the output directory
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    start_time = datetime.datetime.now()
+    timestamp = start_time.strftime("%Y%m%d_%H%M%S")
     args.output_mask_dir = os.path.join(args.output_mask_dir, f"{args.experiment_name}_{timestamp}")
     
     # Ensure the directory exists
@@ -861,7 +891,7 @@ def main():
     
     video_names.sort()
     # Calculate chunk size to get 2000 chunks
-    num_groups = 6
+    num_groups = args.num_chunks
     total = len(video_names)
 
     # Compute approximate chunk size
@@ -897,13 +927,19 @@ def main():
 
 
     window_size = 8  # number of frames per clip
+    
+    
+   
+    # skip the first frame
+    
+    
 
 
     for n_video, video_name in enumerate(current_chunk):
         
        
         L_post_defer_list = []
-        clips = []
+        iou_dict={}
         
         # if video_name != 'seq4':
         #     continue
@@ -920,6 +956,10 @@ def main():
         frame_indices_for_clip = mask_img_list_with_obj.copy()
         initial_prompt = int(mask_img_list_with_obj[0])
         mask_img_list_with_obj.pop(0)
+        
+        gap = len(frame_indices_for_clip) // args.sample_factor
+        prompt_frames = list(range(0,len(frame_indices_for_clip), gap))  # includes 0
+        second_promt_frames = prompt_frames[1:]
         
         
         #--------------------Get ground truth masks--------------------------------
@@ -959,14 +999,14 @@ def main():
     
             )
         
-        for idx, value in confidence_scores_first.items():
-            score = float(value[0][0])  # Extract float from array([[value]])
-            if idx not in combined_scores:
-                combined_scores[idx] = {}
-            combined_scores[idx][folder_name] = score
-            frame_indices.add(idx)
+        # for idx, value in confidence_scores_first.items():
+        #     score = float(value[0][0])  # Extract float from array([[value]])
+        #     if idx not in combined_scores:
+        #         combined_scores[idx] = {}
+        #     combined_scores[idx][folder_name] = score
+        #     frame_indices.add(idx)
             
-        frame_indices = sorted(frame_indices)
+        frame_indices = sorted(frame_indices_for_clip)
             
         
         
@@ -976,21 +1016,24 @@ def main():
             binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
             binary_masks_first.append(binary_mask)
             
-        img_list=[]
-        for f_name in frame_names:
-            input_f_path = os.path.join(args.base_video_dir, video_name, f"{f_name}.jpg")
-            if os.path.exists(input_f_path):
-                input_f, _ = load_ann_png(input_f_path)
-                img_list.append(input_f)
+        # img_list=[]
+        # for f_name in frame_names:
+        #     input_f_path = os.path.join(args.base_video_dir, video_name, f"{f_name}.jpg")
+        #     if os.path.exists(input_f_path):
+        #         input_f, _ = load_ann_png(input_f_path)
+        #         img_list.append(input_f)
         
         # Uncorrected downstream loss
         #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
 
         # Uncorrected downstream loss
-        L_no_defer = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        L_no_defer, iou_list = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
+        iou_dict[0] = iou_list
+        
+        #masks generated from first prompt
         clip_frames = []
-        for idx in frame_indices_for_clip:
+        for idx in prompt_frames:
             frame_mask = video_segments_first[idx][1]
             frame_mask = np.squeeze(frame_mask)  
             frame_mask = Image.fromarray(frame_mask)
@@ -1003,7 +1046,7 @@ def main():
         
         # -------------------Correction Prompts -------------------------------------
         
-        for second_prompt in range (initial_prompt+1, len(frame_names)):
+        for second_prompt in second_promt_frames:
             
             # if (second_prompt >= initial_prompt + half_window) and (second_prompt < len(frame_names) - half_window):
             #     # GOOD → continue normal processing
@@ -1042,12 +1085,12 @@ def main():
                 print("No gt mask or pred mask")
                 continue
             
-            for idx, value in confidence_scores_cor.items():
-                score = float(value[0][0])  # Extract float from array([[value]])
-                if idx not in combined_scores:
-                    combined_scores[idx] = {}
-                combined_scores[idx][folder_name] = score
-                #frame_indices.add(idx)
+            # for idx, value in confidence_scores_cor.items():
+            #     score = float(value[0][0])  # Extract float from array([[value]])
+            #     if idx not in combined_scores:
+            #         combined_scores[idx] = {}
+            #     combined_scores[idx][folder_name] = score
+            #     #frame_indices.add(idx)
                 
                 
             
@@ -1058,7 +1101,8 @@ def main():
                 binary_masks_cor.append(binary_mask)
 
             # Corrected downstream loss
-            L_post_defer = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
+            L_post_defer, iou_list = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
+            iou_dict[second_prompt] = iou_list
             
             
             L_post_defer_list.append(L_post_defer)
@@ -1070,34 +1114,44 @@ def main():
             
               
         
-        
+    
         # Write confidence to a CSV file
-        folder_name = os.path.join(args.output_mask_dir, video_name, "combined_confidence_scores")
-        os.makedirs(folder_name, exist_ok=True)
-        with open(os.path.join(folder_name, "combined_confidence_scores.csv"), "w", newline="") as f:
-            print("Saving confidence csv")
-            logging.info("Saving confidence csv")
-            writer = csv.writer(f)
-            header = ["frame_index"] + folder_name_list
-            writer.writerow(header)
+        # folder_name = os.path.join(args.output_mask_dir, video_name, "combined_confidence_scores")
+        # os.makedirs(folder_name, exist_ok=True)
+        # with open(os.path.join(folder_name, "combined_confidence_scores.csv"), "w", newline="") as f:
+        #     print("Saving confidence csv")
+        #     logging.info("Saving confidence csv")
+        #     writer = csv.writer(f)
+        #     header = ["frame_index"] + folder_name_list
+        #     writer.writerow(header)
 
-            for idx in frame_indices:
-                row = [idx]
-                for folder_name in folder_name_list:
-                    row.append(combined_scores[idx].get(folder_name, ""))  # blank if missing
-                writer.writerow(row)
+        #     for idx in frame_indices:
+        #         row = [idx]
+        #         for folder_name in folder_name_list:
+        #             row.append(combined_scores[idx].get(folder_name, ""))  # blank if missing
+        #         writer.writerow(row)
                 
                 
         # Save all lists in a single file
-        data_pkl_folder = os.path.join(args.post_hoc_model_save_dir, "data_pkl")
+        data_pkl_folder = os.path.join(args.post_hoc_model_save_dir,f"{args.experiment_name}_{args.array_id}", "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
             pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list}, f)
    
                 
+        # Save iou_dict
+        iou_dict_folder = os.path.join(args.post_hoc_model_save_dir,f"{args.experiment_name}_{args.array_id}", "iou_dict")
+        os.makedirs(iou_dict_folder, exist_ok=True)
+        with open(os.path.join(iou_dict_folder, f'{video_name}_iou_dict.pkl'), 'wb') as f:
+            pickle.dump(iou_dict, f)
     
     print(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
     logging.info(f"completed inference on {len(video_names)} videos -- output masks saved to {args.output_mask_dir}")
+    
+    end_time = datetime.datetime.now()
+    elapsed_seconds = (end_time - start_time).total_seconds()
+    print(f"Total script execution time: {elapsed_seconds:.2f} seconds")
+    logging.info(f"Total script execution time: {elapsed_seconds:.2f} seconds")
 
 
 if __name__ == "__main__":
