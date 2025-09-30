@@ -33,6 +33,7 @@ import torch.optim as optim
 import torchvision.models.video as models
 from PIL import Image
 from scipy.ndimage import label, center_of_mass
+from matplotlib.patches import Rectangle
 
 # the PNG palette for DAVIS 2017 dataset
 DAVIS_PALETTE = b"\x00\x00\x00\x80\x00\x00\x00\x80\x00\x80\x80\x00\x00\x00\x80\x80\x00\x80\x00\x80\x80\x80\x80\x80@\x00\x00\xc0\x00\x00@\x80\x00\xc0\x80\x00@\x00\x80\xc0\x00\x80@\x80\x80\xc0\x80\x80\x00@\x00\x80@\x00\x00\xc0\x00\x80\xc0\x00\x00@\x80\x80@\x80\x00\xc0\x80\x80\xc0\x80@@\x00\xc0@\x00@\xc0\x00\xc0\xc0\x00@@\x80\xc0@\x80@\xc0\x80\xc0\xc0\x80\x00\x00@\x80\x00@\x00\x80@\x80\x80@\x00\x00\xc0\x80\x00\xc0\x00\x80\xc0\x80\x80\xc0@\x00@\xc0\x00@@\x80@\xc0\x80@@\x00\xc0\xc0\x00\xc0@\x80\xc0\xc0\x80\xc0\x00@@\x80@@\x00\xc0@\x80\xc0@\x00@\xc0\x80@\xc0\x00\xc0\xc0\x80\xc0\xc0@@@\xc0@@@\xc0@\xc0\xc0@@@\xc0\xc0@\xc0@\xc0\xc0\xc0\xc0\xc0 \x00\x00\xa0\x00\x00 \x80\x00\xa0\x80\x00 \x00\x80\xa0\x00\x80 \x80\x80\xa0\x80\x80`\x00\x00\xe0\x00\x00`\x80\x00\xe0\x80\x00`\x00\x80\xe0\x00\x80`\x80\x80\xe0\x80\x80 @\x00\xa0@\x00 \xc0\x00\xa0\xc0\x00 @\x80\xa0@\x80 \xc0\x80\xa0\xc0\x80`@\x00\xe0@\x00`\xc0\x00\xe0\xc0\x00`@\x80\xe0@\x80`\xc0\x80\xe0\xc0\x80 \x00@\xa0\x00@ \x80@\xa0\x80@ \x00\xc0\xa0\x00\xc0 \x80\xc0\xa0\x80\xc0`\x00@\xe0\x00@`\x80@\xe0\x80@`\x00\xc0\xe0\x00\xc0`\x80\xc0\xe0\x80\xc0 @@\xa0@@ \xc0@\xa0\xc0@ @\xc0\xa0@\xc0 \xc0\xc0\xa0\xc0\xc0`@@\xe0@@`\xc0@\xe0\xc0@`@\xc0\xe0@\xc0`\xc0\xc0\xe0\xc0\xc0\x00 \x00\x80 \x00\x00\xa0\x00\x80\xa0\x00\x00 \x80\x80 \x80\x00\xa0\x80\x80\xa0\x80@ \x00\xc0 \x00@\xa0\x00\xc0\xa0\x00@ \x80\xc0 \x80@\xa0\x80\xc0\xa0\x80\x00`\x00\x80`\x00\x00\xe0\x00\x80\xe0\x00\x00`\x80\x80`\x80\x00\xe0\x80\x80\xe0\x80@`\x00\xc0`\x00@\xe0\x00\xc0\xe0\x00@`\x80\xc0`\x80@\xe0\x80\xc0\xe0\x80\x00 @\x80 @\x00\xa0@\x80\xa0@\x00 \xc0\x80 \xc0\x00\xa0\xc0\x80\xa0\xc0@ @\xc0 @@\xa0@\xc0\xa0@@ \xc0\xc0 \xc0@\xa0\xc0\xc0\xa0\xc0\x00`@\x80`@\x00\xe0@\x80\xe0@\x00`\xc0\x80`\xc0\x00\xe0\xc0\x80\xe0\xc0@`@\xc0`@@\xe0@\xc0\xe0@@`\xc0\xc0`\xc0@\xe0\xc0\xc0\xe0\xc0  \x00\xa0 \x00 \xa0\x00\xa0\xa0\x00  \x80\xa0 \x80 \xa0\x80\xa0\xa0\x80` \x00\xe0 \x00`\xa0\x00\xe0\xa0\x00` \x80\xe0 \x80`\xa0\x80\xe0\xa0\x80 `\x00\xa0`\x00 \xe0\x00\xa0\xe0\x00 `\x80\xa0`\x80 \xe0\x80\xa0\xe0\x80``\x00\xe0`\x00`\xe0\x00\xe0\xe0\x00``\x80\xe0`\x80`\xe0\x80\xe0\xe0\x80  @\xa0 @ \xa0@\xa0\xa0@  \xc0\xa0 \xc0 \xa0\xc0\xa0\xa0\xc0` @\xe0 @`\xa0@\xe0\xa0@` \xc0\xe0 \xc0`\xa0\xc0\xe0\xa0\xc0 `@\xa0`@ \xe0@\xa0\xe0@ `\xc0\xa0`\xc0 \xe0\xc0\xa0\xe0\xc0``@\xe0`@`\xe0@\xe0\xe0@``\xc0\xe0`\xc0`\xe0\xc0\xe0\xe0\xc0"
@@ -447,7 +448,175 @@ def add_negative_point(input_mask_dir,output_mask_dir,base_video_dir, video_name
     # plt.close()  # Close the figure to free memory
     
     #-----------------Save Images - End-------------------------
-    return out_mask_logits                     
+    return out_mask_logits  
+
+def add_point(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
+             input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state,
+             blob_centers, labels,gt):
+        
+    _, out_obj_ids, out_mask_logits =  predictor.add_new_points_or_box(
+        inference_state = inference_state,
+        frame_idx = input_frame_idx,
+        obj_id = 1,
+        points=blob_centers,
+        labels=labels,
+        clear_old_points=True,
+        normalize_coords=True,
+        box=None,
+    )
+    
+    #------------------Save Images------------------------------
+    
+    os.makedirs(output_mask_dir, exist_ok=True)
+    plt.figure(figsize=(9, 6))
+    plt.title(f"frame {input_frame_idx}")
+    plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+    
+    # Overlay the ground truth mask in green
+    gt_mask = gt[input_frame_idx]
+    gt_mask = np.squeeze(gt_mask)  # Ensure it's 2D
+    green_overlay = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 4))
+    green_overlay[..., 1] = 1.0  # green channel
+    green_overlay[..., 3] = gt_mask * 0.4  # alpha based on mask
+    plt.imshow(green_overlay)
+    
+    
+    
+    # Save the visualization image
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    if labels == 1:
+        vis_path = os.path.join(output_mask_dir, f"vis_add_positive_{frame_names[input_frame_idx]}_{center[0]:.3f}_{center[1]:.3f}_{timestamp}.png")
+    elif labels == 0:
+        vis_path = os.path.join(output_mask_dir, f"vis_add_negative_{frame_names[input_frame_idx]}_{center[0]:.3f}_{center[1]:.3f}_{timestamp}.png")
+    plt.savefig(vis_path)
+    plt.close()  # Close the figure to free memory
+    
+    #-----------------Save Images - End-------------------------
+    return out_obj_ids,out_mask_logits                     
+
+def add_box(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
+             input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state,
+             bbox, labels,gt):
+        
+    _, out_obj_ids, out_mask_logits =  predictor.add_new_points_or_box(
+        inference_state = inference_state,
+        frame_idx = input_frame_idx,
+        obj_id = 1,
+        box=bbox,
+    )
+    
+    #------------------Save Images------------------------------
+    
+    # os.makedirs(output_mask_dir, exist_ok=True)
+    # plt.figure(figsize=(9, 6))
+    # plt.title(f"frame {input_frame_idx}")
+    # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+    
+    # # Overlay the ground truth mask in green
+    # gt_mask = gt[input_frame_idx]
+    # gt_mask = np.squeeze(gt_mask)  # Ensure it's 2D
+    # green_overlay = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 4))
+    # green_overlay[..., 1] = 1.0  # green channel
+    # green_overlay[..., 3] = gt_mask * 0.4  # alpha based on mask
+    # plt.imshow(green_overlay)
+    
+    # # Show the predicted mask on top
+    # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+    
+    # # Mark the blob centers on the image with a cross
+    # x_min, y_min, x_max, y_max = bbox[0]
+    # width = x_max - x_min
+    # height = y_max - y_min
+    # rect = Rectangle((x_min, y_min), width, height, linewidth=2, edgecolor='r', facecolor='none')
+    # plt.gca().add_patch(rect)
+    
+    # print(out_mask_logits.shape)
+    
+    # # Save the visualization image
+    # timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    # if labels == 1:
+    #     vis_path = os.path.join(output_mask_dir, f"vis_add_box_{frame_names[input_frame_idx]}_{x_min:.3f}_{y_min:.3f}_{x_max:.3f}_{y_max:.3f}_{timestamp}.png")
+    # plt.savefig(vis_path)
+    # plt.close()  # Close the figure to free memory
+    
+    #-----------------Save Images - End-------------------------
+    return out_obj_ids,out_mask_logits  
+
+def find_blob_centers(mask):
+    """Find the center points of blobs in a binary mask."""
+    # Label the blobs in the mask
+    labeled_mask, num_features = label(mask)
+    
+    # Calculate the center of mass for each blob
+    centers = center_of_mass(mask, labeled_mask, range(1, num_features + 1))
+    
+    return centers
+
+def keep_largest_blob(mask):
+    labeled, num = label(mask)
+    if num == 0:
+        return mask
+    sizes = np.bincount(labeled.ravel())
+    sizes[0] = 0  # ignore background
+    largest_label = sizes.argmax()
+    return labeled == largest_label
+
+def get_random_point_on_mask(mask):
+    """Get a random point on the mask, in the same format as center_of_mass (y, x coordinates)."""
+    # Find all non-zero (foreground) pixels
+    y_coords, x_coords = np.where(mask)
+    
+    if len(y_coords) == 0:
+        return None  # No foreground pixels
+    
+    # Select a random index
+    random_idx = np.random.randint(0, len(y_coords))
+    
+    # Return coordinates in the same format as center_of_mass (y, x)
+    return (y_coords[random_idx], x_coords[random_idx])
+
+# def get_bounding_box(mask):
+#     """Return (x_min, y_min, x_max, y_max) of the foreground blob in a binary mask."""
+#     ys, xs = np.where(mask)  # y = row, x = column
+#     if len(xs) == 0 or len(ys) == 0:
+#         return None  # no foreground
+#     x_min, x_max = xs.min(), xs.max()
+#     y_min, y_max = ys.min(), ys.max()
+#     return (x_min, y_min, x_max, y_max)
+
+def get_bounding_box(mask, box_factor):
+    """Return (x_min, y_min, x_max, y_max) of a box triple the size of the foreground blob in a binary mask."""
+    ys, xs = np.where(mask)  # y = row, x = column
+    if len(xs) == 0 or len(ys) == 0:
+        return None  # no foreground
+
+    x_min, x_max = xs.min(), xs.max()
+    y_min, y_max = ys.min(), ys.max()
+
+    # Original box center, width, and height
+    cx = (x_min + x_max) / 2
+    cy = (y_min + y_max) / 2
+    width = x_max - x_min + 1
+    height = y_max - y_min + 1
+
+    # Triple the size
+    new_width = width * box_factor
+    new_height = height * box_factor    
+
+    # New box coordinates
+    new_x_min = int(round(cx - new_width / 2))
+    new_x_max = int(round(cx + new_width / 2)) - 1
+    new_y_min = int(round(cy - new_height / 2))
+    new_y_max = int(round(cy + new_height / 2)) - 1
+
+    # Clip to image boundaries
+    H, W = mask.shape
+    new_x_min = max(0, new_x_min)
+    new_y_min = max(0, new_y_min)
+    new_x_max = min(W - 1, new_x_max)
+    new_y_max = min(H - 1, new_y_max)
+
+    return (new_x_min, new_y_min, new_x_max, new_y_max)                   
 
 
 def find_blob_centers(mask):
@@ -475,6 +644,8 @@ def vos_inference(
     use_all_masks=False,
     per_obj_png_file=False,
     save_palette_png=False,
+    prompt="mask",
+    model_type = "Auto"
     
 ):
     
@@ -503,32 +674,171 @@ def vos_inference(
             f"In {video_name=}, got no input masks in {input_mask_dir=}. "
             "Please make sure the input masks are available in the correct format."
         )
-    input_frame_inds = sorted(set(input_frame_inds))
+    input_frame_inds = sorted(input_frame_inds)
     
     #Then 
 
     
-    object_ids_set = None
+    object_ids_set = None # Bipass the object id check
+    
     out_mask_logits=[]
     out_frame_idx=[]
     for idx, input_frame_idx in enumerate(input_frame_inds):
         print ("input_frame_idx: ", input_frame_idx)
         if idx == 0:
-            print("Add mask")
-            out_obj_ids_prompt, out_mask_logits_prompt,object_ids_set = add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
-             input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state)
+            if prompt[0] == "mask":
+                print(f"{input_frame_idx} -Add mask")
+                out_obj_ids_prompt, out_mask_logits_prompt,object_ids_set = add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
+                input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state)
+            
+            elif prompt[0] == "point":
+                print(f"{input_frame_idx} -Add point")
+                
+                cleaned_mask = keep_largest_blob(gt[input_frame_idx][0])
+                labeled_cleaned, n_clean = label(cleaned_mask)
+                if n_clean != 1:
+                    raise SystemExit("Exiting with error due to multiple objects in the first frame.")
+                    print("Multiple objects in the first frame.")
+                    return None, None  
+                # Get a random point on the cleaned mask instead of center
+                random_point = get_random_point_on_mask(cleaned_mask)
+                labels = np.ones(1)
+                
+                #-----------Object ID Check -----------------
+                #This is to bipass multiobject scenario. Change it when you work with multiple objects
+                # try:
+                #     per_obj_input_mask, input_palette = load_masks_from_dir(
+                #         input_mask_dir=input_mask_dir,
+                #         video_name=video_name,
+                #         frame_name=frame_names[input_frame_idx],
+                #         per_obj_png_file=per_obj_png_file,
+                #     )
+                # except FileNotFoundError as e:
+                #     raise RuntimeError(
+                #         f"In {video_name=}, failed to load input mask for frame {input_frame_idx=}. "
+                #         "Please add the `--track_object_appearing_later_in_video` flag "
+                #         "for VOS datasets that don't have all objects to track appearing "
+                #         "in the first frame (such as LVOS or YouTube-VOS)."
+                #     ) from e
+                
+                # # get the list of object ids to track from the first input frame
+                # if object_ids_set is None:
+                #     object_ids_set = set(per_obj_input_mask)
+                    
+                # if len(object_ids_set) != 1:
+                #     raise SystemExit("Exiting with error due to multiple objects in the first frame.")
+                #     print("Multiple objects in the first frame.")
+                #     return None, None
+                    
+                #-----------Object ID Check - End -----------------
+                    
+                
+                
+                
+                
+                
+                if random_point is not None:
+                    out_obj_ids_prompt,out_mask_logits_prompt = add_point(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
+                    input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state,
+                              [random_point], labels,gt)
+                    object_ids_set = [1]
+                else:
+                    raise SystemExit("Exiting with error due to no mask or negative points.")
+                    print("No mask or negative points")
+                    return None, None   
+                
+            elif prompt[0]  == "box":
+                print(f"{input_frame_idx} -Add box")
+                
+                cleaned_mask = keep_largest_blob(gt[input_frame_idx][0])
+                labeled_cleaned, n_clean = label(cleaned_mask)
+                if n_clean != 1:
+                    raise SystemExit("Exiting with error due to multiple objects in the first frame.")
+                    print("Multiple objects in the first frame.")
+                    return None, None 
+            
+                box_factor = 1.2
+                
+            
+                bbox = get_bounding_box(cleaned_mask, box_factor)
+                labels = np.ones(1)
+                if bbox:
+                    out_obj_ids_prompt,out_mask_logits_prompt = add_box(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
+                    input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state,
+                              [bbox], labels,gt)
+                    object_ids_set = [1]
+                else:
+                    raise SystemExit("Exiting with error due to no mask or negative points.")
+                    print("No mask or negative points")
+                    return None, None   
+                
+                
+                
+                    
+                
         else:
             #Check if the output mask logit for relavant frame id have a gt mask or not
             
             # if gt has a mask
             if np.any(gt[input_frame_idx] == 1):
-                print("Add mask")
-                out_obj_ids_prompt, out_mask_logits_prompt,object_ids_set= add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
-                input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state)
+                
+                if prompt[1] == "mask":
+                
+                    print(f"{input_frame_idx} - Add mask")
+                    out_obj_ids_prompt, out_mask_logits_prompt,object_ids_set= add_mask(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_names, 
+                    input_frame_idx, object_ids_set, per_obj_png_file,predictor,inference_state)
+                    
+                elif prompt[1] == "point":
+                    print(f"{input_frame_idx} -Add point")
+                    cleaned_mask = keep_largest_blob(gt[input_frame_idx][0])
+                    labeled_cleaned, n_clean = label(cleaned_mask)
+                    if n_clean != 1:
+                        raise SystemExit("Exiting with error due to multiple objects in the first frame.")
+                        print("Multiple objects in the first frame.")
+                        return None, None  
+                    # Get a random point on the cleaned mask instead of center
+                    random_point = get_random_point_on_mask(cleaned_mask)
+                    labels = np.ones(1)
+                    
+                    if random_point is not None:
+                        out_obj_ids_prompt,out_mask_logits_prompt = add_point(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
+                        input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state,
+                                [random_point], labels,gt)
+                        object_ids_set = [1]
+                    else:
+                        raise SystemExit("Exiting with error due to no mask or negative points.")
+                        print("No mask or negative points")
+                        return None, None  
+                
+                elif prompt[1] == "box":
+                    print(f"{input_frame_idx} -Add box")
+                    
+                    cleaned_mask = keep_largest_blob(gt[input_frame_idx][0])
+                    labeled_cleaned, n_clean = label(cleaned_mask)
+                    if n_clean != 1:
+                        raise SystemExit("Exiting with error due to multiple objects in the first frame.")
+                        print("Multiple objects in the first frame.")
+                        return None, None  
+                    
+                    box_factor = 1.2
+                    
+                    bbox = get_bounding_box(cleaned_mask, box_factor)
+                    labels = np.ones(1)
+                    if bbox:
+                        out_obj_ids_prompt,out_mask_logits_prompt = add_box(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
+                        input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state,
+                                [bbox], labels,gt)
+                        object_ids_set = [1]
+                    else:
+                        raise SystemExit("Exiting with error due to no mask or negative points.")
+                        print("No mask or negative points")
+                        return None, None    
+                    
+                    
                 
             else:
                 
-                raise RuntimeError("negative points")
+                
                 if np.any(video_segments[input_frame_idx][1] == 1): 
                     print("Add negative points iteratively")
                     
@@ -547,25 +857,27 @@ def vos_inference(
                         #labels_list.append(labels)
                         
                         # Remove the blob centers
-                        out_mask_logits_prompt = add_negative_point(
+                        out_mask_logits_prompt = add_point(
                             input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
                             input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state, 
                             blob_centers_list, labels,gt
                         )
-                        out_mask_logits_prompt = (out_mask_logits_prompt > score_thresh).cpu().numpy()
+                        obj_id = 1 #Bipass object id extraction
+                        out_mask_logits_prompt = (out_mask_logits_prompt[obj_id] > score_thresh).cpu().numpy()
                         
                         # Recalculate blob centers after removal
                         pred_wrong_mask = np.squeeze(out_mask_logits_prompt[0, 0, :, :])
                         blob_centers = np.array(find_blob_centers(pred_wrong_mask))
-                        print (blob_centers)
-                        if not blob_centers:
+                        
+                        if len(blob_centers) != 0:
+                            blob_centers = blob_centers.astype(np.float32)[:, [1, 0]][0]
+                        else:
                             break
-                        blob_centers = blob_centers.astype(np.float32)[:, [1, 0]][0]
    
                     
                               
                 else: 
-                    raise SystemExit("Exiting with error due to no mask or negative points.")
+                    # raise SystemExit("Exiting with error due to no mask or negative points.")
                     print("No mask or negative points")
                     return None, None
                     
@@ -696,7 +1008,6 @@ def vos_inference(
 
 
 
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -810,7 +1121,7 @@ def main():
         "--prompt",
         type=str,
         nargs='+',
-        default=["mask"],
+        default=["box", "box"],
         help="prompt type(s) for first prompt (e.g., mask point box). Pass one or more."
     )
     parser.add_argument(
@@ -996,6 +1307,7 @@ def main():
             use_all_masks=args.use_all_masks,
             per_obj_png_file=args.per_obj_png_file,
             save_palette_png=args.save_palette_png,
+            prompt=args.prompt            
     
             )
         
@@ -1079,6 +1391,8 @@ def main():
                 use_all_masks=args.use_all_masks,
                 per_obj_png_file=args.per_obj_png_file,
                 save_palette_png=args.save_palette_png,
+                prompt=args.prompt
+                
                 )
             
             if video_segments_cor is None:
