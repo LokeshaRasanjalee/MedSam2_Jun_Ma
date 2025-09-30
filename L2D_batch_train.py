@@ -469,41 +469,41 @@ def add_point(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_n
     
     #------------------Save Images------------------------------
     
-    os.makedirs(output_mask_dir, exist_ok=True)
-    plt.figure(figsize=(9, 6))
-    plt.title(f"frame {input_frame_idx}")
-    plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+    # os.makedirs(output_mask_dir, exist_ok=True)
+    # plt.figure(figsize=(9, 6))
+    # plt.title(f"frame {input_frame_idx}")
+    # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
     
-    # Overlay the ground truth mask in green
-    gt_mask = gt[input_frame_idx]
-    gt_mask = np.squeeze(gt_mask)  # Ensure it's 2D
-    green_overlay = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 4))
-    green_overlay[..., 1] = 1.0  # green channel
-    green_overlay[..., 3] = gt_mask * 0.4  # alpha based on mask
-    plt.imshow(green_overlay)
+    # # Overlay the ground truth mask in green
+    # gt_mask = gt[input_frame_idx]
+    # gt_mask = np.squeeze(gt_mask)  # Ensure it's 2D
+    # green_overlay = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 4))
+    # green_overlay[..., 1] = 1.0  # green channel
+    # green_overlay[..., 3] = gt_mask * 0.4  # alpha based on mask
+    # plt.imshow(green_overlay)
     
-    # Show the predicted mask on top
-    show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+    # # Show the predicted mask on top
+    # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
     
-    # Mark the blob centers on the image with a cross
-    for center, label in zip(blob_centers, labels):
-        if label == 1:
-            # Positive click → green plus marker
-            plt.plot(center[0], center[1], 'g+', label='Positive click' if 'Positive click' not in plt.gca().get_legend_handles_labels()[1] else "")
-        else:
-            # Negative click → red cross marker
-            plt.plot(center[0], center[1], 'rx', label='Negative click' if 'Negative click' not in plt.gca().get_legend_handles_labels()[1] else "")
+    # # Mark the blob centers on the image with a cross
+    # for center, label in zip(blob_centers, labels):
+    #     if label == 1:
+    #         # Positive click → green plus marker
+    #         plt.plot(center[0], center[1], 'g+', label='Positive click' if 'Positive click' not in plt.gca().get_legend_handles_labels()[1] else "")
+    #     else:
+    #         # Negative click → red cross marker
+    #         plt.plot(center[0], center[1], 'rx', label='Negative click' if 'Negative click' not in plt.gca().get_legend_handles_labels()[1] else "")
 
         
     
     
     
-    # Save the visualization image
-    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    # # Save the visualization image
+    # timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
   
-    vis_path = os.path.join(output_mask_dir, f"vis_point_{frame_names[input_frame_idx]}_{i}_{timestamp}.png")
-    plt.savefig(vis_path)
-    plt.close()  # Close the figure to free memory
+    # vis_path = os.path.join(output_mask_dir, f"vis_point_{frame_names[input_frame_idx]}_{i}_{timestamp}.png")
+    # plt.savefig(vis_path)
+    # plt.close()  # Close the figure to free memory
     
     #-----------------Save Images - End-------------------------
     return out_obj_ids,out_mask_logits                   
