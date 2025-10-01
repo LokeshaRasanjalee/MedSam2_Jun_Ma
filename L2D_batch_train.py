@@ -911,7 +911,7 @@ def vos_inference(
                     print("Multiple objects in the first frame.")
                     return None, None 
             
-                box_factor = 1.2
+                box_factor = 1
                 
             
                 bbox = get_bounding_box(cleaned_mask, box_factor)
@@ -998,7 +998,7 @@ def vos_inference(
                         print("Multiple objects in the first frame.")
                         return None, None  
                     
-                    box_factor = 1.2
+                    box_factor = 1
                     
                     bbox = get_bounding_box(cleaned_mask, box_factor)
                     labels = np.ones(1)
@@ -1299,7 +1299,7 @@ def main():
         "--prompt",
         type=str,
         nargs='+',
-        default=["box", "box"],
+        default=["point", "point"],
         help="prompt type(s) for first prompt (e.g., mask point box). Pass one or more."
     )
     parser.add_argument(
