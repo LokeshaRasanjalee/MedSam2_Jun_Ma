@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Script to consolidate all box_f1_p0i_k10_* folders into a single box_f1_p0i_k10_all folder.
+Script to consolidate all mask_p0i_k10_* folders into a single mask_p0i_k10_all folder.
 This script will:
-1. Create box_f1_p0i_k10_all folder with data_pkl and iou_dict subfolders
-2. Copy all contents from box_f1_p0i_k10_*/data_pkl to box_f1_p0i_k10_all/data_pkl
-3. Copy all contents from box_f1_p0i_k10_*/iou_dict to box_f1_p0i_k10_all/iou_dict
+1. Create mask_p0i_k10_all folder with data_pkl and iou_dict subfolders
+2. Copy all contents from mask_p0i_k10_*/data_pkl to mask_p0i_k10_all/data_pkl
+3. Copy all contents from mask_p0i_k10_*/iou_dict to mask_p0i_k10_all/iou_dict
 """
 
 import os
@@ -12,12 +12,12 @@ import shutil
 import glob
 from pathlib import Path
 
-def consolidate_box_f1_folders():
+def consolidate_mask_folders():
     # Base directory
     base_dir = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/l2d_models"
     
     # Target consolidated folder
-    consolidated_dir = os.path.join(base_dir, "box_f1_p0i_k10_all")
+    consolidated_dir = os.path.join(base_dir, "mask_p0i_k10_all")
     data_pkl_dir = os.path.join(consolidated_dir, "data_pkl")
     iou_dict_dir = os.path.join(consolidated_dir, "iou_dict")
     
@@ -32,26 +32,26 @@ def consolidate_box_f1_folders():
     print(f"✓ Created {data_pkl_dir}")
     print(f"✓ Created {iou_dict_dir}")
     
-    # Find all box_f1_p0i_k10_* folders
-    pattern = os.path.join(base_dir, "box_f1_p0i_k10_*")
-    box_f1_folders = glob.glob(pattern)
+    # Find all mask_p0i_k10_* folders
+    pattern = os.path.join(base_dir, "mask_p0i_k10_*")
+    mask_folders = glob.glob(pattern)
     
     # Filter out the consolidated folder if it exists
-    box_f1_folders = [f for f in box_f1_folders if not f.endswith("box_f1_p0i_k10_all")]
+    mask_folders = [f for f in mask_folders if not f.endswith("mask_p0i_k10_all")]
     
-    print(f"\nFound {len(box_f1_folders)} box_f1_p0i_k10_* folders to process:")
-    for folder in sorted(box_f1_folders):
+    print(f"\nFound {len(mask_folders)} mask_p0i_k10_* folders to process:")
+    for folder in sorted(mask_folders):
         print(f"  - {os.path.basename(folder)}")
     
-    # Process each box_f1 folder
+    # Process each mask folder
     total_files_copied = 0
     
-    for box_f1_folder in sorted(box_f1_folders):
-        folder_name = os.path.basename(box_f1_folder)
+    for mask_folder in sorted(mask_folders):
+        folder_name = os.path.basename(mask_folder)
         print(f"\nProcessing {folder_name}...")
         
         # Process data_pkl folder
-        source_data_pkl = os.path.join(box_f1_folder, "data_pkl")
+        source_data_pkl = os.path.join(mask_folder, "data_pkl")
         if os.path.exists(source_data_pkl):
             files_in_data_pkl = os.listdir(source_data_pkl)
             print(f"  Found {len(files_in_data_pkl)} files in data_pkl")
@@ -72,7 +72,7 @@ def consolidate_box_f1_folders():
             print(f"  ⚠️  data_pkl folder not found in {folder_name}")
         
         # Process iou_dict folder
-        source_iou_dict = os.path.join(box_f1_folder, "iou_dict")
+        source_iou_dict = os.path.join(mask_folder, "iou_dict")
         if os.path.exists(source_iou_dict):
             files_in_iou_dict = os.listdir(source_iou_dict)
             print(f"  Found {len(files_in_iou_dict)} files in iou_dict")
@@ -107,7 +107,7 @@ def consolidate_box_f1_folders():
 
 if __name__ == "__main__":
     try:
-        consolidate_box_f1_folders()
+        consolidate_mask_folders()
     except Exception as e:
         print(f"Error: {e}")
         import traceback
