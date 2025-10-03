@@ -6,11 +6,11 @@ import numpy as np
 import re
 
 # Define source directories
-IMAGE_DIR = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/Barretts_data/nbi_masks/from_videos/frames"
-MASK_DIR = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/Barretts_data/nbi_masks/from_videos/masks"
+IMAGE_DIR = "/home/tim-3090/Documents/code/MedSam2_Jun_Ma/Barretts_data/nbi_masks/from_videos/frames"
+MASK_DIR = "/home/tim-3090/Documents/code/MedSam2_Jun_Ma/Barretts_data/nbi_masks/from_videos/masks"
 
 # Create output directories
-OUTPUT_DIR = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/Barretts_data/dataset2_100_1_2"
+OUTPUT_DIR = "/home/tim-3090/Documents/code/MedSam2_Jun_Ma/Barretts_data/dataset2_100_1_2"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 os.makedirs(os.path.join(OUTPUT_DIR, "Images"), exist_ok=True)
 os.makedirs(os.path.join(OUTPUT_DIR, "Masks"), exist_ok=True)
@@ -42,6 +42,18 @@ def get_sequence_id(filename):
         return match.group(1)
     return None
 
+# Get all mask files, filter out hidden files, and sort by index at end of filename
+def get_index_from_filename(filename):
+    """Extract the index number from the end of filename like 'text_text_.._<index>.jpg'"""
+    # Remove extension
+    name_without_ext = os.path.splitext(filename)[0]
+    # Split by underscore and get the last part
+    last_part = name_without_ext.split('_')[-1]
+    try:
+        return int(last_part)
+    except ValueError:
+        return 0  # Default to 0 if can't parse
+
 def process_dataset():
     # Get list of mask folders
     mask_folders = [f for f in os.listdir(MASK_DIR) if os.path.isdir(os.path.join(MASK_DIR, f))]
@@ -60,8 +72,13 @@ def process_dataset():
             print(f"Warning: No image folder found for {mask_folder}")
             continue
         
-        # Get all mask files and sort them
-        mask_files = sorted([f for f in os.listdir(mask_folder_path) if f.endswith(('.jpg', '.jpeg', '.png'))])
+  
+        
+        # Filter out files starting with '.' and get image files
+        all_files = [f for f in os.listdir(mask_folder_path) if f.endswith(('.jpg', '.jpeg', '.png')) and not f.startswith('.')]
+        
+        # Sort by the index at the end of the filename
+        mask_files = sorted(all_files, key=get_index_from_filename)
         
         seq_files = mask_files
         
@@ -77,7 +94,7 @@ def process_dataset():
         # Process each sequence group
         # for seq_id, seq_files in sequence_groups.items():
             # print(f"\nProcessing sequence {seq_id} with {len(seq_files)} files")
-        seq_files.sort()  # Sort files within sequence
+        # seq_files.sort()  # Sort files within sequence
         
         # Find sequences of frames with objects spaced by frame_interval
         valid_sequences = []

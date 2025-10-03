@@ -486,15 +486,19 @@ def add_point(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_n
     # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
     
     # # Mark the blob centers on the image with a cross
-    # for center, label in zip(blob_centers, labels):
+    # for i, (center, label) in enumerate(zip(blob_centers, labels)):
     #     if label == 1:
-    #         # Positive click → green plus marker
-    #         plt.plot(center[0], center[1], 'g+', label='Positive click' if 'Positive click' not in plt.gca().get_legend_handles_labels()[1] else "")
+    #         # Positive click → green plus marker (larger)
+    #         plt.plot(center[0], center[1], 'g+', markersize=15, markeredgewidth=3, 
+    #                 label='Positive click' if 'Positive click' not in plt.gca().get_legend_handles_labels()[1] else "")
     #     else:
-    #         # Negative click → red cross marker
-    #         plt.plot(center[0], center[1], 'rx', label='Negative click' if 'Negative click' not in plt.gca().get_legend_handles_labels()[1] else "")
-
+    #         # Negative click → red cross marker (larger)
+    #         plt.plot(center[0], center[1], 'rx', markersize=15, markeredgewidth=3,
+    #                 label='Negative click' if 'Negative click' not in plt.gca().get_legend_handles_labels()[1] else "")
         
+    #     # Add order number as text
+    #     plt.text(center[0] + 10, center[1] + 10, str(i+1), fontsize=10, fontweight='bold', 
+    #             bbox=dict(boxstyle="round,pad=0.3", facecolor='white', alpha=0.8))
     
     
     
@@ -521,37 +525,37 @@ def add_box(input_mask_dir,output_mask_dir,base_video_dir, video_name, frame_nam
     
     #------------------Save Images------------------------------
     
-    # os.makedirs(output_mask_dir, exist_ok=True)
-    # plt.figure(figsize=(9, 6))
-    # plt.title(f"frame {input_frame_idx}")
-    # plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
+    os.makedirs(output_mask_dir, exist_ok=True)
+    plt.figure(figsize=(9, 6))
+    plt.title(f"frame {input_frame_idx}")
+    plt.imshow(Image.open(os.path.join(base_video_dir, video_name, f"{frame_names[input_frame_idx]}.jpg")))
     
-    # # Overlay the ground truth mask in green
-    # gt_mask = gt[input_frame_idx]
-    # gt_mask = np.squeeze(gt_mask)  # Ensure it's 2D
-    # green_overlay = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 4))
-    # green_overlay[..., 1] = 1.0  # green channel
-    # green_overlay[..., 3] = gt_mask * 0.4  # alpha based on mask
-    # plt.imshow(green_overlay)
+    # Overlay the ground truth mask in green
+    gt_mask = gt[input_frame_idx]
+    gt_mask = np.squeeze(gt_mask)  # Ensure it's 2D
+    green_overlay = np.zeros((gt_mask.shape[0], gt_mask.shape[1], 4))
+    green_overlay[..., 1] = 1.0  # green channel
+    green_overlay[..., 3] = gt_mask * 0.4  # alpha based on mask
+    plt.imshow(green_overlay)
     
-    # # Show the predicted mask on top
-    # show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
+    # Show the predicted mask on top
+    show_mask((out_mask_logits[0] > 0.0).cpu().numpy(), plt.gca(), obj_id=out_obj_ids[0])
     
-    # # Mark the blob centers on the image with a cross
-    # x_min, y_min, x_max, y_max = bbox[0]
-    # width = x_max - x_min
-    # height = y_max - y_min
-    # rect = Rectangle((x_min, y_min), width, height, linewidth=2, edgecolor='r', facecolor='none')
-    # plt.gca().add_patch(rect)
+    # Mark the blob centers on the image with a cross
+    x_min, y_min, x_max, y_max = bbox[0]
+    width = x_max - x_min
+    height = y_max - y_min
+    rect = Rectangle((x_min, y_min), width, height, linewidth=2, edgecolor='r', facecolor='none')
+    plt.gca().add_patch(rect)
     
-    # print(out_mask_logits.shape)
+    print(out_mask_logits.shape)
     
-    # # Save the visualization image
-    # timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    # if labels == 1:
-    #     vis_path = os.path.join(output_mask_dir, f"vis_add_box_{frame_names[input_frame_idx]}_{x_min:.3f}_{y_min:.3f}_{x_max:.3f}_{y_max:.3f}_{timestamp}.png")
-    # plt.savefig(vis_path)
-    # plt.close()  # Close the figure to free memory
+    # Save the visualization image
+    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+    if labels == 1:
+        vis_path = os.path.join(output_mask_dir, f"vis_add_box_{frame_names[input_frame_idx]}_{x_min:.3f}_{y_min:.3f}_{x_max:.3f}_{y_max:.3f}_{timestamp}.png")
+    plt.savefig(vis_path)
+    plt.close()  # Close the figure to free memory
     
     #-----------------Save Images - End-------------------------
     return out_obj_ids,out_mask_logits  
@@ -619,10 +623,12 @@ def get_bbox_midpoint_or_random(mask):
     iy = int(round(mid_y))
     ix = int(round(mid_x))
     if 0 <= iy < foreground.shape[0] and 0 <= ix < foreground.shape[1] and foreground[iy, ix]:
+        print ("Using bbox midpoint")
         return (float(mid_x), float(mid_y))
 
     # fallback to random foreground pixel
     rand_idx = np.random.randint(0, len(xs))
+    print ("Using random foreground pixel")
     return (float(xs[rand_idx]), float(ys[rand_idx]))
 
 def get_random_point_on_mask(mask):
@@ -777,7 +783,7 @@ def vos_inference(
                 print(f"{input_frame_idx} -Add point")
                 
                 if blob_centers_list != []:
-                    print(f"{input_frame_idx} -Add point with pre-existing clicks")
+                    print(f"{input_frame_idx} -Using pre-existing clicks")
                     # cumulatively apply 1..N points: [0], [0:2], [0:3], ...
                     for p in range(1, len(blob_centers_list) + 1):
                         out_mask_logits_prompt = add_point(
@@ -787,7 +793,7 @@ def vos_inference(
                         )
                     object_ids_set = [1]
                 else:
-                    print(f"{input_frame_idx} -Add point without pre-existing clicks")
+                    print(f"{input_frame_idx} -Add new clicks")
                 
             
                     blob_centers_list = []
@@ -803,10 +809,10 @@ def vos_inference(
                     labels = np.ones(1)
                     
                     if center:
+                        print ("add initial positive point")
                         blob_centers_list.append(center)
                         labels_list.append(1)
                     
-                    if center:
                         out_mask_logits_prompt = add_point(input_mask_dir, output_mask_dir, base_video_dir, video_name, frame_names, 
                         input_frame_idx, object_ids_set, per_obj_png_file, predictor, inference_state,
                                 blob_centers_list, labels_list,gt, 0)
@@ -821,25 +827,29 @@ def vos_inference(
                     fn_mask, fp_mask = get_error_regions(gt[input_frame_idx], pred_mask)
                     
                     
-                    for i in range(num_clicks-1):
+                    for i in range(1,num_clicks):
                                         
                         fn_center = None
                         fp_center = None
                         fn_area = 0
                         fp_area = 0
                         if np.any(fn_mask):
+                            print ("get fn center")
                             fn_center = get_bbox_midpoint_or_random(fn_mask)
                             fn_area = np.sum(fn_mask > 0)
                         if np.any(fp_mask):
+                            print ("get fp center")
                             fp_center = get_bbox_midpoint_or_random(fp_mask)
                             fp_area = np.sum(fp_mask > 0)
                             
                         if (fp_area > fn_area ) and fp_center is not None:
                             #add negative point
+                            print ("add negative point")
                             blob_centers_list.append(fp_center)
                             labels_list.append(0)
                         elif (fn_area > fp_area) and fn_center is not None:
                             #add positive point
+                            print ("add positive point")
                             blob_centers_list.append(fn_center)
                             labels_list.append(1)
                         
@@ -968,9 +978,11 @@ def vos_inference(
                             fp_area = np.sum(fp_mask > 0)
 
                         if (fp_area > fn_area) and fp_center is not None:
+                            print ("add negative point")
                             blob_centers_list.append(fp_center)
                             labels_list.append(0)
                         elif (fn_area > fp_area) and fn_center is not None:
+                            print ("add positive point")
                             blob_centers_list.append(fn_center)
                             labels_list.append(1)
 
@@ -1107,46 +1119,46 @@ def vos_inference(
             confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
           
         #---------------------------------Save Prediction--------------------------------------  
-        # vis_frame_stride = 1   
-        # for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
-        #     frame_name = frame_names[out_frame_idx]
-        #     # print(frame_name)
-        #     # print(out_frame_idx)
-        #     # Load RGB frame
-        #     img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
+        vis_frame_stride = 1   
+        for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
+            frame_name = frame_names[out_frame_idx]
+            # print(frame_name)
+            # print(out_frame_idx)
+            # Load RGB frame
+            img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
 
-        #     # Load ground truth mask image (you can convert it to grayscale if needed)
-        #     gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
-        #     gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
+            # Load ground truth mask image (you can convert it to grayscale if needed)
+            gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
+            gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
 
-        #     fig, ax = plt.subplots(figsize=(8, 6))
-        #     #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
+            fig, ax = plt.subplots(figsize=(8, 6))
+            #fig.suptitle(f"Frame {out_frame_idx}", fontsize=14)
 
-        #     # Show the input image
-        #     ax.imshow(img)
-        #     ax.set_title("Predicted + Ground Truth")
-        #     ax.axis("off")  
+            # Show the input image
+            ax.imshow(img)
+            ax.set_title("Predicted + Ground Truth")
+            ax.axis("off")  
 
-        #     # Convert ground truth to NumPy and normalize to [0,1]
-        #     gt_mask_np = np.array(gt_mask) / 255.0
+            # Convert ground truth to NumPy and normalize to [0,1]
+            gt_mask_np = np.array(gt_mask) / 255.0
 
-        #     # Create transparent green overlay
-        #     green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
-        #     green_overlay[..., 1] = 1.0  # green channel
-        #     green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
+            # Create transparent green overlay
+            green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
+            green_overlay[..., 1] = 1.0  # green channel
+            green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
 
-        #     # Overlay ground truth
-        #     ax.imshow(green_overlay)
+            # Overlay ground truth
+            ax.imshow(green_overlay)
 
-        #     # Show predicted masks
-        #     for out_obj_id, out_mask in video_segments[out_frame_idx].items():
-        #         show_mask(out_mask, ax, obj_id=out_obj_id)
+            # Show predicted masks
+            for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+                show_mask(out_mask, ax, obj_id=out_obj_id)
 
-        #     save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
-        #     plt.tight_layout()
-        #     plt.savefig(save_path, dpi=150)
+            save_path = os.path.join(output_mask_dir, f"{frame_name}_vis.png")
+            plt.tight_layout()
+            plt.savefig(save_path, dpi=150)
             
-        #     plt.close(fig) 
+            plt.close(fig) 
          #---------------------------------Save Prediction - END --------------------------------------  
         
     predictor.reset_state(inference_state)
@@ -1436,8 +1448,8 @@ def main():
         L_post_defer_list = []
         iou_dict={}
         
-        # if video_name != 'seq4':
-        #     continue
+        if video_name != 'D_NBI_67_20160415_0_3_16':
+            continue
         
         print(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
         logging.info(f"\n{n_video + 1}/{len(video_names)} - running on {video_name}")
@@ -1454,8 +1466,9 @@ def main():
         
         gap = len(frame_indices_for_clip) // args.sample_factor
         prompt_frames = list(range(0,len(frame_indices_for_clip), gap))  # includes 0
-        second_promt_frames = prompt_frames[1:]
-        
+        #second_promt_frames = prompt_frames[1:]
+        second_promt_frames = prompt_frames
+  
         
         #--------------------Get ground truth masks--------------------------------
         gt_list = []
@@ -1530,7 +1543,7 @@ def main():
         # Uncorrected downstream loss
         L_no_defer, iou_list = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
-        iou_dict[0] = iou_list
+        iou_dict["0"] = iou_list
         
         #masks generated from first prompt
         clip_frames = []
@@ -1608,7 +1621,8 @@ def main():
 
             # Corrected downstream loss
             L_post_defer, iou_list = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
-            iou_dict[second_prompt] = iou_list
+            iou_dict[f"{initial_prompt}_{second_prompt}"] = iou_list
+            #iou_dict[second_prompt] = iou_list
             
             
             L_post_defer_list.append(L_post_defer)
