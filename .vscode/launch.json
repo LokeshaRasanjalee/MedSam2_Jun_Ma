@@ -10,7 +10,13 @@
 
     
     
-
+        {
+            "name": "L2D Train create npz",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "L2D_train.py",
+            "console": "integratedTerminal",
+            "args": "--base_video_dir /home/tim-3090/Documents/code/MedSam2_Jun_Ma/Barretts_data/dataset_tmp/Images/ --input_mask_dir /home/tim-3090/Documents/code/MedSam2_Jun_Ma/Barretts_data/dataset_tmp/Masks/ -o ./media/Inference -e 'debug_run' --num_groups 1 --array_id 0 --loss_type iou --data_pkl_dir  /home/tim-3090/Documents/code/MedSam2_Jun_Ma/l2d_models/debug_run_box_0/data_pkl/ --sample_factor 10"},
 
 
     
