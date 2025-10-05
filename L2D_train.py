@@ -39,7 +39,7 @@ import torchvision.transforms as T
 import torch.optim as optim
 import torchvision.models.video as models
 from PIL import Image
-from dataloader import get_dataloaders
+from dataloader_data_creation import get_dataloaders
 from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve, auc
 from sklearn.metrics import confusion_matrix
@@ -1186,8 +1186,14 @@ def main():
     parser.add_argument(
         "--loss_type",
         type=str,
-        default="sam",
+        default="iou",
         help="loss type (default: sam)",
+    )
+    parser.add_argument(
+        "--sample_factor",
+        type=int,
+        default=1,
+        help="sample factor (default: 1)",
     )
 
     
@@ -1309,14 +1315,9 @@ def main():
     #     writer.add_scalar('Regret/val', 0, 0)
     #     writer.add_scalar('Time/epoch_runtime', 0, 0)
     
-   
-    
-    
-    
+
     
     #--------------------------Train Model----------------------------------
-    
-
     
     # train_losses, train_accs, val_losses, val_accs = [], [], [], []
     # # Initialize moving average queue for validation accuracy
