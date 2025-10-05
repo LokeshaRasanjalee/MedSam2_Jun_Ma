@@ -334,7 +334,7 @@ def mao_deferral_loss_mae(
     acc_post_def_batch,        # [B, n_e]
     alpha=1.0,
     beta=1.0,
-    distance_loss=10
+    distance_loss=0
 ):
     """
     ℓ_mae surrogate loss from Mao et al. (2024).
@@ -365,7 +365,7 @@ def mao_deferral_loss_mae(
     #     distance_loss = torch.tensor(distance_loss, dtype=dtype, device=device)
     # distance_loss = distance_loss.view(1, -1)                # [1, n_e]
 
-    # cost = α * (1 - acc) + β + distance_loss
+    # cost = α * (1 - acc) + β 
     cost = torch.clamp(alpha * (1.0 - acc_post_def_batch) + beta + distance_loss, max=1.0)  # [B, n_e]
     c_bar = 1.0 - cost                                       # [B, n_e]
 
@@ -378,7 +378,7 @@ def mao_deferral_loss_mae(
     total_loss = term1 + term2                               # [B, 1]
     return total_loss.mean()
 
-def train_one_epoch(loss_type,rejector,epoch, loader, criterion, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5], distance_loss=10):
+def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5],distance_loss=[0]):
     rejector.train()
     total_loss = 0
     correct = 0
@@ -429,7 +429,7 @@ def train_one_epoch(loss_type,rejector,epoch, loader, criterion, optimizer,save_
         
         optimizer.step()
         
-        if (epoch+1) % save_every == 0:        
+        if (epoch) % save_every == 0:        
             total_loss += loss.item()
 
             # Calculate accuracy metrics
@@ -441,7 +441,7 @@ def train_one_epoch(loss_type,rejector,epoch, loader, criterion, optimizer,save_
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
             adjusted_cost = alpha*(1-post_df_dice_batch) + beta + distance_loss
-            adjusted_cost = torch.clamp(adjusted_cost,min=0.0, max=1.0)
+            # adjusted_cost = torch.clamp(adjusted_cost,min=0.0, max=1.0)
             # All possible accuracies: base + n_e frames with adjusted gain
             all_cost_adjusted = torch.cat([(1-no_df_dice_batch).unsqueeze(1), adjusted_cost], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
@@ -482,7 +482,7 @@ def train_one_epoch(loss_type,rejector,epoch, loader, criterion, optimizer,save_
             all_chosen_actions.append(chosen_actions.cpu())
             all_video_names.extend(video_name_batch)  # Collect video names
     
-    if (epoch+1) % save_every == 0:
+    if (epoch) % save_every == 0:
         avg_loss = total_loss / len(loader)
         selection_accuracy = correct / total_samples
         mean_regret = total_regret / total_samples
@@ -555,7 +555,7 @@ def calculate_topk_accuracy(rejector_logits, best_actions, k_values=[1, 3, 5]):
     
     return topk_accuracies
 
-def validate_one_epoch(loss_type, model, epoch, loader, criterion, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=10):
+def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=0):
     model.eval()
     total_samples = 0
     total_regret = 0.0
@@ -610,7 +610,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, criterion, alpha, beta, 
 
             # Calculate adjusted gain by subtracting beta from post_df_dice_batch
             adjusted_cost = alpha*(1-post_df_dice_batch) + beta + distance_loss
-            adjusted_cost = torch.clamp(adjusted_cost,min=0.0, max=1.0)
+            #adjusted_cost = torch.clamp(adjusted_cost,min=0.0, max=1.0)
             # All possible accuracies: base + n_e frames with adjusted gain
             all_cost_adjusted = torch.cat([(1-no_df_dice_batch).unsqueeze(1), adjusted_cost], dim=1)
             # Best accuracy (oracle) using argmax on adjusted gains
@@ -854,7 +854,7 @@ def log_memory_usage(device, epoch=None, logger=None, writer=None):
     cpu_memory_used = psutil.Process().memory_info().rss / (1024 ** 2)
 
     msg = (
-        f"Memory Usage [Epoch {epoch+1 if epoch is not None else '-'}]: "
+        f"Memory Usage [Epoch {epoch if epoch is not None else '-'}]: "
         f"GPU Allocated: {gpu_memory_allocated:.2f}MB | "
         f"GPU Reserved: {gpu_memory_reserved:.2f}MB | "
         f"GPU Max Allocated: {gpu_max_allocated:.2f}MB | "
@@ -1152,18 +1152,18 @@ def main():
         required=True,
         help="directory to save the output masks (as PNG files)",
     )
-    parser.add_argument(
-        "--data_npz_dir_train",
-        type=str,
-        required=True,
-        help="directory with npz for train",
-    )   
-    parser.add_argument(
-        "--data_npz_dir_test",
-        type=str,
-        default=None,
-        help="directory with npz for test",
-    )
+    # parser.add_argument(
+    #     "--data_npz_dir_train",
+    #     type=str,
+    #     required=True,
+    #     help="directory with npz for train",
+    # )   
+    # parser.add_argument(
+    #     "--data_npz_dir_test",
+    #     type=str,
+    #     default=None,
+    #     help="directory with npz for test",
+    # )
     parser.add_argument(
         "--score_thresh",
         type=float,
@@ -1254,7 +1254,7 @@ def main():
     parser.add_argument(
         "--full_run",
         type=bool,
-        default=False,
+        default=True,
         help="Run the full training process (default: False)",
     )
     parser.add_argument(
@@ -1304,7 +1304,7 @@ def main():
     parser.add_argument(
         "--num_classes",
         type=int,
-        default=9,
+        default=10,
         help="Number of classes for the model (default: 10)",
     )
     parser.add_argument(
@@ -1330,7 +1330,7 @@ def main():
     parser.add_argument(
         "--rgb_input",
         type=bool,
-        default=False,
+        default=True,
         help="RGB input (default: False)",
     )
     parser.add_argument(
@@ -1344,6 +1344,24 @@ def main():
         type=float,
         default=0.4,
         help="Distance weight (default: 0.4)",
+    )
+    parser.add_argument(
+        "--split_dict_path",
+        type=str,
+        default="./l2d_models/debug_run_mask_0/split_dict.txt",
+        help="Split dict path (default: None)",
+    )
+    parser.add_argument(
+        "--array_id",
+        type=int,
+        default=0,
+        help="Array id (default: 0)",
+    )
+    parser.add_argument(
+        "--data_npz_dir",
+        type=str,
+        default=None,
+        help="Data npz dir (default: None)",
     )
     
     args = parser.parse_args()
@@ -1362,6 +1380,10 @@ def main():
     # Create output directory with timestamp and experiment name
     args.output_mask_dir = os.path.join(args.output_mask_dir, f"{timestamp}_{args.experiment_name}")
     os.makedirs(args.output_mask_dir, exist_ok=True)
+    
+    # Initialize persistent per-epoch actions DataFrame and CSV path
+    actions_df = None
+    actions_csv_path = os.path.join(args.output_mask_dir, 'per_video_actions.csv')
     
     # Set up logging configuration
     log_file = os.path.join(args.output_mask_dir, 'output.log')
@@ -1430,7 +1452,7 @@ def main():
 
     # Load pretrained R(2+1)D model
     model = build_r2plus1d_model(num_classes=args.num_classes, dropout_p=args.dropout, rgb_input=args.rgb_input)
-    start_epoch = 0
+    start_epoch = 1
     if args.load_model_path is not None:
         checkpoint = torch.load(args.load_model_path)
         model.load_state_dict(checkpoint['model_state_dict'])
@@ -1460,30 +1482,39 @@ def main():
     best_chosen_val_acc = 0.0
     best_val_loss = 100000  # Initialize best validation loss to infinity
     best_epoch = 0
-    distance_loss = []
-    N=9
-    for t in range(1, 10):  # Adjust based on the length of the video 
-        if args.distance_type == "exp":
-            distace_cost = args.distance_weight*(np.exp(-0.157 * (t - 1)))
-        elif args.distance_type == "quad":
-            distace_cost = args.distance_weight * ((N - t + 1) / N) ** 2  #find good values for distance factor and value inside exp term
-        distance_loss.append(distace_cost)
+    
+    ## ----------- Remove distance loss 
+    #distance_loss = []
+    # N=9
+    # for t in range(1, 10):  # Adjust based on the length of the video 
+    #     if args.distance_type == "exp":
+    #         distace_cost = args.distance_weight*(np.exp(-0.157 * (t - 1)))
+    #     elif args.distance_type == "quad":
+    #         distace_cost = args.distance_weight * ((N - t + 1) / N) ** 2  #find good values for distance factor and value inside exp term
+    #     distance_loss.append(distace_cost)
+    # distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
+    # distance_loss = distance_loss.to(device)
+    # logging.info(f"Distance loss: {distance_loss}")
+    ## ----------- Remove distance loss End
+    
+    
+    distance_loss = [0.0] * args.num_classes
     distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
     distance_loss = distance_loss.to(device)
     logging.info(f"Distance loss: {distance_loss}")
     
-    for epoch in range(start_epoch, args.num_epochs):
+    for epoch in range(start_epoch, args.num_epochs+1):
         # Start epoch runtime tracking
         epoch_start_time = time.time()
        
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, criterion, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
-        if (epoch+1) % args.save_every == 0:
+        if (epoch) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, criterion, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
+            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -1520,7 +1551,7 @@ def main():
                
             if args.wandb_status:
                 wandb.log({
-                    "Epoch": epoch+1,
+                    "Epoch": epoch,
                     "Train Loss": train_loss,
                     "Train Acc": train_acc,
                     "Val Loss": val_loss,
@@ -1544,12 +1575,12 @@ def main():
                     wandb.log({f"Train Top{k} Accuracy": topk_accuracies[k]})
                     wandb.log({f"Val Top{k} Accuracy": val_topk_accuracies[k]})
 
-            logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            logging.info(f"Epoch [{epoch}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             # # Log top-k accuracies
             train_topk_str = "/".join([f"{topk_accuracies[k]:.4f}" for k in args.topk_values])
             val_topk_str = "/".join([f"{val_topk_accuracies[k]:.4f}" for k in args.topk_values])
-            logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
-            logging.info(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
+            logging.info(f"Epoch [{epoch}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
+            logging.info(f"Epoch [{epoch}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
             logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
             # Log training best action and chosen action for 10 samples with video names
@@ -1564,11 +1595,34 @@ def main():
             logging.info(f"Validation Chosen Actions: {val_chosen_actions[:80]}")
             logging.info(f"Validation Video Names: {val_video_names[:80]}")
             
+            # ------- Persist per-video actions to CSV for this epoch -------
+            try:
+                best_col = f"epoch_best_{epoch}"
+                chosen_col = f"epoch_chosen_{epoch}"
+
+                current_df = pd.DataFrame({
+                    'video_name': list(val_video_names),
+                    best_col: list(map(int, val_best_actions.cpu().tolist())),
+                    chosen_col: list(map(int, val_chosen_actions.cpu().tolist())),
+                })
+
+                if actions_df is None:
+                    actions_df = current_df
+                else:
+                    for c in [best_col, chosen_col]:
+                        if c in actions_df.columns:
+                            actions_df = actions_df.drop(columns=[c])
+                    actions_df = actions_df.merge(current_df, on='video_name', how='outer')
+
+                actions_df.to_csv(actions_csv_path, index=False)
+                logging.info(f"Saved per-video actions CSV to: {actions_csv_path}")
+            except Exception as e:
+                logging.warning(f"Failed saving per-video actions CSV: {str(e)}")
+            # ----------------------------------------------------------------
             
-            
-            print(f"Epoch [{epoch+1}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
-            # print(f"Epoch [{epoch+1}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
-            print(f"Epoch [{epoch+1}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
+            print(f"Epoch [{epoch}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            # print(f"Epoch [{epoch}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
+            print(f"Epoch [{epoch}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
             print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
             # Log memory usage

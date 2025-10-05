@@ -66,12 +66,12 @@ class ClipDataset(Dataset):
         
         return (
             torch.from_numpy(data['masks']),
-            torch.from_numpy(data['global_no_df_loss_complement']),
-            torch.from_numpy(data['global_post_df_loss_complement'][1:]), #removed initial frame correction
+            torch.from_numpy(data['local_no_df_loss_complement']),
+            torch.from_numpy(data['local_post_df_loss_complement']), #removed initial frame correction
             os.path.basename(info['npz_file'])
         )
         
-def get_max_index_distribution(dataset):
+def get_min_index_distribution(args, dataset):
     counter = Counter()
 
     for i in tqdm(range(len(dataset))):
@@ -80,15 +80,16 @@ def get_max_index_distribution(dataset):
         # Ensure tensors are 1D
         no_df_val = no_df_val.view(-1)        # Shape: [1]
         post_df_vals = post_df_vals.view(-1)  # Shape: [9]
+        post_df_vals = post_df_vals+args.alpha
 
         # Concatenate to get [10] vector
         combined = torch.cat([no_df_val, post_df_vals], dim=0)
 
         # Get index of max
-        max_idx = int(torch.argmax(combined).item())
+        min_idx = int(torch.argmin(combined).item())
 
         # Count it
-        counter[max_idx] += 1
+        counter[min_idx] += 1
 
     return counter
 
@@ -100,22 +101,50 @@ def get_dataloaders( args, batch_size=8, split_ratio=0.8):
         val_dataset = ClipDataset(args.data_npz_dir_test, args)
     else:
         dataset = ClipDataset(args.data_npz_dir, args)
-        # Simple random split instead of stratified split
-        dataset_size = len(dataset)
-        indices = list(range(dataset_size))
-        split = int(np.floor(split_ratio * dataset_size))
+        npz_files = dataset.npz_files
         
-        # Shuffle indices
-        np.random.shuffle(indices)
+        # Load the split dictionary
+        with open(args.split_dict_path, 'r') as f:
+            data_split_dict = eval(f.read())  # Load the dictionary from file
         
-        train_idx, val_idx = indices[:split], indices[split:]
+        # Get the subject IDs for validation set from the specified array_id
+        if args.array_id in data_split_dict:
+            val_subject_ids = data_split_dict[args.array_id]
+            print(f"Using array_id {args.array_id} with validation subject IDs: {val_subject_ids}")
+        else:
+            raise ValueError(f"array_id {args.array_id} not found in split dictionary. Available keys: {list(data_split_dict.keys())}")
+        
+        # Extract subject IDs from npz file names and create train/val indices
+        train_idx = []
+        val_idx = []
+        
+        for i, npz_file in enumerate(npz_files):
+            # Extract subject ID from filename like "D_NBI_67_20160415_0_3_0_data.npz"
+            filename = os.path.basename(npz_file)
+            # Split by '_' and get the subject ID (3rd element after D_NBI)
+            parts = filename.split('_')
+            if len(parts) >= 3 and parts[0] == 'D' and parts[1] == 'NBI':
+                subject_id = int(parts[2])
+                
+                if subject_id in val_subject_ids:
+                    val_idx.append(i)
+                else:
+                    train_idx.append(i)
+            else:
+                print(f"Warning: Could not parse subject ID from filename: {filename}")
+                # Default to training set if parsing fails
+                train_idx.append(i)
+        
+        print(f"Train indices: {len(train_idx)}, Validation indices: {len(val_idx)}")
+        print(f"Train subject IDs: {[int(os.path.basename(npz_files[i]).split('_')[2]) for i in train_idx]}")
+        print(f"Validation subject IDs: {[int(os.path.basename(npz_files[i]).split('_')[2]) for i in val_idx]}")
 
         train_dataset = Subset(dataset, train_idx)
         val_dataset = Subset(dataset, val_idx)
     
     # Check max index distribution
-    train_dist = get_max_index_distribution(train_dataset)
-    val_dist = get_max_index_distribution(val_dataset)
+    train_dist = get_min_index_distribution(args, train_dataset)
+    val_dist = get_min_index_distribution(args, val_dataset)
 
     print("Train split distribution:", dict(train_dist))
     print("Validation split distribution:", dict(val_dist))
