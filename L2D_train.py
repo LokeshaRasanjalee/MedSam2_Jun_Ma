@@ -1144,7 +1144,7 @@ def main():
     parser.add_argument(
         "--full_run",
         type=bool,
-        default=False,
+        default=True,
         help="Run the full training process (default: False)",
     )
     parser.add_argument(
