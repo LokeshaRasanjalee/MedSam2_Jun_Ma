@@ -64,6 +64,8 @@ class ClipDataset(Dataset):
         #         info['post_df_sam_complement'],
         #         info['npz_file'])
         
+        #Here sholud be dice accuracy as no_df_loss_complement and post_df_loss_complement
+        
         return (
             torch.from_numpy(data['masks']),
             torch.from_numpy(data['local_no_df_loss_complement']),

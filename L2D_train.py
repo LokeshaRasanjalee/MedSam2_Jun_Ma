@@ -15,7 +15,7 @@ import json
 from collections import deque
 import glob
 from sam2.build_sam import build_sam2_video_predictor
-import wandb
+# import wandb
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -451,8 +451,8 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
             #Chosen cost
             all_costs = torch.cat([torch.zeros(1, device=device), beta + distance_loss])
             all_costs = all_costs.unsqueeze(0).repeat(all_accs.size(0), 1) 
-            chosen_cost = torch.gather(all_costs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
-            best_cost = torch.gather(all_costs, 1, best_actions.unsqueeze(1)).squeeze(1)
+            chosen_cost = torch.gather(all_cost_adjusted, 1, chosen_actions.unsqueeze(1)).squeeze(1)
+            best_cost = torch.gather(all_cost_adjusted, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
             correct += (chosen_actions == best_actions).sum().item()
@@ -620,8 +620,8 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, log
             #Chosen cost
             all_costs = torch.cat([torch.zeros(1, device=device), beta + distance_loss])
             all_costs = all_costs.unsqueeze(0).repeat(all_accs.size(0), 1) 
-            chosen_cost = torch.gather(all_costs, 1, chosen_actions.unsqueeze(1)).squeeze(1)
-            best_cost = torch.gather(all_costs, 1, best_actions.unsqueeze(1)).squeeze(1)
+            chosen_cost = torch.gather(all_cost_adjusted, 1, chosen_actions.unsqueeze(1)).squeeze(1)
+            best_cost = torch.gather(all_cost_adjusted, 1, best_actions.unsqueeze(1)).squeeze(1)
 
             # Compute metrics
             correct += (chosen_actions == best_actions).sum().item()
@@ -1411,19 +1411,19 @@ def main():
         logging.info(f"TensorBoard logs will be saved to: {tensor_dir}/{run_name}")
         print(f"TensorBoard logs will be saved to: {tensor_dir}/{run_name}")
         
-    if args.wandb_status:
-        wandb.init(
-            # set the wandb project where this run will be logged
-            project="L2D-Video",
-            name= f"{timestamp}_{args.experiment_name}",
-            # track hyperparameters and run metadata
-            config={
-                "learning_rate": args.learning_rate,
-                "architecture": args.experiment_name,
-                "epochs": args.num_epochs,
-                "batch_size": args.batch_size
-            }
-        )
+    # if args.wandb_status:
+    #     wandb.init(
+    #         # set the wandb project where this run will be logged
+    #         project="L2D-Video",
+    #         name= f"{timestamp}_{args.experiment_name}",
+    #         # track hyperparameters and run metadata
+    #         config={
+    #             "learning_rate": args.learning_rate,
+    #             "architecture": args.experiment_name,
+    #             "epochs": args.num_epochs,
+    #             "batch_size": args.batch_size
+    #         }
+    #     )
 
 
     # Log the git commit hash and branch
@@ -1549,31 +1549,31 @@ def main():
                     writer.add_scalar(f'Top{k} Accuracy/train', topk_accuracies[k], epoch)
                     writer.add_scalar(f'Top{k} Accuracy/val', val_topk_accuracies[k], epoch)
                
-            if args.wandb_status:
-                wandb.log({
-                    "Epoch": epoch,
-                    "Train Loss": train_loss,
-                    "Train Acc": train_acc,
-                    "Val Loss": val_loss,
-                    "Val Acc": val_acc,
-                    "Train Regret": train_regret,
-                    "Val Regret": mean_regret,
-                    "Train Avg Rank Distance": train_avg_rank_distance,
-                    "Val Avg Rank Distance": val_avg_rank_distance,
-                    "Train Best Acc": train_best_acc,
-                    "Train Chosen Acc": train_chosen_acc,
-                    "Val Best Acc": val_best_acc,
-                    "Val Chosen Acc": val_chosen_acc,
-                    "Train Chosen Cost": train_chosen_cost,
-                    "Train Best Cost": train_best_cost,
-                    "Val Chosen Cost": val_chosen_cost,
-                    "Val Best Cost": val_best_cost,
-                })
+            # if args.wandb_status:
+            #     wandb.log({
+            #         "Epoch": epoch,
+            #         "Train Loss": train_loss,
+            #         "Train Acc": train_acc,
+            #         "Val Loss": val_loss,
+            #         "Val Acc": val_acc,
+            #         "Train Regret": train_regret,
+            #         "Val Regret": mean_regret,
+            #         "Train Avg Rank Distance": train_avg_rank_distance,
+            #         "Val Avg Rank Distance": val_avg_rank_distance,
+            #         "Train Best Acc": train_best_acc,
+            #         "Train Chosen Acc": train_chosen_acc,
+            #         "Val Best Acc": val_best_acc,
+            #         "Val Chosen Acc": val_chosen_acc,
+            #         "Train Chosen Cost": train_chosen_cost,
+            #         "Train Best Cost": train_best_cost,
+            #         "Val Chosen Cost": val_chosen_cost,
+            #         "Val Best Cost": val_best_cost,
+            #     })
                 
-                # Add top-k accuracies to wandb
-                for k in args.topk_values:
-                    wandb.log({f"Train Top{k} Accuracy": topk_accuracies[k]})
-                    wandb.log({f"Val Top{k} Accuracy": val_topk_accuracies[k]})
+            #     # Add top-k accuracies to wandb
+            #     for k in args.topk_values:
+            #         wandb.log({f"Train Top{k} Accuracy": topk_accuracies[k]})
+            #         wandb.log({f"Val Top{k} Accuracy": val_topk_accuracies[k]})
 
             logging.info(f"Epoch [{epoch}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             # # Log top-k accuracies
