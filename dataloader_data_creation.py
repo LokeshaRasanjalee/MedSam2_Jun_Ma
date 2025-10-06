@@ -176,8 +176,11 @@ class ClipDataset(Dataset):
                 local_no_df_loss_norm = local_normalized[0]
                 local_post_df_loss_norm = local_normalized[1:]
                 
-                local_no_df_loss_complement = 1 - local_no_df_loss_norm
-                local_post_df_loss_complement = 1 - local_post_df_loss_norm
+                local_no_df_loss_complement =  local_no_df_loss_norm
+                local_post_df_loss_complement = local_post_df_loss_norm
+                
+                # local_no_df_loss_complement = 1 - local_no_df_loss_norm
+                # local_post_df_loss_complement = 1 - local_post_df_loss_norm
                 
                 # Pre-compute normalized and permuted masks
                 masks = self.mask_transform(data['Masks'])
