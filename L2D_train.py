@@ -366,7 +366,8 @@ def mao_deferral_loss_mae(
     # distance_loss = distance_loss.view(1, -1)                # [1, n_e]
 
     # cost = α * (1 - acc) + β 
-    cost = torch.clamp(alpha * (1.0 - acc_post_def_batch) + beta + distance_loss, max=1.0)  # [B, n_e]
+    cost_raw = alpha * (1.0 - acc_post_def_batch) + beta + distance_loss  # [B, n_e]
+    cost = torch.sigmoid(10 * (cost_raw))  # [B, n_e]
     c_bar = 1.0 - cost                                       # [B, n_e]
 
     # Second term: expert loss = 1 - e^{-r_j} / Z

@@ -68,8 +68,8 @@ class ClipDataset(Dataset):
         
         return (
             torch.from_numpy(data['masks']),
-            torch.from_numpy(data['local_no_df_loss_complement']),
-            torch.from_numpy(data['local_post_df_loss_complement']), #removed initial frame correction
+            torch.from_numpy(data['global_no_df_loss_complement']),
+            torch.from_numpy(data['global_post_df_loss_complement']),
             os.path.basename(info['npz_file'])
         )
         
