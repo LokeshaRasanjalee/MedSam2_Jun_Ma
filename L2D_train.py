@@ -1162,13 +1162,13 @@ def main():
     parser.add_argument(
         "--p1",
         type=float,
-        default=234.0,
+        default=0,
         help="P1 parameter for deferral loss (default: 312.0)",
     )
     parser.add_argument(
         "--p99",
         type=float,
-        default=8384.0,
+        default=1,
         help="P99 parameter for deferral loss (default: 10256.0)",
     )
     parser.add_argument(

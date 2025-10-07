@@ -130,54 +130,56 @@ class ClipDataset(Dataset):
                 
                 #---Related to global loss calculation
                 
-                # replaced_losses = np.array([
-                #     1 if (v is None or np.isnan(v)) else v
-                #     for v in all_losses
-                # ], dtype=np.float32)
+                replaced_losses = np.array([
+                    1 if (v is None or np.isnan(v)) else v
+                    for v in all_losses
+                ], dtype=np.float32)
                 
-                 # Normalize using percentiles
-                # global_normalized = (replaced_losses - global_p1) / (global_p99 - global_p1 + 1e-6)
-                # global_normalized = np.clip(global_normalized, 0, 1)
+                # Normalize using percentiles
+                # Hardcorded percentiles to 0 and 1
+                global_normalized = (replaced_losses - global_p1) / (global_p99 - global_p1)
+                #global_normalized = (replaced_losses - global_p1) / (global_p99 - global_p1 + 1e-6)
+                global_normalized = np.clip(global_normalized, 0, 1)
            
                 
-                # global_no_df_loss_norm = global_normalized[0]
-                # global_post_df_loss_norm = global_normalized[1:]
+                global_no_df_loss_norm = global_normalized[0]
+                global_post_df_loss_norm = global_normalized[1:]
                 
-                # global_no_df_loss_complement = 1 - global_no_df_loss_norm
-                # global_post_df_loss_complement = 1 - global_post_df_loss_norm
+                global_no_df_loss_complement = global_no_df_loss_norm
+                global_post_df_loss_complement = global_post_df_loss_norm
                 
                 
-                #---Related to local loss calculation End
+                #---Related to loss calculation 
                 
                 
                 # Normalize using min and max
                 # Filter out None values first:
-                valid_losses = [v for v in all_losses if v is not None]
+                # valid_losses = [v for v in all_losses if v is not None]
 
-                if len(valid_losses) == 0:
-                    raise ValueError(f"No valid losses found in all_losses for min/max calculation: {all_losses}")
+                # if len(valid_losses) == 0:
+                #     raise ValueError(f"No valid losses found in all_losses for min/max calculation: {all_losses}")
 
-                # Compute min and max on valid floats only
-                min_local_loss = np.min(valid_losses)
-                max_local_loss = np.max(valid_losses)
+                # # Compute min and max on valid floats only
+                # min_local_loss = np.min(valid_losses)
+                # max_local_loss = np.max(valid_losses)
                 
-                local_replaced_losses = np.array([
-                    1 if (v is None or np.isnan(v)) else v
-                    for v in all_losses
-                ], dtype=np.float32) # to clamp values at 1
+                # local_replaced_losses = np.array([
+                #     1 if (v is None or np.isnan(v)) else v
+                #     for v in all_losses
+                # ], dtype=np.float32) # to clamp values at 1
                 
-                local_normalized = (local_replaced_losses - min_local_loss) / (max_local_loss - min_local_loss + 1e-6)
-                local_normalized = np.clip(local_normalized, 0, 1)  # Clamp values between 0 and 1
+                # local_normalized = (local_replaced_losses - min_local_loss) / (max_local_loss - min_local_loss + 1e-6)
+                # local_normalized = np.clip(local_normalized, 0, 1)  # Clamp values between 0 and 1
                 
-                # if torch.sum(local_normalized == 1) > 1 or torch.sum(local_normalized == 0) > 1:
-                #     print(f"{video_name} : More than one 1 or 0 in local_normalized. {local_normalized}")
-                #     continue
+                # # if torch.sum(local_normalized == 1) > 1 or torch.sum(local_normalized == 0) > 1:
+                # #     print(f"{video_name} : More than one 1 or 0 in local_normalized. {local_normalized}")
+                # #     continue
                 
-                local_no_df_loss_norm = local_normalized[0]
-                local_post_df_loss_norm = local_normalized[1:]
+                # local_no_df_loss_norm = local_normalized[0]
+                # local_post_df_loss_norm = local_normalized[1:]
                 
-                local_no_df_loss_complement =  local_no_df_loss_norm
-                local_post_df_loss_complement = local_post_df_loss_norm
+                # local_no_df_loss_complement =  local_no_df_loss_norm
+                # local_post_df_loss_complement = local_post_df_loss_norm
                 
                 # local_no_df_loss_complement = 1 - local_no_df_loss_norm
                 # local_post_df_loss_complement = 1 - local_post_df_loss_norm
@@ -207,7 +209,7 @@ class ClipDataset(Dataset):
                 # masks = torch.from_numpy(normalized_masks).float()
                 
                 images_np = images.numpy()
-                combined = np.concatenate([masks, images_np], axis=0)
+                combined = np.concatenate([masks_binary, images_np], axis=0)
                 
                 
                 # Save data as npz file in the new directory
@@ -216,10 +218,10 @@ class ClipDataset(Dataset):
                 np.savez(
                     npz_file,    
                     masks=combined,
-                    local_no_df_loss_complement=local_no_df_loss_complement,
-                    local_post_df_loss_complement=local_post_df_loss_complement,
-                    # global_no_df_loss_complement=global_no_df_loss_complement,
-                    # global_post_df_loss_complement=global_post_df_loss_complement
+                    # local_no_df_loss_complement=local_no_df_loss_complement,
+                    # local_post_df_loss_complement=local_post_df_loss_complement,
+                    global_no_df_loss_complement=global_no_df_loss_complement,
+                    global_post_df_loss_complement=global_post_df_loss_complement
                 )
                 
                 self.video_metadata.append(
