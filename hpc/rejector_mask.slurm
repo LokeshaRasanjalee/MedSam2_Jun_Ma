@@ -22,7 +22,7 @@ conda activate medsam2
 cd /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma
 
 # --- Git branch checkout (local only, offline safe) ---
-BRANCH_NAME="your_branch_name_here"
+BRANCH_NAME="mao_two_stage_all_losses_barretts"
 echo "Switching to local branch: ${BRANCH_NAME}"
 
 if git show-ref --verify --quiet "refs/heads/${BRANCH_NAME}"; then
