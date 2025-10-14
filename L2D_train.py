@@ -1304,7 +1304,7 @@ def main():
     parser.add_argument(
         "--num_classes",
         type=int,
-        default=10,
+        default=9,
         help="Number of classes for the model (default: 10)",
     )
     parser.add_argument(
@@ -1575,7 +1575,7 @@ def main():
             #         wandb.log({f"Train Top{k} Accuracy": topk_accuracies[k]})
             #         wandb.log({f"Val Top{k} Accuracy": val_topk_accuracies[k]})
 
-            logging.info(f"Epoch [{epoch}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            logging.info(f"Epoch [{epoch}/{args.num_epochs}] Train Loss: {train_loss:.6f} train_chosen_acc: {train_chosen_acc:.4f} Val Loss: {val_loss:.6f} val_chosen_acc: {val_chosen_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             # # Log top-k accuracies
             train_topk_str = "/".join([f"{topk_accuracies[k]:.4f}" for k in args.topk_values])
             val_topk_str = "/".join([f"{val_topk_accuracies[k]:.4f}" for k in args.topk_values])
@@ -1620,7 +1620,7 @@ def main():
                 logging.warning(f"Failed saving per-video actions CSV: {str(e)}")
             # ----------------------------------------------------------------
             
-            print(f"Epoch [{epoch}/{args.num_epochs}] Train Loss: {train_loss:.6f} Train Acc: {train_acc:.4f} Val Loss: {val_loss:.6f} Val Acc: {val_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            print(f"Epoch [{epoch}/{args.num_epochs}] Train Loss: {train_loss:.6f} train_chosen_acc: {train_chosen_acc:.4f} Val Loss: {val_loss:.6f} val_chosen_acc: {val_chosen_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
             # print(f"Epoch [{epoch}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
             print(f"Epoch [{epoch}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
             print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
