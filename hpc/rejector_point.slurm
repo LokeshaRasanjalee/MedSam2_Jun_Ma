@@ -12,7 +12,7 @@
 #SBATCH --mail-user=lokesha.thennakoonmudiyanselage@adelaide.edu.au
 
 # --- Array configuration ---
-#SBATCH --array=1-3
+#SBATCH --array=0-3
 
 # --- Setup environment ---
 source /gpfs/apps/icl/software/Anaconda3/2023.03/etc/profile.d/conda.sh
@@ -29,14 +29,14 @@ INDEX=${SLURM_ARRAY_TASK_ID}
 python L2D_train.py \
  --base_video_dir ./Barretts_data/dataset_tmp/Images/ \
  --input_mask_dir ./Barretts_data/dataset_tmp/Masks/ \
- --data_npz_dir ./l2d_models/mask_p0i_k10_all/data_npz_4_iou/ \
+ --data_npz_dir ./l2d_models/point_3_p0i_k10_all/data_npz_4_iou/ \
  -o ./l2d_train_outputs/ \
- --experiment_name "mask_k10_b0025_lr7_${INDEX}" \
+ --experiment_name "point_k10_b0045_lr7_${INDEX}" \
  --batch_size 32 \
  --num_epochs 1000 \
  --learning_rate 1e-7 \
  --alpha 1 \
- --beta 0.025 \
+ --beta 0.045 \
  --full_run True \
  --num_workers 4 \
  --dropout 0 \
@@ -44,7 +44,7 @@ python L2D_train.py \
  --topk_values 1 3 \
  --loss_type 'mae' \
  --array_id ${INDEX} \
- --split_dict_path ./l2d_models/mask_p0i_k10_all/split_dict.txt \
+ --split_dict_path ./l2d_models/point_3_p0i_k10_all/split_dict.txt \
  --tensorboard_status True \
  --save_every 10 \
  --save_model True
