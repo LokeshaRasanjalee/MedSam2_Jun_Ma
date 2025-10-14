@@ -355,10 +355,16 @@ def mao_deferral_loss_mae(
 
     exp_neg_r = torch.exp(-rejector_logits)                  # [B, n_e]
     Z = 1.0 + torch.sum(exp_neg_r, dim=1, keepdim=True)      # [B, 1]
+    
+    non_df_cost = 1-acc_no_def_batch.unsqueeze(1)
+    cost = torch.clamp(alpha * (1.0 - acc_post_def_batch) + beta + distance_loss, max=1.0)  # [B, n_e]
+    all_costs = torch.cat([non_df_cost, cost], dim=1)
+    tot_max = all_costs.max(dim=1, keepdim=True)[0]
+    cost_gap = tot_max - all_costs
 
     # First term: machine loss = 1 - (1 / Z)
     machine_term = 1.0 - (1.0 / Z)                            # [B, 1]
-    term1 = acc_no_def_batch.unsqueeze(1) * machine_term     # [B, 1]
+    term1 = cost_gap[:,0].unsqueeze(1) * machine_term     # [B, 1]
 
     # Handle distance loss
     # if not torch.is_tensor(distance_loss):
@@ -366,8 +372,8 @@ def mao_deferral_loss_mae(
     # distance_loss = distance_loss.view(1, -1)                # [1, n_e]
 
     # cost = α * (1 - acc) + β 
-    cost = torch.clamp(alpha * (1.0 - acc_post_def_batch) + beta + distance_loss, max=1.0)  # [B, n_e]
-    c_bar = 1.0 - cost                                       # [B, n_e]
+    #cost = torch.clamp(alpha * (1.0 - acc_post_def_batch) + beta + distance_loss, max=1.0)  # [B, n_e]
+    c_bar = cost_gap[:,1:]                                       # [B, n_e]
 
     # Second term: expert loss = 1 - e^{-r_j} / Z
     prob_j = exp_neg_r / Z                                   # [B, n_e]
