@@ -126,7 +126,7 @@ class ClipDataset(Dataset):
                     Loss_post_defer = np.array(data['L_post_defer_list'], dtype=object)
 
                 # Concatenate: (N+1,) with first element no_defer
-                all_losses = np.concatenate([Loss_no_defer, Loss_post_defer])
+                all_losses = np.concatenate([Loss_no_defer, Loss_post_defer[1:]])
                 
                 #---Related to global loss calculation
                 
