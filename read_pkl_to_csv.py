@@ -85,9 +85,9 @@ def read_pkl_files_to_csv(pkl_directory, output_csv_path, threshold_to_keep=50):
 
 def main():
     # Define paths
-    pkl_directory = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/l2d_models/mask_p0i_k10_all/iou_dict"
-    output_csv_path = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/iou_scores_data_threshold_0_mask.csv"
-    threshold_to_keep = '0'   # <-- only keep threshold=50
+    pkl_directory = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/l2d_models/box_p0i_k10_all/iou_dict"
+    output_csv_path = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/iou_scores_data_threshold_90_box.csv"
+    threshold_to_keep = '0_90'   # <-- only keep threshold=50
     
     # Check if directory exists
     if not os.path.exists(pkl_directory):
