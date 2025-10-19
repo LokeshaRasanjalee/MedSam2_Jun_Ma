@@ -120,26 +120,51 @@ def get_dataloaders( args, batch_size=8, split_ratio=0.8):
         train_idx = []
         val_idx = []
         
-        for i, npz_file in enumerate(npz_files):
-            # Extract subject ID from filename like "D_NBI_67_20160415_0_3_0_data.npz"
-            filename = os.path.basename(npz_file)
-            # Split by '_' and get the subject ID (3rd element after D_NBI)
-            parts = filename.split('_')
-            if len(parts) >= 3 and parts[0] == 'D' and parts[1] == 'NBI':
-                subject_id = int(parts[2])
-                
-                if subject_id in val_subject_ids:
-                    val_idx.append(i)
-                else:
-                    train_idx.append(i)
-            else:
-                print(f"Warning: Could not parse subject ID from filename: {filename}")
-                # Default to training set if parsing fails
-                train_idx.append(i)
+        if args.dataset == "barretts":
         
-        print(f"Train indices: {len(train_idx)}, Validation indices: {len(val_idx)}")
-        print(f"Train subject IDs: {[int(os.path.basename(npz_files[i]).split('_')[2]) for i in train_idx]}")
-        print(f"Validation subject IDs: {[int(os.path.basename(npz_files[i]).split('_')[2]) for i in val_idx]}")
+            for i, npz_file in enumerate(npz_files):
+                # Extract subject ID from filename like "D_NBI_67_20160415_0_3_0_data.npz"
+                filename = os.path.basename(npz_file)
+                # Split by '_' and get the subject ID (3rd element after D_NBI)
+                parts = filename.split('_')
+                if len(parts) >= 3 and parts[0] == 'D' and parts[1] == 'NBI':
+                    subject_id = int(parts[2])
+                    
+                    if subject_id in val_subject_ids:
+                        val_idx.append(i)
+                    else:
+                        train_idx.append(i)
+                else:
+                    print(f"Warning: Could not parse subject ID from filename: {filename}")
+                    # Default to training set if parsing fails
+                    train_idx.append(i)
+                    
+        elif args.dataset == "sun":
+            for i, npz_file in enumerate(npz_files):
+                # Extract subject ID from filename like "case1_1_1_0001_data.npz"
+                filename = os.path.basename(npz_file)
+                # Remove .pkl extension and split by '_'
+                filename_without_ext = filename.replace('.npz', '')
+                parts = filename_without_ext.split('_')
+                
+                # Remove last 3 parts to get subject ID
+                # For case1_1_1_0001_data -> subject_id = case1_1
+                # For case1_2_2_0003_data -> subject_id = case1_2  
+                # For case3_2_0003_data -> subject_id = case3
+                if len(parts) >= 4 and parts[0].startswith('case'):
+                    # Remove last 3 parts and join the remaining parts
+                    subject_id = '_'.join(parts[:-3])
+                    
+                    if subject_id in val_subject_ids:
+                        val_idx.append(i)
+                    else:
+                        train_idx.append(i)
+                else:
+                    print(f"Warning: Could not parse subject ID from filename: {filename}")
+                    # Default to training set if parsing fails
+                    train_idx.append(i)
+        
+        print(f"Train indices: {(train_idx)}, Validation indices: {(val_idx)}")
 
         train_dataset = Subset(dataset, train_idx)
         val_dataset = Subset(dataset, val_idx)

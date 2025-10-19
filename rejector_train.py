@@ -1311,7 +1311,7 @@ def main():
         "--train_test_split",
         type=bool,
         default=False,
-        help="Have seperate folders for train and test datasets(default: False)",
+        help="Have seperate folders for train and test datasdatasetets(default: False)",
     )
     
     parser.add_argument(
@@ -1363,7 +1363,12 @@ def main():
         default=None,
         help="Data npz dir (default: None)",
     )
-    
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="barretts",
+        help="Dataset (default: barretts)",
+    )
     args = parser.parse_args()
     
     is_cuda_available = check_cuda()
