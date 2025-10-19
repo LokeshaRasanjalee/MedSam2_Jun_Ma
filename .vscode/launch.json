@@ -4,6 +4,7 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [ 
+
     
 
 
@@ -109,7 +110,15 @@
             "request": "launch",
             "program": "rejector_synthetic.py",
             "console": "integratedTerminal"
-        }
+        },
+        {
+            "name": "L2D Train r(2+1)D Classifier sun",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "rejector_train.py",
+            "console": "integratedTerminal",
+            "args": "--base_video_dir ./Barretts_data/dataset_tmp/Images/ --input_mask_dir ./Barretts_data/dataset_tmp/Masks/ --data_npz_dir ./l2d_models_sun/sun_point_2_0/data_npz_4_iou/ -o ./media/out/ --experiment_name 'SUN_test' --batch_size 32 --num_epochs 30 --learning_rate 1e-7 --alpha 1 --beta 0.9 --full_run True --num_workers 4 --dropout 0 --num_classes 9  --topk_values 1 3 --loss_type 'mae' --array_id 0 --split_dict_path ./l2d_models_sun/sun_point_2_0/split_dict.txt --tensorboard_status False"},
         
+
     ]
 }
