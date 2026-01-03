@@ -5,6 +5,7 @@
     "version": "0.2.0",
     "configurations": [ 
 
+
     
 
 
@@ -37,6 +38,14 @@
             "console": "integratedTerminal",
             "args": "--base_video_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/Barretts_data/dataset_tmp/Images/ --input_mask_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/Barretts_data/dataset_tmp/Masks/ --post_hoc_model_save_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/l2d_models --output_mask_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/media/Inference --array_id 0 --num_chunks 3 --experiment_name debug_run_box --sam2_cfg configs/sam2.1_hiera_t512.yaml --sam2_checkpoint /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/checkpoints/sam2.1_hiera_tiny.pt --sample_factor 5 --prompt 'point' 'point'"
         },
+
+        {
+            "name": "L2D batch train miccai",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "L2D_batch_train.py",
+            "console": "integratedTerminal",
+            "args": "--base_video_dir /home/tim-3090/Documents/code/MedSam2_Jun_Ma/tmp_len_20_vtus/Images/ --input_mask_dir /home/tim-3090/Documents/code/MedSam2_Jun_Ma/tmp_len_20_vtus/Masks/ --sam2_cfg 'configs/sam2.1_hiera_t512.yaml'   --sam2_checkpoint  '/home/tim-3090/Documents/code/MedSam2_Jun_Ma/checkpoints/sam2.1_hiera_tiny.pt' -o ./media/Inference -e 'test_run' --num_chunks 1 --array_id 0 --sample_factor 10 -e 'test k p0_i' --prompt 'box' 'box' --post_hoc_model_save_dir ./media/Inference "},
     
 
 

@@ -730,7 +730,10 @@ def vos_inference(
     prompt="mask" "mask",
     num_clicks=3,
     blob_centers_list=[],
-    labels_list=[]
+    labels_list=[],
+    model_type = "Auto",
+    human_prompt = 1.2,
+    machine_prompt = 2
     
 ):
     
@@ -921,7 +924,15 @@ def vos_inference(
                     print("Multiple objects in the first frame.")
                     return None, None 
             
-                box_factor = 1
+                # box_factor = 1
+                if model_type == "Auto":
+                    box_factor = machine_prompt
+                elif model_type == "Expert":
+                    box_factor = human_prompt
+                else:
+                    raise SystemExit("Exiting with error due to invalid model type.")
+                    print("Invalid model type.")
+                    return None, None
                 
             
                 bbox = get_bounding_box(cleaned_mask, box_factor)
@@ -1010,7 +1021,15 @@ def vos_inference(
                         print("Multiple objects in the first frame.")
                         return None, None  
                     
-                    box_factor = 1
+                    # box_factor = 1
+                    if model_type == "Auto":
+                        box_factor = machine_prompt
+                    elif model_type == "Expert":
+                        box_factor = human_prompt
+                    else:
+                        raise SystemExit("Exiting with error due to invalid model type.")
+                        print("Invalid model type.")
+                        return None, None
                     
                     bbox = get_bounding_box(cleaned_mask, box_factor)
                     labels = np.ones(1)
@@ -1333,6 +1352,18 @@ def main():
         default=3,
         help="number of clicks for the video",
     )   
+    parser.add_argument(
+        "--human_prompt",
+        type=float,
+        default=1.2,
+        help="human prompt box size.",
+    )
+    parser.add_argument(
+        "--machine_prompt",
+        type=float,
+        default=2,
+        help="machine prompt box size.",
+    )
     
     args = parser.parse_args()
 
@@ -1425,7 +1456,7 @@ def main():
     
         # ----- Define Resize Transform for R(2+1)D -----
     r2plus1d_transform = T.Compose([
-        T.Resize((112, 112)),    # Downsample frames to 112x112
+        T.Resize((112, 112), interpolation=T.InterpolationMode.BILINEAR),    # Downsample frames to 112x112
         T.ToTensor(),            # (H, W, C) -> (C, H, W)
     ])
     
@@ -1509,7 +1540,10 @@ def main():
             prompt=args.prompt,
             num_clicks=args.num_clicks,
             blob_centers_list=blob_centers_list,
-            labels_list=labels_list
+            labels_list=labels_list,
+            model_type = "Auto",
+            human_prompt = args.human_prompt,
+            machine_prompt = args.machine_prompt
     
             )
         
@@ -1524,11 +1558,11 @@ def main():
             
         
         
-        binary_masks_first = []
+        binary_masks_first = {}
         for frame_index, segment in video_segments_first.items():
             mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
             binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
-            binary_masks_first.append(binary_mask)
+            binary_masks_first[frame_index] = binary_mask
             
         # img_list=[]
         # for f_name in frame_names:
@@ -1541,9 +1575,9 @@ def main():
         #L_no_defer_full = compute_downstream_loss(video_segments_first, gt_list, frame_indices)
 
         # Uncorrected downstream loss
-        L_no_defer, iou_list = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        L_no_defer, iou_loss_list_frame_machine = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
         
-        iou_dict["0"] = iou_list
+        iou_dict["0"] = iou_loss_list_frame_machine
         
         #masks generated from first prompt
         clip_frames = []
@@ -1575,9 +1609,9 @@ def main():
             print("second_prompt: ", second_prompt)
             logging.info("second_prompt: " + str(second_prompt))
         
-            input_frame_inds = [initial_prompt, second_prompt]
+            input_frame_inds = [ second_prompt]
             
-            folder_name = "_".join(map(str, input_frame_inds))
+            folder_name = "_".join(map(str, [initial_prompt, second_prompt]))
             folder_name_list.append(folder_name)
             output_mask_dir = os.path.join(args.output_mask_dir, video_name, folder_name)
             
@@ -1596,7 +1630,10 @@ def main():
                 prompt=args.prompt,
                 num_clicks=args.num_clicks,
                 blob_centers_list=point_list_first,
-                labels_list=label_list_first
+                labels_list=label_list_first,
+                model_type = "Expert",
+                human_prompt = args.human_prompt,
+                machine_prompt = args.machine_prompt
                 
                 )
             
@@ -1613,15 +1650,22 @@ def main():
                 
                 
             
-            binary_masks_cor = []
+            binary_masks_cor = {}
             for frame_index, segment in video_segments_cor.items():
                 mask = segment[1]  # Assuming segment is a tuple of (frame_index, mask)
                 binary_mask = (mask > 0).astype(np.uint8)  # Convert to binary mask with values 0 and 1
-                binary_masks_cor.append(binary_mask)
+                binary_masks_cor[frame_index] = binary_mask
 
             # Corrected downstream loss
-            L_post_defer, iou_list = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip)
-            iou_dict[f"{initial_prompt}_{second_prompt}"] = iou_list
+            _, iou_loss_list_frame_expert = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip[second_prompt:])
+            post_df_iou_list = iou_loss_list_frame_machine[:second_prompt] + iou_loss_list_frame_expert
+            L_post_defer = np.mean(post_df_iou_list)
+            
+            
+            
+            
+            
+            iou_dict[f"{initial_prompt}_{second_prompt}"] = post_df_iou_list
             #iou_dict[second_prompt] = iou_list
             
             
