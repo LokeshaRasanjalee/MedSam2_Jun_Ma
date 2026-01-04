@@ -733,11 +733,16 @@ def vos_inference(
     labels_list=[],
     model_type = "Auto",
     human_prompt = 1.2,
-    machine_prompt = 2
+    machine_prompt = 2,
+    annotator_2_mask_dir = None
     
 ):
+    gt_mask_dir = input_mask_dir
     
+    if annotator_2_mask_dir is not None:
+        input_mask_dir = annotator_2_mask_dir
 
+    #Multi annotator dataset supports only mask prompts at the moment
     
     print ("input_frame_inds: ", input_frame_inds)
     """Run inference on a single video with the given predictor."""
@@ -1138,7 +1143,7 @@ def vos_inference(
             confidence_scores[out_frame_idx] = object_score_logits.to(torch.float32).cpu().numpy()
           
         #---------------------------------Save Prediction--------------------------------------  
-        # vis_frame_stride = 1   
+        vis_frame_stride = 1   
         # for out_frame_idx in range(input_frame_inds[0], len(frame_names), vis_frame_stride):
         #     frame_name = frame_names[out_frame_idx]
         #     # print(frame_name)
@@ -1147,7 +1152,7 @@ def vos_inference(
         #     img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
 
         #     # Load ground truth mask image (you can convert it to grayscale if needed)
-        #     gt_mask_path = os.path.join(input_mask_dir, video_name,f"{frame_name}.png")
+        #     gt_mask_path = os.path.join(gt_mask_dir, video_name,f"{frame_name}.png")
         #     gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
 
         #     fig, ax = plt.subplots(figsize=(8, 6))
@@ -1178,6 +1183,56 @@ def vos_inference(
         #     plt.savefig(save_path, dpi=150)
             
         #     plt.close(fig) 
+        
+        #---------------------------------Save Grid Visualization--------------------------------------
+        # Collect all frames for grid visualization
+        # grid_frame_indices = list(range(input_frame_inds[0], len(frame_names), vis_frame_stride))
+        # num_frames = len(grid_frame_indices)
+        
+        # if num_frames > 0:
+        #     # Create a single figure with subplots in a row
+        #     fig, axes = plt.subplots(1, num_frames, figsize=(6 * num_frames, 6))
+        #     if num_frames == 1:
+        #         axes = [axes]  # Make it iterable if only one frame
+            
+        #     for idx, out_frame_idx in enumerate(grid_frame_indices):
+        #         frame_name = frame_names[out_frame_idx]
+                
+        #         # Load RGB frame
+        #         img = Image.open(os.path.join(base_video_dir, video_name, f"{frame_name}.jpg"))
+                
+        #         # Load ground truth mask image
+        #         gt_mask_path = os.path.join(gt_mask_dir, video_name, f"{frame_name}.png")
+        #         gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
+                
+        #         # Show the input image
+        #         axes[idx].imshow(img)
+        #         axes[idx].set_title(f"Frame {out_frame_idx}", fontsize=10)
+        #         axes[idx].axis("off")
+                
+        #         # Convert ground truth to NumPy and normalize to [0,1]
+        #         gt_mask_np = np.array(gt_mask) / 255.0
+                
+        #         # Create transparent green overlay for ground truth
+        #         green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
+        #         green_overlay[..., 1] = 1.0  # green channel
+        #         green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
+                
+        #         # Overlay ground truth
+        #         axes[idx].imshow(green_overlay)
+                
+        #         # Show predicted masks
+        #         if out_frame_idx in video_segments:
+        #             for out_obj_id, out_mask in video_segments[out_frame_idx].items():
+        #                 show_mask(out_mask, axes[idx], obj_id=out_obj_id)
+            
+        #     # Save the grid figure
+        #     os.makedirs(output_mask_dir, exist_ok=True)  # Ensure directory exists
+        #     grid_save_path = os.path.join(output_mask_dir, f"{video_name}_grid_vis.png")
+        #     plt.tight_layout()
+        #     plt.savefig(grid_save_path, dpi=150, bbox_inches='tight')
+        #     plt.close(fig)
+        #---------------------------------Save Grid Visualization - END--------------------------------
          #---------------------------------Save Prediction - END --------------------------------------  
         
     predictor.reset_state(inference_state)
@@ -1215,6 +1270,84 @@ def vos_inference(
     return video_segments_logits, confidence_scores, blob_centers_list, labels_list
 
 
+def visualize_results(args, video_name, video_segments_logits, total_loss, iou_loss_list, output_mask_dir, frame_indices_for_clip):
+    video_dir = os.path.join(args.base_video_dir, video_name)
+    frame_names = [
+        os.path.splitext(p)[0]
+        for p in os.listdir(video_dir)
+        if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+    ]
+    frame_names = list(sorted(frame_names))
+    
+    # Create a mapping from frame index to IoU value
+    frame_to_iou = {}
+    if len(iou_loss_list) == len(frame_indices_for_clip):
+        for i, frame_idx in enumerate(frame_indices_for_clip):
+            frame_to_iou[frame_idx] = iou_loss_list[i]
+    
+    vis_frame_stride = 1
+    grid_frame_indices = list(range(0, len(frame_names), vis_frame_stride))
+    num_frames = len(grid_frame_indices)
+    
+    if num_frames > 0:
+        # Create a single figure with subplots in a row
+        fig, axes = plt.subplots(1, num_frames, figsize=(6 * num_frames, 6))
+        if num_frames == 1:
+            axes = [axes]  # Make it iterable if only one frame
+        
+        # Set the total loss as the figure title
+        fig.suptitle(f"Total Loss: {total_loss:.4f}", fontsize=14, fontweight='bold')
+        
+        for idx, out_frame_idx in enumerate(grid_frame_indices):
+            frame_name = frame_names[out_frame_idx]
+            
+            # Load RGB frame
+            img = Image.open(os.path.join(args.base_video_dir, video_name, f"{frame_name}.jpg"))
+            
+            # Load ground truth mask image
+            gt_mask_path = os.path.join(args.input_mask_dir, video_name, f"{frame_name}.png")
+            gt_mask = Image.open(gt_mask_path).convert("L")  # grayscale mask
+            
+            # Show the input image
+            axes[idx].imshow(img)
+            
+            # Get IoU value for this frame if available
+            iou_value = frame_to_iou.get(out_frame_idx, None)
+            if iou_value is not None:
+                axes[idx].set_title(f"Frame {out_frame_idx}\nDice: {iou_value:.4f}", fontsize=10)
+            else:
+                axes[idx].set_title(f"Frame {out_frame_idx}", fontsize=10)
+            axes[idx].axis("off")
+            
+            # Convert ground truth to NumPy and normalize to [0,1]
+            gt_mask_np = np.array(gt_mask) / 255.0
+            
+            # Create transparent green overlay for ground truth
+            green_overlay = np.zeros((gt_mask_np.shape[0], gt_mask_np.shape[1], 4))
+            green_overlay[..., 1] = 1.0  # green channel
+            green_overlay[..., 3] = gt_mask_np * 0.4  # alpha based on mask
+            
+            # Overlay ground truth
+            axes[idx].imshow(green_overlay)
+            
+            # Show predicted masks from logits with threshold
+            if out_frame_idx in video_segments_logits:
+                for out_obj_id, out_mask_logit in video_segments_logits[out_frame_idx].items():
+                    # Apply threshold to logits to get binary mask
+                    out_mask = (out_mask_logit > args.score_thresh).astype(np.float32)
+                    show_mask(out_mask, axes[idx], obj_id=out_obj_id)
+        
+        # Save the grid figure
+        os.makedirs(output_mask_dir, exist_ok=True)  # Ensure directory exists
+        grid_save_path = os.path.join(output_mask_dir, f"{video_name}_grid_vis.png")
+        plt.tight_layout()
+        plt.savefig(grid_save_path, dpi=150, bbox_inches='tight')
+        plt.close(fig)
+    
+    
+    
+
+
 
 
 def main():
@@ -1243,7 +1376,7 @@ def main():
         "--input_mask_dir",
         type=str,
         required=True,
-        help="directory containing input masks (as PNG files) of each video",
+        help="directory containing input masks (as PNG files) of each video/ annotator 1 mask directory",
     )
     parser.add_argument(
         "--video_list_file",
@@ -1363,6 +1496,19 @@ def main():
         type=float,
         default=2,
         help="machine prompt box size.",
+    )
+    parser.add_argument(
+        "--annotator_2_mask_dir",
+        type=str,
+        default=None,
+        help="path to the annotator 2 mask directory.",
+    )
+    parser.add_argument(
+        "--test_mode",
+        type=bool,
+        default=False,
+        help="test mode",
+        
     )
     
     args = parser.parse_args()
@@ -1515,6 +1661,22 @@ def main():
                     gt = input_mask > 0
                 gt = np.expand_dims(gt, axis=0) 
                 gt_list.append(gt)
+                
+        #--------------------Get annotator 2 masks--------------------------------
+        if args.annotator_2_mask_dir is not None:
+            annotator_2_mask_list = []
+            for mask_name in frame_names:
+                input_mask_path = os.path.join(args.annotator_2_mask_dir, video_name, f"{mask_name}.png")
+                if os.path.exists(input_mask_path):
+                    input_mask, _ = load_ann_png(input_mask_path)
+                    if input_mask.ndim == 3:
+                    # RGB mask → binary mask
+                        annotator_2_gt = np.any(input_mask > 0, axis=-1)
+                    elif input_mask.ndim == 2:
+                        # Already 2D, just ensure it's boolean
+                        annotator_2_gt = input_mask > 0
+                    annotator_2_gt = np.expand_dims(annotator_2_gt, axis=0) 
+                    annotator_2_mask_list.append(annotator_2_gt)
             
         # -------------------- Prompt on First frame ------------------------------
 
@@ -1543,7 +1705,8 @@ def main():
             labels_list=labels_list,
             model_type = "Auto",
             human_prompt = args.human_prompt,
-            machine_prompt = args.machine_prompt
+            machine_prompt = args.machine_prompt,
+            annotator_2_mask_dir = args.annotator_2_mask_dir
     
             )
         
@@ -1576,6 +1739,10 @@ def main():
 
         # Uncorrected downstream loss
         L_no_defer, iou_loss_list_frame_machine = compute_downstream_loss(binary_masks_first, gt_list, frame_indices_for_clip)
+        
+        if args.test_mode:
+            #Visualize results for test mode
+            visualize_results(args, video_name, video_segments_first, L_no_defer, iou_loss_list_frame_machine, output_mask_dir, frame_indices_for_clip)
         
         iou_dict["0"] = iou_loss_list_frame_machine
         
@@ -1633,7 +1800,8 @@ def main():
                 labels_list=label_list_first,
                 model_type = "Expert",
                 human_prompt = args.human_prompt,
-                machine_prompt = args.machine_prompt
+                machine_prompt = args.machine_prompt,
+                annotator_2_mask_dir = None
                 
                 )
             
@@ -1660,6 +1828,11 @@ def main():
             _, iou_loss_list_frame_expert = compute_downstream_loss(binary_masks_cor, gt_list, frame_indices_for_clip[second_prompt:])
             post_df_iou_list = iou_loss_list_frame_machine[:second_prompt] + iou_loss_list_frame_expert
             L_post_defer = np.mean(post_df_iou_list)
+            
+            #Visualize results for test mode
+            if args.test_mode:
+                visualize_results(args, video_name, video_segments_cor, L_post_defer, iou_loss_list_frame_expert, output_mask_dir, frame_indices_for_clip[second_prompt:])
+
             
             
             
@@ -1694,6 +1867,11 @@ def main():
         #         for folder_name in folder_name_list:
         #             row.append(combined_scores[idx].get(folder_name, ""))  # blank if missing
         #         writer.writerow(row)
+        
+        #Visualize results for test mode
+        # if args.test_mode:
+        #     #Visualize results for test mode
+        #     visualize_results(video_name, clip, L_no_defer, L_post_defer_list, iou_dict)
                 
                 
         # Save all lists in a single file
