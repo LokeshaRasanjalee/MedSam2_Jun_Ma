@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Script to consolidate all mask_p0i_k10_* folders into a single mask_p0i_k10_all folder.
+Script to consolidate all mask_k10_mup_* folders into a single mask_k10_mup_all folder.
 This script will:
-1. Create mask_p0i_k10_all folder with data_pkl and iou_dict subfolders
-2. Copy all contents from mask_p0i_k10_*/data_pkl to mask_p0i_k10_all/data_pkl
-3. Copy all contents from mask_p0i_k10_*/iou_dict to mask_p0i_k10_all/iou_dict
+1. Create mask_k10_mup_all folder with data_pkl and iou_dict subfolders
+2. Copy all contents from mask_k10_mup_*/data_pkl to mask_k10_mup_all/data_pkl
+3. Copy all contents from mask_k10_mup_*/iou_dict to mask_k10_mup_all/iou_dict
 """
 
 import os
@@ -14,10 +14,10 @@ from pathlib import Path
 
 def consolidate_mask_folders():
     # Base directory
-    base_dir = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/l2d_models"
+    base_dir = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl"
     
     # Target consolidated folder
-    consolidated_dir = os.path.join(base_dir, "mask_p0i_k10_all")
+    consolidated_dir = os.path.join(base_dir, "mask_k10_mup_all")
     data_pkl_dir = os.path.join(consolidated_dir, "data_pkl")
     iou_dict_dir = os.path.join(consolidated_dir, "iou_dict")
     
@@ -32,14 +32,14 @@ def consolidate_mask_folders():
     print(f"✓ Created {data_pkl_dir}")
     print(f"✓ Created {iou_dict_dir}")
     
-    # Find all mask_p0i_k10_* folders
-    pattern = os.path.join(base_dir, "mask_p0i_k10_*")
+    # Find all mask_k10_mup_* folders
+    pattern = os.path.join(base_dir, "mask_k10_mup_*")
     mask_folders = glob.glob(pattern)
     
     # Filter out the consolidated folder if it exists
-    mask_folders = [f for f in mask_folders if not f.endswith("mask_p0i_k10_all")]
+    mask_folders = [f for f in mask_folders if not f.endswith("mask_k10_mup_all")]
     
-    print(f"\nFound {len(mask_folders)} mask_p0i_k10_* folders to process:")
+    print(f"\nFound {len(mask_folders)} mask_k10_mup_* folders to process:")
     for folder in sorted(mask_folders):
         print(f"  - {os.path.basename(folder)}")
     

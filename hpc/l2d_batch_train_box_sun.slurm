@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=s_b
+#SBATCH --job-name=job
 #SBATCH -p a100
 #SBATCH -n 1                       # number of cores
-#SBATCH --time=6:00:00          # time allocation (D-HH:MM:SS)
+#SBATCH --time=3:00:00          # time allocation (D-HH:MM:SS)
 #SBATCH --gres=gpu:1,tmpfs:50G     # request 1 GPU + tmpfs
 #SBATCH --mem=30GB                 # memory per node
 #SBATCH --signal B:USR2
@@ -27,18 +27,19 @@ INDEX=${SLURM_ARRAY_TASK_ID}
 
 # --- Run Python with index-specific arguments ---
 python L2D_batch_train.py \
- --base_video_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/SUN_data/sun_clip_set/Images/ \
- --input_mask_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/SUN_data/sun_clip_set/Masks/ \
- --post_hoc_model_save_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/l2d_models_ma_sun \
+ --base_video_dir //hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/datasets/SUN_data/sun_clip_set/Images/ \
+ --input_mask_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/datasets/SUN_data/sun_clip_set/Masks/ \
+ --post_hoc_model_save_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl_sun/ \
  --output_mask_dir /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/media/Inference \
  --array_id ${INDEX} \
  --num_chunks 25 \
- --experiment_name "box_p0i_k10_${INDEX}" \
+ --experiment_name "box_12_10_k10_sun_${INDEX}" \
  --sam2_cfg configs/sam2.1_hiera_t512.yaml \
  --sam2_checkpoint /hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/checkpoints/sam2.1_hiera_tiny.pt \
  --sample_factor 10 \
- --prompt 'box' 'box' \ 
- --num_clicks 3 
+ --prompt 'box' 'box' \
+ --human_prompt 1.0 \
+ --machine_prompt 1.2 
 
 conda deactivate
     
