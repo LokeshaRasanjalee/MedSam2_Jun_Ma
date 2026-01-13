@@ -1187,12 +1187,12 @@ def main():
         "--loss_type",
         type=str,
         default="iou",
-        help="loss type (default: sam)",
+        help="loss type (default: iou)",
     )
     parser.add_argument(
         "--sample_factor",
         type=int,
-        default=1,
+        default=10,
         help="sample factor (default: 1)",
     )
 

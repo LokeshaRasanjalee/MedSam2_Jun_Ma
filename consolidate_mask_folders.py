@@ -14,10 +14,10 @@ from pathlib import Path
 
 def consolidate_mask_folders():
     # Base directory
-    base_dir = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl"
+    base_dir = "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl_vtus"
     
     # Target consolidated folder
-    consolidated_dir = os.path.join(base_dir, "mask_k10_mup_all")
+    consolidated_dir = os.path.join(base_dir, "box_12_10_k10_vtus_all")
     data_pkl_dir = os.path.join(consolidated_dir, "data_pkl")
     iou_dict_dir = os.path.join(consolidated_dir, "iou_dict")
     
@@ -33,13 +33,13 @@ def consolidate_mask_folders():
     print(f"✓ Created {iou_dict_dir}")
     
     # Find all mask_k10_mup_* folders
-    pattern = os.path.join(base_dir, "mask_k10_mup_*")
+    pattern = os.path.join(base_dir, "box_12_10_k10_vtus_*")
     mask_folders = glob.glob(pattern)
     
     # Filter out the consolidated folder if it exists
-    mask_folders = [f for f in mask_folders if not f.endswith("mask_k10_mup_all")]
+    mask_folders = [f for f in mask_folders if not f.endswith("box_12_10_k10_vtus_all")]
     
-    print(f"\nFound {len(mask_folders)} mask_k10_mup_* folders to process:")
+    print(f"\nFound {len(mask_folders)} box_12_10_k10_vtus_* folders to process:")
     for folder in sorted(mask_folders):
         print(f"  - {os.path.basename(folder)}")
     
