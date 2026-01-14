@@ -670,6 +670,13 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, log
     return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost   
 
 
+def test_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=0):
+    """
+    Test one epoch - identical to validate_one_epoch but for test set.
+    """
+    return validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, logging, topk_values, distance_loss)
+
+
 
 
         
@@ -760,7 +767,7 @@ def calculate_confusion_matrix(model, data_loader, device):
     cm_df = pd.DataFrame(cm, index=['Actual 0', 'Actual 1'], columns=['Predicted 0', 'Predicted 1'])
     return true_labels_count, predicted_labels_count, cm_df
 
-def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, output_dir):
+def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, output_dir, test_losses=None, test_accs=None):
     # Create a figure for the plots
     plt.figure(figsize=(10, 5))
     
@@ -768,6 +775,8 @@ def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val
     plt.subplot(1, 2, 1)
     plt.plot(train_losses, label='Training Loss')
     plt.plot(val_losses, label='Validation Loss')
+    if test_losses is not None and len(test_losses) > 0:
+        plt.plot(test_losses, label='Test Loss')
     plt.title('Loss Curves')
     plt.xlabel('Epochs')
     plt.ylabel('Loss')
@@ -777,6 +786,8 @@ def plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val
     plt.subplot(1, 2, 2)
     plt.plot(train_accs, label='Training Accuracy')
     plt.plot(val_accs, label='Validation Accuracy')
+    if test_accs is not None and len(test_accs) > 0:
+        plt.plot(test_accs, label='Test Accuracy')
     plt.title('Accuracy Curves')
     plt.xlabel('Epochs')
     plt.ylabel('Accuracy')
@@ -961,7 +972,8 @@ def build_r2plus1d_model(num_classes=4, dropout_p=0.5, rgb_input=False):
 
 
 def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_accs, val_accs, 
-                    current_ma_val_acc, best_ma_val_acc, current_val_loss, best_val_loss, args, timestamp, save_dir, experiment_name):
+                    current_ma_val_acc, best_ma_val_acc, current_val_loss, best_val_loss, args, timestamp, save_dir, experiment_name,
+                    test_losses=None, test_accs=None):
     """
     Save model checkpoint and training history.
     
@@ -981,6 +993,8 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
         timestamp: Timestamp for the run
         save_dir: Directory to save the checkpoint
         experiment_name: Name of the experiment
+        test_losses: Optional list of test losses
+        test_accs: Optional list of test accuracies
     """
     # Save model checkpoint with all necessary information
     checkpoint = {
@@ -1018,6 +1032,10 @@ def save_checkpoint(model, optimizer, epoch, train_losses, val_losses, train_acc
         'args': vars(args),
         'timestamp': timestamp
     }
+    if test_losses is not None:
+        history['test_losses'] = test_losses
+    if test_accs is not None:
+        history['test_accs'] = test_accs
      # Delete existing history file with the same experiment name
     old_history = os.path.join(save_dir, f"history_{experiment_name}_last_epoch_*.json")
     try:
@@ -1363,6 +1381,12 @@ def main():
         default=None,
         help="Data npz dir (default: None)",
     )
+    parser.add_argument(
+        "--early_stopping",
+        type=bool,
+        default=False,
+        help="Early stopping (default: False)",
+    )
     
     args = parser.parse_args()
     
@@ -1384,6 +1408,8 @@ def main():
     # Initialize persistent per-epoch actions DataFrame and CSV path
     actions_df = None
     actions_csv_path = os.path.join(args.output_mask_dir, 'per_video_actions.csv')
+    test_actions_df = None
+    test_actions_csv_path = os.path.join(args.output_mask_dir, 'per_video_test_actions.csv')
     
     # Set up logging configuration
     log_file = os.path.join(args.output_mask_dir, 'output.log')
@@ -1462,7 +1488,7 @@ def main():
     
     model = model.to(device)
 
-    train_loader, val_loader = get_dataloaders(args, batch_size=args.batch_size)
+    train_loader, val_loader, test_loader = get_dataloaders(args, batch_size=args.batch_size)
 
     # For multi-class classification, we use CrossEntropyLoss instead of BCEWithLogitsLoss
     criterion = nn.CrossEntropyLoss()
@@ -1475,7 +1501,7 @@ def main():
      
     #--------------------------Train Model----------------------------------
     
-    train_losses, train_accs, val_losses, val_accs = [], [], [], []
+    train_losses, train_accs, val_losses, val_accs, test_losses, test_accs = [], [], [], [], [], []
     # Initialize moving average queue for validation accuracy
     val_acc_ma_queue = deque(maxlen=2)
     best_ma_val_acc = 0.0
@@ -1515,11 +1541,20 @@ def main():
         if (epoch) % args.save_every == 0:
             
             val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
+            
+            # Test evaluation
+            if test_loader is not None:
+                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = test_one_epoch(args.loss_type,model,epoch, test_loader, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
+            else:
+                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = None, None, None, None, None, None, None, None, None, None, None, None
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
             train_accs.append(train_acc)
             val_accs.append(val_acc)
+            if test_loss is not None:
+                test_losses.append(test_loss)
+                test_accs.append(test_acc)
             
             # Update moving average of validation accuracy
             val_acc_ma_queue.append(val_acc)
@@ -1528,26 +1563,42 @@ def main():
             if args.tensorboard_status:
                 writer.add_scalar('Loss/train', train_loss, epoch)
                 writer.add_scalar('Loss/val', val_loss, epoch)
+                if test_loss is not None:
+                    writer.add_scalar('Loss/test', test_loss, epoch)
                 writer.add_scalar('Accuracy/train', train_acc, epoch)
                 writer.add_scalar('Accuracy/val', val_acc, epoch)
+                if test_acc is not None:
+                    writer.add_scalar('Accuracy/test', test_acc, epoch)
                 writer.add_scalar('Accuracy/val_moving_avg', current_ma_val_acc, epoch)
                 writer.add_scalar('Regret/train', train_regret, epoch)
                 writer.add_scalar('Regret/val', mean_regret, epoch)
+                if test_mean_regret is not None:
+                    writer.add_scalar('Regret/test', test_mean_regret, epoch)
                 writer.add_scalar('Time/epoch_runtime', epoch_runtime, epoch)
                 writer.add_scalar('Rank Distance/train', train_avg_rank_distance, epoch)
                 writer.add_scalar('Rank Distance/val', val_avg_rank_distance, epoch)
+                if test_avg_rank_distance is not None:
+                    writer.add_scalar('Rank Distance/test', test_avg_rank_distance, epoch)
                 writer.add_scalar('Accuracy/chosen_train', train_chosen_acc, epoch)
                 writer.add_scalar('Accuracy/best_train', train_best_acc, epoch)
                 writer.add_scalar('Accuracy/chosen_val', val_chosen_acc, epoch)
                 writer.add_scalar('Accuracy/best_val', val_best_acc, epoch)
+                if test_chosen_acc is not None:
+                    writer.add_scalar('Accuracy/chosen_test', test_chosen_acc, epoch)
+                    writer.add_scalar('Accuracy/best_test', test_best_acc, epoch)
                 writer.add_scalar('Cost/chosen_train', train_chosen_cost, epoch)
                 writer.add_scalar('Cost/best_train', train_best_cost, epoch)
                 writer.add_scalar('Cost/chosen_val', val_chosen_cost, epoch)
                 writer.add_scalar('Cost/best_val', val_best_cost, epoch)
+                if test_chosen_cost is not None:
+                    writer.add_scalar('Cost/chosen_test', test_chosen_cost, epoch)
+                    writer.add_scalar('Cost/best_test', test_best_cost, epoch)
                 # Add top-k accuracy tracking
                 for k in args.topk_values:
                     writer.add_scalar(f'Top{k} Accuracy/train', topk_accuracies[k], epoch)
                     writer.add_scalar(f'Top{k} Accuracy/val', val_topk_accuracies[k], epoch)
+                    if test_topk_accuracies is not None:
+                        writer.add_scalar(f'Top{k} Accuracy/test', test_topk_accuracies[k], epoch)
                
             # if args.wandb_status:
             #     wandb.log({
@@ -1576,10 +1627,15 @@ def main():
             #         wandb.log({f"Val Top{k} Accuracy": val_topk_accuracies[k]})
 
             logging.info(f"Epoch [{epoch}/{args.num_epochs}] Train Loss: {train_loss:.6f} train_chosen_acc: {train_chosen_acc:.4f} Val Loss: {val_loss:.6f} val_chosen_acc: {val_chosen_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            if test_loss is not None:
+                logging.info(f"Epoch [{epoch}/{args.num_epochs}] Test Loss: {test_loss:.6f} test_chosen_acc: {test_chosen_acc:.4f} Test Regret: {test_mean_regret:.4f}")
             # # Log top-k accuracies
             train_topk_str = "/".join([f"{topk_accuracies[k]:.4f}" for k in args.topk_values])
             val_topk_str = "/".join([f"{val_topk_accuracies[k]:.4f}" for k in args.topk_values])
             logging.info(f"Epoch [{epoch}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
+            if test_topk_accuracies is not None:
+                test_topk_str = "/".join([f"{test_topk_accuracies[k]:.4f}" for k in args.topk_values])
+                logging.info(f"Epoch [{epoch}/{args.num_epochs}] Top{args.topk_values} Test: {test_topk_str}")
             logging.info(f"Epoch [{epoch}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
             logging.info(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
             
@@ -1594,6 +1650,13 @@ def main():
             logging.info(f"Validation Best Actions: {val_best_actions[:80]}")
             logging.info(f"Validation Chosen Actions: {val_chosen_actions[:80]}")
             logging.info(f"Validation Video Names: {val_video_names[:80]}")
+            
+            # Log test best action and chosen action for 10 samples with video names
+            if test_best_actions is not None:
+                logging.info(f"Test Best Actions: {test_best_actions[:80]}")
+                logging.info(f"Test Chosen Actions: {test_chosen_actions[:80]}")
+                logging.info(f"Test Video Names: {test_video_names[:80]}")
+            
             
             # ------- Persist per-video actions to CSV for this epoch -------
             try:
@@ -1615,12 +1678,33 @@ def main():
                     actions_df = actions_df.merge(current_df, on='video_name', how='outer')
 
                 actions_df.to_csv(actions_csv_path, index=False)
-                logging.info(f"Saved per-video actions CSV to: {actions_csv_path}")
+                logging.info(f"Saved per-video validation actions CSV to: {actions_csv_path}")
+                
+                # Save test actions CSV if test data is available
+                if test_best_actions is not None:
+                    test_current_df = pd.DataFrame({
+                        'video_name': list(test_video_names),
+                        best_col: list(map(int, test_best_actions.cpu().tolist())),
+                        chosen_col: list(map(int, test_chosen_actions.cpu().tolist())),
+                    })
+                    
+                    if test_actions_df is None:
+                        test_actions_df = test_current_df
+                    else:
+                        for c in [best_col, chosen_col]:
+                            if c in test_actions_df.columns:
+                                test_actions_df = test_actions_df.drop(columns=[c])
+                        test_actions_df = test_actions_df.merge(test_current_df, on='video_name', how='outer')
+                    
+                    test_actions_df.to_csv(test_actions_csv_path, index=False)
+                    logging.info(f"Saved per-video test actions CSV to: {test_actions_csv_path}")
             except Exception as e:
                 logging.warning(f"Failed saving per-video actions CSV: {str(e)}")
             # ----------------------------------------------------------------
             
             print(f"Epoch [{epoch}/{args.num_epochs}] Train Loss: {train_loss:.6f} train_chosen_acc: {train_chosen_acc:.4f} Val Loss: {val_loss:.6f} val_chosen_acc: {val_chosen_acc:.4f} Train Regret: {train_regret:.4f} Val Regret: {mean_regret:.4f}")
+            if test_loss is not None:
+                print(f"Epoch [{epoch}/{args.num_epochs}] Test Loss: {test_loss:.6f} test_chosen_acc: {test_chosen_acc:.4f} Test Regret: {test_mean_regret:.4f}")
             # print(f"Epoch [{epoch}/{args.num_epochs}] Top{args.topk_values} Train: {train_topk_str} Val: {val_topk_str}")
             print(f"Epoch [{epoch}/{args.num_epochs}] Runtime: {epoch_runtime:.2f} seconds")
             print(f"Current Moving Average Val Acc (10 epochs): {current_ma_val_acc:.4f}")
@@ -1647,7 +1731,9 @@ def main():
                     args=args,
                     timestamp=timestamp,
                     save_dir=args.output_mask_dir,
-                    experiment_name=args.experiment_name
+                    experiment_name=args.experiment_name,
+                    test_losses=test_losses if test_losses else None,
+                    test_accs=test_accs if test_accs else None
                     )
                 if val_chosen_acc > best_chosen_val_acc:
                     best_chosen_val_acc = val_chosen_acc
@@ -1666,7 +1752,9 @@ def main():
     
 
     # Plot and save loss and accuracy curves
-    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir)
+    plot_and_save_loss_accuracy_curves(train_losses, val_losses, train_accs, val_accs, args.output_mask_dir, 
+                                       test_losses=test_losses if test_losses else None, 
+                                       test_accs=test_accs if test_accs else None)
 
     # Close TensorBoard writer if it was initialized
     if writer is not None:

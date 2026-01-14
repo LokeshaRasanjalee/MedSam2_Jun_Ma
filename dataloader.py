@@ -101,6 +101,7 @@ def get_dataloaders( args, batch_size=8, split_ratio=0.8):
     if args.train_test_split:       
         train_dataset = ClipDataset(args.data_npz_dir_train, args)
         val_dataset = ClipDataset(args.data_npz_dir_test, args)
+        test_dataset = None  # Not available in this mode
     else:
         dataset = ClipDataset(args.data_npz_dir, args)
         npz_files = dataset.npz_files
@@ -109,40 +110,45 @@ def get_dataloaders( args, batch_size=8, split_ratio=0.8):
         with open(args.split_dict_path, 'r') as f:
             data_split_dict = eval(f.read())  # Load the dictionary from file
         
-        # Get the subject IDs for validation set from the specified array_id
-        if args.array_id in data_split_dict:
-            val_subject_ids = data_split_dict[args.array_id]
-            print(f"Using array_id {args.array_id} with validation subject IDs: {val_subject_ids}")
-        else:
-            raise ValueError(f"array_id {args.array_id} not found in split dictionary. Available keys: {list(data_split_dict.keys())}")
+        # Get the subject IDs for train (0), val (1), and test (2) sets
+        if 0 not in data_split_dict or 1 not in data_split_dict or 2 not in data_split_dict:
+            raise ValueError(f"Split dictionary must contain keys 0 (train), 1 (val), and 2 (test). Available keys: {list(data_split_dict.keys())}")
         
-        # Extract subject IDs from npz file names and create train/val indices
+        # Convert to sets of strings for comparison (split_dict has string IDs)
+        train_subject_ids = set(str(id) for id in data_split_dict[0])
+        val_subject_ids = set(str(id) for id in data_split_dict[1])
+        test_subject_ids = set(str(id) for id in data_split_dict[2])
+        
+        print(f"Train subject IDs: {sorted(train_subject_ids)}")
+        print(f"Validation subject IDs: {sorted(val_subject_ids)}")
+        print(f"Test subject IDs: {sorted(test_subject_ids)}")
+        
+        # Extract subject IDs from npz file names and create train/val/test indices
         train_idx = []
         val_idx = []
+        test_idx = []
         
         for i, npz_file in enumerate(npz_files):
-            # Extract subject ID from filename like "D_NBI_67_20160415_0_3_0_data.npz"
+            # Extract subject ID from filename - it's the part before the first underscore
             filename = os.path.basename(npz_file)
-            # Split by '_' and get the subject ID (3rd element after D_NBI)
-            parts = filename.split('_')
-            if len(parts) >= 3 and parts[0] == 'D' and parts[1] == 'NBI':
-                subject_id = int(parts[2])
-                
-                if subject_id in val_subject_ids:
-                    val_idx.append(i)
-                else:
-                    train_idx.append(i)
+            # Get the part before the first underscore as subject ID
+            subject_id = filename.split('_')[0]
+            
+            if subject_id in train_subject_ids:
+                train_idx.append(i)
+            elif subject_id in val_subject_ids:
+                val_idx.append(i)
+            elif subject_id in test_subject_ids:
+                test_idx.append(i)
             else:
-                print(f"Warning: Could not parse subject ID from filename: {filename}")
-                # Default to training set if parsing fails
+                print(f"Warning: Subject ID {subject_id} from filename {filename} not found in any split. Adding to train set.")
                 train_idx.append(i)
         
-        print(f"Train indices: {len(train_idx)}, Validation indices: {len(val_idx)}")
-        print(f"Train subject IDs: {[int(os.path.basename(npz_files[i]).split('_')[2]) for i in train_idx]}")
-        print(f"Validation subject IDs: {[int(os.path.basename(npz_files[i]).split('_')[2]) for i in val_idx]}")
+        print(f"Train indices: {len(train_idx)}, Validation indices: {len(val_idx)}, Test indices: {len(test_idx)}")
 
         train_dataset = Subset(dataset, train_idx)
         val_dataset = Subset(dataset, val_idx)
+        test_dataset = Subset(dataset, test_idx)
     
     # Check max index distribution
     train_dist = get_min_index_distribution(args, train_dataset)
@@ -150,6 +156,10 @@ def get_dataloaders( args, batch_size=8, split_ratio=0.8):
 
     print("Train split distribution:", dict(train_dist))
     print("Validation split distribution:", dict(val_dist))
+    
+    if test_dataset is not None:
+        test_dist = get_min_index_distribution(args, test_dataset)
+        print("Test split distribution:", dict(test_dist))
 
     # Optimized DataLoader configuration for speed
     train_loader = DataLoader(
@@ -171,5 +181,17 @@ def get_dataloaders( args, batch_size=8, split_ratio=0.8):
         persistent_workers=True,
         prefetch_factor=2
     )
+    
+    test_loader = None
+    if test_dataset is not None:
+        test_loader = DataLoader(
+            test_dataset,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=args.num_workers,
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=2
+        )
 
-    return train_loader, val_loader
+    return train_loader, val_loader, test_loader
