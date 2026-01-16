@@ -213,7 +213,7 @@ def onetime_deferal_loss_normalized_weights_0_1(acc_no_def_batch, rejector_logit
     loss = -torch.sum(weights * log_probs, dim=1)  # [B]
     return loss.mean()
 
-def mao_deferral_loss_log(
+def mao_deferral_loss_log_1_C(
     acc_no_def_batch,          # [B]
     rejector_logits,           # [B, n_e]
     acc_post_def_batch,        # [B, n_e]
@@ -275,7 +275,7 @@ def mao_deferral_loss_log(
     total_loss = (loss_term1 + loss_term2).mean()           # scalar
     return total_loss
 
-def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0, distance_loss=10):  
+def mao_deferral_loss_exp_1_C(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0, distance_loss=10):  
     """
     Surrogate deferral loss adapted from Mao et al. (2023), L_exp in predictor-rejector setting.
 
@@ -328,7 +328,7 @@ def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch,
     
     return torch.mean(total_loss)
 
-def mao_deferral_loss_mae(
+def mao_deferral_loss_mae_1_C(
     acc_no_def_batch,          # [B]
     rejector_logits,           # [B, n_e]
     acc_post_def_batch,        # [B, n_e]
@@ -379,7 +379,12 @@ def mao_deferral_loss_mae(
     return total_loss.mean()
 
 
-def mao_deferral_loss_log_from_template(
+def cost_softmax_weights(g_all, tau=0.25):
+    # g_all: [B, 1+n_e]
+    w = torch.softmax(-g_all / tau, dim=1)  # [B, 1+n_e]
+    return w
+
+def mao_deferral_loss_log(
     acc_no_def_batch,          # [B]
     rejector_logits,           # [B, n_e]
     acc_post_def_batch,        # [B, n_e]
@@ -427,15 +432,20 @@ def mao_deferral_loss_log_from_template(
     # ------------------------------------------------------------------
     # 3) Normalized (c_max - c)
     # ------------------------------------------------------------------
-    cmin = g_all.min(dim=1).values                          # [B]
-    cmax = g_all.max(dim=1).values                          # [B]
+    # cmin = g_all.min(dim=1).values                          # [B]
+    # cmax = g_all.max(dim=1).values                          # [B]
 
-    weights = (cmax.unsqueeze(1) - g_all) / (
-        (cmax - cmin).unsqueeze(1) + eps
-    )                                                       # [B, 1+n_e]
+    # weights = (cmax.unsqueeze(1) - g_all) / (
+    #     (cmax - cmin).unsqueeze(1) + eps
+    # )                                                       # [B, 1+n_e]
 
-    w0 = weights[:, 0:1]                                    # [B, 1]
-    wj = weights[:, 1:]                                     # [B, n_e]
+    # w0 = weights[:, 0:1]                                    # [B, 1]
+    # wj = weights[:, 1:]                                     # [B, n_e]
+
+    w = cost_softmax_weights(g_all, tau=0.25)
+    w0 = w[:, 0:1]
+    wj = w[:, 1:]
+
 
     # ------------------------------------------------------------------
     # 1) Common factor  S = 1 + Σ_i e^{-r_i(x)}   and its log
@@ -473,7 +483,7 @@ def mao_deferral_loss_log_from_template(
     return total_loss
 
 
-def mao_deferral_loss_mae_from_template(
+def mao_deferral_loss_mae(
     acc_no_def_batch,          # [B]
     rejector_logits,           # [B, n_e]
     acc_post_def_batch,        # [B, n_e]
@@ -519,15 +529,19 @@ def mao_deferral_loss_mae_from_template(
     # ------------------------------------------------------------
     # 3. Normalized (c_max - c)
     # ------------------------------------------------------------
-    cmin = g_all.min(dim=1).values                           # [B]
-    cmax = g_all.max(dim=1).values                           # [B]
+    # cmin = g_all.min(dim=1).values                           # [B]
+    # cmax = g_all.max(dim=1).values                           # [B]
 
-    weights = (cmax.unsqueeze(1) - g_all) / (
-        (cmax - cmin).unsqueeze(1) + eps
-    )                                                        # [B, 1+n_e]
+    # weights = (cmax.unsqueeze(1) - g_all) / (
+    #     (cmax - cmin).unsqueeze(1) + eps
+    # )                                                        # [B, 1+n_e]
 
-    w0 = weights[:, 0:1]                                     # [B, 1]
-    wj = weights[:, 1:]   
+    # w0 = weights[:, 0:1]                                     # [B, 1]
+    # wj = weights[:, 1:]   
+    
+    w = cost_softmax_weights(g_all, tau=0.25)
+    w0 = w[:, 0:1]
+    wj = w[:, 1:]
 
     exp_neg_r = torch.exp(-rejector_logits)                  # [B, n_e]
     Z = 1.0 + torch.sum(exp_neg_r, dim=1, keepdim=True)      # [B, 1]
@@ -554,7 +568,7 @@ def mao_deferral_loss_mae_from_template(
     total_loss = term1 + term2                               # [B, 1]
     return total_loss.mean()
 
-def mao_deferral_loss_exp_from_template(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0, distance_loss=10):  
+def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0, distance_loss=10):  
     """
     Surrogate deferral loss adapted from Mao et al. (2023), L_exp in predictor-rejector setting.
 
@@ -597,16 +611,21 @@ def mao_deferral_loss_exp_from_template(acc_no_def_batch, rejector_logits, acc_p
     # 2. Normalized (c_max - c)
     # ------------------------------------------------------------
 
-    cmin = g_all.min(dim=1).values                      # [B]
-    cmax = g_all.max(dim=1).values                      # [B]
+    # cmin = g_all.min(dim=1).values                      # [B]
+    # cmax = g_all.max(dim=1).values                      # [B]
 
-    weights = (cmax.unsqueeze(1) - g_all) / (
-        (cmax - cmin).unsqueeze(1) + eps
-    )                                                    # [B, 1+n_e]
+    # weights = (cmax.unsqueeze(1) - g_all) / (
+    #     (cmax - cmin).unsqueeze(1) + eps
+    # )                                                    # [B, 1+n_e]
 
-    # split weights
-    w0 = weights[:, 0]                                  # [B]
-    wj = weights[:, 1:]
+    # # split weights
+    # w0 = weights[:, 0]                                  # [B]
+    # wj = weights[:, 1:]
+    
+    w = cost_softmax_weights(g_all, tau=0.25)
+    w0 = w[:, 0:1]
+    wj = w[:, 1:]
+    
     
     # print("w0 std:", w0.std().item())
     # print("wj std:", wj.std().item())
