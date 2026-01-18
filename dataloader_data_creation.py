@@ -215,13 +215,54 @@ class ClipDataset(Dataset):
                 # Save data as npz file in the new directory
                 base_name = os.path.basename(file)
                 npz_file = os.path.join(self.npz_dir, base_name.replace('.pkl', '.npz'))
+
+                # Load corresponding IoU dict from sibling folder (../iou_dict)
+                base_folder = os.path.dirname(os.path.dirname(file))
+                if base_name.endswith('_data.pkl'):
+                    iou_base_name = base_name.replace('_data.pkl', '_iou_dict.pkl')
+                else:
+                    raise ValueError(f"Invalid base name: {base_name}")
+                iou_pkl_file = os.path.join(base_folder, 'iou_dict', iou_base_name)
+                with open(iou_pkl_file, 'rb') as f:
+                    iou_dict = pickle.load(f)
+                    machine_iou_list = iou_dict['0']
+                    # Iterate around the keys in the iou_dict except '0' and '0_0'
+                    defer_keys = [k for k in iou_dict.keys() if k not in ('0', '0_0')]
+                    post_defer_iou_lists = []
+                    for k in defer_keys:
+                        # INSERT_YOUR_CODE
+                        # Here k is like '0_5', we want the number part, i.e., 5 from '0_5'
+                        try:
+                            # Expecting k format '0_N', where N is number (e.g. '0_5')
+                            number = int(k.split('_')[1])  # catches ValueError if malformed
+                        except Exception as ex:
+                            raise ValueError(f"Key not in expected format '0_N': got {k}") from ex
+                        #post_defer_iou_lists.extend(iou_dict[k])
+                        # print (number)
+                        machine_tail = machine_iou_list[number:]
+                        defer_tail = iou_dict[k][number:]
+
+                        # Complement each IoU value: x -> (1 - x)
+                        machine_tail_complement = [1 - v for v in machine_tail]
+                        defer_tail_complement = [1 - v for v in defer_tail]
+                        
+                        # INSERT_YOUR_CODE
+                        machine_loss_mean = np.mean(machine_tail_complement)
+                        defer_loss_mean = np.mean(defer_tail_complement)
+                        diff = machine_loss_mean - defer_loss_mean
+                      
+                        
+                
+                
+                
                 np.savez(
                     npz_file,    
                     masks=combined,
                     # local_no_df_loss_complement=local_no_df_loss_complement,
                     # local_post_df_loss_complement=local_post_df_loss_complement,
                     global_no_df_loss_complement=global_no_df_loss_complement,
-                    global_post_df_loss_complement=global_post_df_loss_complement
+                    global_post_df_loss_complement=global_post_df_loss_complement,
+                    diff_Lm_Ld=diff,
                 )
                 
                 self.video_metadata.append(
