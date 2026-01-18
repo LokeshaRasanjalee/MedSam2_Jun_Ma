@@ -1624,6 +1624,7 @@ def main():
        
         L_post_defer_list = []
         iou_dict={}
+        iou_loss_diff_list = []
         
         # if video_name != 'D_NBI_120_20170628_0_6_332':
         #     continue
@@ -1829,6 +1830,13 @@ def main():
             post_df_iou_list = iou_loss_list_frame_machine[:second_prompt] + iou_loss_list_frame_expert
             L_post_defer = np.mean(post_df_iou_list)
             
+            print (len(iou_loss_list_frame_machine[second_prompt:]), len(iou_loss_list_frame_expert))
+            print (np.mean(1-iou_loss_list_frame_machine[second_prompt:]), np.mean(1-iou_loss_list_frame_expert))
+            iou_loss_diff = np.mean(1-iou_loss_list_frame_machine[second_prompt:]) - np.mean(1-iou_loss_list_frame_expert)
+            iou_loss_diff_list.append(iou_loss_diff)
+            
+            
+            
             #Visualize results for test mode
             if args.test_mode:
                 visualize_results(args, video_name, video_segments_cor, L_post_defer, iou_loss_list_frame_expert, output_mask_dir, frame_indices_for_clip[second_prompt:])
@@ -1878,7 +1886,7 @@ def main():
         data_pkl_folder = os.path.join(args.post_hoc_model_save_dir,f"{args.experiment_name}_{args.array_id}", "data_pkl")
         os.makedirs(data_pkl_folder, exist_ok=True)
         with open(os.path.join(data_pkl_folder,f'{video_name}_data.pkl'), 'wb') as f:
-            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list}, f)
+            pickle.dump({'video_name':video_name, 'Masks':clip, 'L_no_defer':L_no_defer, 'L_post_defer_list':L_post_defer_list, 'iou_loss_diff_list':iou_loss_diff_list}, f)
    
                 
         # Save iou_dict
