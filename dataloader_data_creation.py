@@ -228,7 +228,7 @@ class ClipDataset(Dataset):
                     machine_iou_list = iou_dict['0']
                     # Iterate around the keys in the iou_dict except '0' and '0_0'
                     defer_keys = [k for k in iou_dict.keys() if k not in ('0', '0_0')]
-                    post_defer_iou_lists = []
+                    diff_Lm_Ld_list = []
                     for k in defer_keys:
                         # INSERT_YOUR_CODE
                         # Here k is like '0_5', we want the number part, i.e., 5 from '0_5'
@@ -237,8 +237,7 @@ class ClipDataset(Dataset):
                             number = int(k.split('_')[1])  # catches ValueError if malformed
                         except Exception as ex:
                             raise ValueError(f"Key not in expected format '0_N': got {k}") from ex
-                        #post_defer_iou_lists.extend(iou_dict[k])
-                        # print (number)
+                        
                         machine_tail = machine_iou_list[number:]
                         defer_tail = iou_dict[k][number:]
 
@@ -250,6 +249,7 @@ class ClipDataset(Dataset):
                         machine_loss_mean = np.mean(machine_tail_complement)
                         defer_loss_mean = np.mean(defer_tail_complement)
                         diff = machine_loss_mean - defer_loss_mean
+                        diff_Lm_Ld_list.append(diff)
                       
                         
                 
@@ -262,7 +262,7 @@ class ClipDataset(Dataset):
                     # local_post_df_loss_complement=local_post_df_loss_complement,
                     global_no_df_loss_complement=global_no_df_loss_complement,
                     global_post_df_loss_complement=global_post_df_loss_complement,
-                    diff_Lm_Ld=diff,
+                    diff_Lm_Ld=diff_Lm_Ld_list,
                 )
                 
                 self.video_metadata.append(
