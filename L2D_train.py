@@ -679,6 +679,7 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
     all_chosen_actions = []
     all_video_names = []  # Add list to collect video names
     rank_distances = []
+    temporal_distances = []
     total_chosen_acc = 0.0
     total_best_acc = 0.0
     total_chosen_cost = 0.0
@@ -771,6 +772,10 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
                 sorted_indices = torch.argsort(accs, descending=True)
                 rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
                 rank_distances.append(rank)
+                best_idx = best_actions[i].item()
+                temporal_distance = abs(chosen_idx - best_idx)
+                temporal_distances.append(temporal_distance)
+                
 
             # Store results
             all_best_actions.append(best_actions.cpu())
@@ -782,6 +787,7 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
         selection_accuracy = correct / total_samples
         mean_regret = total_regret / total_samples
         avg_rank_distance = sum(rank_distances) / len(rank_distances)
+        avg_temporal_distance = sum(temporal_distances) / len(temporal_distances)
         all_best_actions = torch.cat(all_best_actions)
         all_chosen_actions = torch.cat(all_chosen_actions)
         avg_chosen_acc = total_chosen_acc / total_samples
@@ -792,9 +798,9 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
         # Calculate top-k accuracies
         topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-        return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost
+        return avg_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_temporal_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost
     else:
-        return None, None, None, None, None, None, None, None, None, None,None, None
+        return None, None, None, None, None, None, None, None, None, None,None, None, None
 
 def infer_deferral_action(rejector_logits):
     """
@@ -861,6 +867,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, log
     all_chosen_actions = []
     all_video_names = []  # Add list to collect video names
     rank_distances = []  # <-- new list to store rank distances
+    temporal_distances = [] # <-- new list to store temporal distances
     total_chosen_acc = 0.0
     total_best_acc = 0.0
     total_chosen_cost = 0.0
@@ -941,6 +948,9 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, log
                 sorted_indices = torch.argsort(accs, descending=True)
                 rank = (sorted_indices == chosen_idx).nonzero(as_tuple=True)[0].item()
                 rank_distances.append(rank)
+                best_idx = best_actions[i].item()
+                temporal_distance = abs(chosen_idx - best_idx)
+                temporal_distances.append(temporal_distance)
                 
 
             # Store results
@@ -952,6 +962,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, log
     mean_regret = total_regret / total_samples
     avg_val_loss = total_val_loss / len(loader)
     avg_rank_distance = sum(rank_distances) / len(rank_distances)
+    avg_temporal_distance = sum(temporal_distances) / len(temporal_distances)
     all_best_actions = torch.cat(all_best_actions)
     all_chosen_actions = torch.cat(all_chosen_actions)
     avg_chosen_acc = total_chosen_acc / total_samples
@@ -962,7 +973,7 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, log
     # Calculate top-k accuracies
     topk_accuracies = {k: total_topk_correct[k] / total_samples for k in topk_values}
 
-    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost   
+    return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_temporal_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost   
 
 
 def test_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=0):
@@ -1823,20 +1834,20 @@ def main():
         # Start epoch runtime tracking
         epoch_start_time = time.time()
        
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_avg_temporal_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
         if (epoch) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
+            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_avg_temporal_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
             
             # Test evaluation
             if test_loader is not None:
-                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = test_one_epoch(args.loss_type,model,epoch, test_loader, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
+                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_avg_temporal_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = test_one_epoch(args.loss_type,model,epoch, test_loader, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
             else:
-                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = None, None, None, None, None, None, None, None, None, None, None, None
+                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_avg_temporal_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = None, None, None, None, None, None, None, None, None, None, None, None, None, None
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
@@ -1869,6 +1880,10 @@ def main():
                 writer.add_scalar('Rank Distance/val', val_avg_rank_distance, epoch)
                 if test_avg_rank_distance is not None:
                     writer.add_scalar('Rank Distance/test', test_avg_rank_distance, epoch)
+                writer.add_scalar('Temporal Distance/train', train_avg_temporal_distance, epoch)
+                writer.add_scalar('Temporal Distance/val', val_avg_temporal_distance, epoch)
+                if test_avg_temporal_distance is not None:
+                    writer.add_scalar('Temporal Distance/test', test_avg_temporal_distance, epoch)
                 writer.add_scalar('Accuracy/chosen_train', train_chosen_acc, epoch)
                 writer.add_scalar('Accuracy/best_train', train_best_acc, epoch)
                 writer.add_scalar('Accuracy/chosen_val', val_chosen_acc, epoch)
