@@ -70,14 +70,15 @@ class ClipDataset(Dataset):
             torch.from_numpy(data['masks']),
             torch.from_numpy(data['global_no_df_loss_complement']),
             torch.from_numpy(data['global_post_df_loss_complement']), 
-            os.path.basename(info['npz_file'])
+            os.path.basename(info['npz_file']),
+            torch.from_numpy(data['diff_Lm_Ld']),
         )
         
 def get_min_index_distribution(args, dataset):
     counter = Counter()
 
     for i in tqdm(range(len(dataset))):
-        _, no_df_val, post_df_vals, _ = dataset[i]  # Extract values
+        _, no_df_val, post_df_vals, _,_ = dataset[i]  # Extract values
 
         # Ensure tensors are 1D
         no_df_val = no_df_val.view(-1)        # Shape: [1]

@@ -388,8 +388,10 @@ def mao_deferral_loss_log(
     acc_no_def_batch,          # [B]
     rejector_logits,           # [B, n_e]
     acc_post_def_batch,        # [B, n_e]
+    diff_Lm_Ld,                # [B, n_e]
     alpha: float = 1.0,
     beta:  float = 1.0,
+    gamma=0.0,
     distance_loss=10          # scalar or length-n_e iterable/tensor
 ):
     """
@@ -424,7 +426,7 @@ def mao_deferral_loss_log(
     gj_raw = (
         alpha * (1.0 - acc_post_def_batch)
         + beta
-        + distance_loss
+        + distance_loss - (gamma * diff_Lm_Ld)
     )                                                       # [B, n_e]
 
     g_all = torch.cat([g0.unsqueeze(1), gj_raw], dim=1)     # [B, 1+n_e]
@@ -487,8 +489,10 @@ def mao_deferral_loss_mae(
     acc_no_def_batch,          # [B]
     rejector_logits,           # [B, n_e]
     acc_post_def_batch,        # [B, n_e]
+    diff_Lm_Ld,                # [B, n_e]
     alpha=1.0,
     beta=1.0,
+    gamma=0.0,
     distance_loss=0
 ):
     """
@@ -521,7 +525,7 @@ def mao_deferral_loss_mae(
     gj_raw = (
         alpha * (1.0 - acc_post_def_batch)
         + beta
-        + distance_loss
+        + distance_loss - gamma * diff_Lm_Ld
     )                                                        # [B, n_e]
 
     g_all = torch.cat([g0.unsqueeze(1), gj_raw], dim=1)      # [B, 1+n_e]
@@ -568,7 +572,7 @@ def mao_deferral_loss_mae(
     total_loss = term1 + term2                               # [B, 1]
     return total_loss.mean()
 
-def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, alpha=1.0, beta=1.0, distance_loss=10):  
+def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch, diff_Lm_Ld, alpha=1.0, beta=1.0, gamma=0.0, distance_loss=10):  
     """
     Surrogate deferral loss adapted from Mao et al. (2023), L_exp in predictor-rejector setting.
 
@@ -601,7 +605,7 @@ def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch,
     gj_raw = (
         alpha * (1.0 - acc_post_def_batch)
         + beta
-        + distance_loss.view(1, -1)
+        + distance_loss.view(1, -1) - gamma * diff_Lm_Ld
     )                                                    # [B, n_e]
 
     # stack: [B, 1 + n_e]
@@ -668,7 +672,7 @@ def mao_deferral_loss_exp(acc_no_def_batch, rejector_logits, acc_post_def_batch,
     
     return torch.mean(total_loss)
 
-def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alpha, beta, device, topk_values=[1, 3, 5],distance_loss=[0]):
+def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alpha, beta, gamma, device, topk_values=[1, 3, 5],distance_loss=[0]):
     rejector.train()
     total_loss = 0
     correct = 0
@@ -688,26 +692,33 @@ def train_one_epoch(loss_type,rejector,epoch, loader, optimizer,save_every, alph
     total_topk_correct = {k: 0 for k in topk_values}
     
     if loss_type == "mae":
-        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_mae(no_df, logits, post_df, alpha, beta, distance_loss)
+        loss_fn = lambda no_df, logits, post_df, diff_Lm_Ld: mao_deferral_loss_mae(no_df, logits, post_df, diff_Lm_Ld, alpha, beta, gamma, distance_loss)
     elif loss_type == "log":
-        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_log(no_df, logits, post_df, alpha, beta, distance_loss)
+        loss_fn = lambda no_df, logits, post_df, diff_Lm_Ld: mao_deferral_loss_log(no_df, logits, post_df, diff_Lm_Ld, alpha, beta, gamma, distance_loss)
     elif loss_type == "exp":
-        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_exp(no_df, logits, post_df, alpha, beta, distance_loss)
+        loss_fn = lambda no_df, logits, post_df, diff_Lm_Ld: mao_deferral_loss_exp(no_df, logits, post_df, diff_Lm_Ld, alpha, beta, gamma, distance_loss)
         
     else:
         raise ValueError(f"Invalid loss_type: {loss_type}")
 
-    for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
+    for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch, diff_Lm_Ld in loader:
         clips_batch = clips_batch.to(device)
         no_df_dice_batch = no_df_dice_batch.to(device)
         post_df_dice_batch = post_df_dice_batch.to(device)
-        
+        diff_Lm_Ld = diff_Lm_Ld.to(device)
         optimizer.zero_grad()
         
         #input= clips_batch.permute(0, 2, 1, 3, 4)
         rej_logits = rejector(clips_batch)
+
+        # Shape sanity: model outputs must align with dataset-provided per-expert metrics
+        if rej_logits.shape[1] != post_df_dice_batch.shape[1]:
+            raise ValueError(
+                f"Rejector output dim ({rej_logits.shape[1]}) must match post_df_dice_batch dim ({post_df_dice_batch.shape[1]}). "
+                f"Your npz has n_e={post_df_dice_batch.shape[1]} deferral experts/frames; set the model output to the same."
+            )
         
-        loss = loss_fn(no_df_dice_batch, rej_logits, post_df_dice_batch)
+        loss = loss_fn(no_df_dice_batch, rej_logits, post_df_dice_batch, diff_Lm_Ld)
         
         # loss_2 = mao_deferral_loss_log_from_template(no_df_dice_batch, rej_logits, post_df_dice_batch, alpha, beta, distance_loss)
         # print (f"loss_old: {loss.item()} loss_new: {loss_2.item()}")
@@ -850,7 +861,7 @@ def calculate_topk_accuracy(rejector_logits, best_actions, k_values=[1, 3, 5]):
     
     return topk_accuracies
 
-def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=0):
+def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, gamma, device, logging=None, topk_values=[1, 3, 5], distance_loss=0):
     model.eval()
     total_samples = 0
     total_regret = 0.0
@@ -871,26 +882,31 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, log
     
     
     if loss_type == "mae":
-        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_mae(no_df, logits, post_df, alpha, beta, distance_loss)
+        loss_fn = lambda no_df, logits, post_df, diff_Lm_Ld: mao_deferral_loss_mae(no_df, logits, post_df, diff_Lm_Ld, alpha, beta, gamma, distance_loss)
     elif loss_type == "log":
-        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_log(no_df, logits, post_df, alpha, beta, distance_loss)
+        loss_fn = lambda no_df, logits, post_df, diff_Lm_Ld: mao_deferral_loss_log(no_df, logits, post_df, diff_Lm_Ld, alpha, beta, gamma, distance_loss)
     elif loss_type == "exp":
-        loss_fn = lambda no_df, logits, post_df: mao_deferral_loss_exp(no_df, logits, post_df, alpha, beta, distance_loss)
+        loss_fn = lambda no_df, logits, post_df, diff_Lm_Ld: mao_deferral_loss_exp(no_df, logits, post_df, diff_Lm_Ld, alpha, beta, gamma, distance_loss)
     else:
         raise ValueError(f"Invalid loss_type: {loss_type}")
 
     with torch.no_grad():
-        for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch in loader:
+        for clips_batch, no_df_dice_batch, post_df_dice_batch, video_name_batch, diff_Lm_Ld in loader:
             clips_batch = clips_batch.to(device)                        # [B, T, C, H, W]
             no_df_dice_batch = no_df_dice_batch.to(device)              # [B]
             post_df_dice_batch = post_df_dice_batch.to(device)          # [B, n_e]
+            diff_Lm_Ld = diff_Lm_Ld.to(device)                          # [B, n_e] (or broadcastable)
 
             # Predict deferral logits
             #input= clips_batch.permute(0, 2, 1, 3, 4)
             rej_logits = model(clips_batch)
 
             # Calculate validation loss using deferral_loss
-            val_loss = loss_fn(no_df_dice_batch, rej_logits, post_df_dice_batch)
+            if rej_logits.shape[1] != post_df_dice_batch.shape[1]:
+                raise ValueError(
+                    f"Rejector output dim ({rej_logits.shape[1]}) must match post_df_dice_batch dim ({post_df_dice_batch.shape[1]})."
+                )
+            val_loss = loss_fn(no_df_dice_batch, rej_logits, post_df_dice_batch, diff_Lm_Ld)
             total_val_loss += val_loss.item()
 
             # Inference based on rule: defer or not
@@ -965,11 +981,11 @@ def validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, log
     return avg_val_loss, selection_accuracy, mean_regret, all_best_actions, all_chosen_actions, avg_rank_distance, avg_chosen_acc, avg_best_acc, topk_accuracies, all_video_names, avg_chosen_cost, avg_best_cost   
 
 
-def test_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, logging=None, topk_values=[1, 3, 5], distance_loss=0):
+def test_one_epoch(loss_type, model, epoch, loader, alpha, beta, gamma, device, logging=None, topk_values=[1, 3, 5], distance_loss=0):
     """
     Test one epoch - identical to validate_one_epoch but for test set.
     """
-    return validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, device, logging, topk_values, distance_loss)
+    return validate_one_epoch(loss_type, model, epoch, loader, alpha, beta, gamma, device, logging, topk_values, distance_loss)
 
 
 
@@ -1676,6 +1692,12 @@ def main():
         default=None,
         help="Data npz dir (default: None)",
     )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.0,
+        help="Gamma parameter for weighting delta loss",
+    )
 
     
     args = parser.parse_args()
@@ -1823,20 +1845,20 @@ def main():
         # Start epoch runtime tracking
         epoch_start_time = time.time()
        
-        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, optimizer, args.save_every, args.alpha, args.beta, device, args.topk_values, distance_loss)
+        train_loss, train_acc, train_regret, train_best_actions, train_chosen_actions, train_avg_rank_distance, train_chosen_acc, train_best_acc, topk_accuracies, video_names, train_chosen_cost, train_best_cost = train_one_epoch(args.loss_type,model,epoch, train_loader, optimizer, args.save_every, args.alpha, args.beta, args.gamma, device, args.topk_values, distance_loss)
         
         # Calculate epoch runtime
         epoch_runtime = time.time() - epoch_start_time
         
         if (epoch) % args.save_every == 0:
             
-            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
+            val_loss, val_acc, mean_regret, val_best_actions, val_chosen_actions, val_avg_rank_distance, val_chosen_acc, val_best_acc, val_topk_accuracies, val_video_names, val_chosen_cost, val_best_cost = validate_one_epoch(args.loss_type,model,epoch, val_loader, args.alpha, args.beta, args.gamma, device, logging, args.topk_values, distance_loss)
             
             # Test evaluation
             if test_loader is not None:
-                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = test_one_epoch(args.loss_type,model,epoch, test_loader, args.alpha, args.beta, device, logging, args.topk_values, distance_loss)
+                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = test_one_epoch(args.loss_type,model,epoch, test_loader, args.alpha, args.beta, args.gamma, device, logging, args.topk_values, distance_loss)
             else:
-                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = None, None, None, None, None, None, None, None, None, None, None, None
+                test_loss, test_acc, test_mean_regret, test_best_actions, test_chosen_actions, test_avg_rank_distance, test_chosen_acc, test_best_acc, test_topk_accuracies, test_video_names, test_chosen_cost, test_best_cost = None, None, None, None, None, None, None, None, None, None, None, None, None
 
             train_losses.append(train_loss)
             val_losses.append(val_loss)
