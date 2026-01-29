@@ -132,7 +132,19 @@ def get_dataloaders( args, batch_size=8, split_ratio=0.8):
             # Extract subject ID from filename - it's the part before the first underscore
             filename = os.path.basename(npz_file)
             # Get the part before the first underscore as subject ID
-            subject_id = filename.split('_')[0]
+            
+            if args.dataset == "sun":
+                parts = filename.split('_')
+                if len(parts) == 4:
+                    subject_id = parts[0]
+                elif len(parts) == 5:
+                    subject_id = parts[0] + '_' + parts[1]
+                else:
+                    raise RuntimeError(f"Unexpected filename format for SUN dataset: '{filename}'. Got {len(parts)} parts (expected 4 or 5).")
+            elif args.dataset == "vtus":
+                subject_id = filename.split('_')[0]
+            elif args.dataset == "mup":
+                subject_id = filename.split('_')[0]
             
             if subject_id in train_subject_ids:
                 train_idx.append(i)
