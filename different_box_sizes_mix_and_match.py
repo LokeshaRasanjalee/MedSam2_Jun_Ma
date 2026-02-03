@@ -20,13 +20,16 @@ import pandas as pd
 
 
 DEFAULT_MACHINE_DIR = Path(
-    "/home/tim-3090/Documents/code/MedSam2_Jun_Ma/media/Inference/box_14_12_k10_vtus_0"
+    #"/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl_vtus/box_14_12_k10_vtus_all"
+    "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl_sun/box_14_12_k10_sun_all"
 )
 DEFAULT_EXPERT_DIR = Path(
-    "/home/tim-3090/Documents/code/MedSam2_Jun_Ma/media/Inference/box_12_10_k10_vtus_0"
+    #"/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl_vtus/box_10_14_k10_vtus_all"
+    "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl_sun/box_10_14_k10_sun_all"
 )
 DEFAULT_FINAL_DIR = Path(
-    "/home/tim-3090/Documents/code/MedSam2_Jun_Ma/media/Inference/box_14_10_k10_vtus_0"
+    #"/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl_vtus/box_14_14_k10_vtus_all"
+    "/hpcfs/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/miccai_data_pkl_sun/box_14_14_k10_sun_all"
 )
 
 
@@ -147,6 +150,7 @@ def main() -> None:
     # - corresponding machine_dir/iou_dict/*_iou_dict.pkl
     machine_data_dir = machine_dir / "data_pkl"
     machine_iou_dir = machine_dir / "iou_dict"
+    expert_iou_dir = expert_dir / "iou_dict"
 
     data_files = sorted(machine_data_dir.glob("*_data.pkl"))
     print(f"found_data_pkls: {len(data_files)} in {machine_data_dir}")
@@ -156,11 +160,15 @@ def main() -> None:
 
     for data_pkl in data_files:
         iou_name = data_pkl.name.replace("_data.pkl", "_iou_dict.pkl")
-        iou_pkl = machine_iou_dir / iou_name
-        if not iou_pkl.exists():
-            missing_iou.append(iou_pkl)
+        machine_iou_pkl = machine_iou_dir / iou_name
+        expert_iou_pkl = expert_iou_dir / iou_name
+        if not machine_iou_pkl.exists() or not expert_iou_pkl.exists():
+            if not machine_iou_pkl.exists():
+                missing_iou.append(machine_iou_pkl)
+            if not expert_iou_pkl.exists():
+                missing_iou.append(expert_iou_pkl)
             continue
-        pairs.append((data_pkl, iou_pkl))
+        pairs.append((data_pkl, machine_iou_pkl))
 
     print(f"found_pairs: {len(pairs)}")
     if missing_iou:
@@ -179,8 +187,8 @@ def main() -> None:
 
         # Build new_iou_dict using BOTH machine and expert iou_dict pkls
         iou_name = data_pkl.name.replace("_data.pkl", "_iou_dict.pkl")
-        machine_iou_pkl = machine_dir / "iou_dict" / iou_name
-        expert_iou_pkl = expert_dir / "iou_dict" / iou_name
+        machine_iou_pkl = machine_iou_dir / iou_name
+        expert_iou_pkl = expert_iou_dir / iou_name
 
         machine_iou_dict = _load_iou_pkl(machine_iou_pkl)
         expert_iou_dict = _load_iou_pkl(expert_iou_pkl)
