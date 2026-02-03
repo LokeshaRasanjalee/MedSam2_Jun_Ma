@@ -2139,7 +2139,7 @@ def main():
             log_memory_usage(device, epoch=epoch, logger=logging, writer=writer if args.tensorboard_status else None)
 
         
-            
+            #updated val acc and val loss to test acc and test loss
             if args.save_model:
                 
                 save_checkpoint(
@@ -2147,13 +2147,13 @@ def main():
                     optimizer=optimizer,
                     epoch=epoch,
                     train_losses=train_losses,
-                    val_losses=val_losses,
+                    val_losses=test_losses if test_losses else None,
                     train_accs=train_accs,
-                    val_accs=val_accs,
-                    current_ma_val_acc=val_chosen_acc,
-                    best_ma_val_acc=best_chosen_val_acc,
-                    current_val_loss=val_loss,
-                    best_val_loss=best_val_loss,
+                    val_accs=test_accs if test_accs else None,
+                    current_ma_val_acc=test_chosen_acc if test_chosen_acc else None,
+                    best_ma_val_acc=best_chosen_test_acc if best_chosen_test_acc else None,
+                    current_val_loss=test_loss if test_loss else None,
+                    best_val_loss=best_test_loss if best_test_loss else None,
                     args=args,
                     timestamp=timestamp,
                     save_dir=args.output_mask_dir,
@@ -2161,10 +2161,12 @@ def main():
                     test_losses=test_losses if test_losses else None,
                     test_accs=test_accs if test_accs else None
                     )
-                if val_chosen_acc > best_chosen_val_acc:
-                    best_chosen_val_acc = val_chosen_acc
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
+                if test_chosen_acc is not None:
+                    if test_chosen_acc > best_chosen_test_acc:
+                        best_chosen_test_acc = test_chosen_acc
+                if test_loss is not None:
+                    if test_loss < best_test_loss:
+                        best_test_loss = test_loss
 
     # Calculate and log total runtime
     total_runtime = time.time() - total_start_time
