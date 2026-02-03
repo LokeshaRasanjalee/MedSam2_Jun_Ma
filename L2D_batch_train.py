@@ -1602,7 +1602,7 @@ def main():
     
         # ----- Define Resize Transform for R(2+1)D -----
     r2plus1d_transform = T.Compose([
-        T.Resize((112, 112), interpolation=T.InterpolationMode.BILINEAR),    # Downsample frames to 112x112
+        T.Resize((112, 112), interpolation=T.InterpolationMode.NEAREST),    # Downsample frames to 112x112
         T.ToTensor(),            # (H, W, C) -> (C, H, W)
     ])
     

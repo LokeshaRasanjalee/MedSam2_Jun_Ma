@@ -185,7 +185,8 @@ class ClipDataset(Dataset):
                 # local_post_df_loss_complement = 1 - local_post_df_loss_norm
                 
                 # Pre-compute normalized and permuted masks
-                masks = self.mask_transform(data['Masks'])
+                # masks = self.mask_transform(data['Masks'])
+                masks = data['Masks']
                 
                 # masks: torch.Tensor of shape (1, 7, 112, 112)
                 masks_np = masks.numpy()  # Convert to numpy for easy percentile computation

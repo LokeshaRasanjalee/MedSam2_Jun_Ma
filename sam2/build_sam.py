@@ -170,40 +170,40 @@ def build_sam2_video_predictor_hf(model_id, **kwargs):
     )
 
 
-def _load_checkpoint(model, ckpt_path):
-    if ckpt_path is not None:
-        sd = torch.load(ckpt_path, map_location="cpu", weights_only=True)["model"]
-        missing_keys, unexpected_keys = model.load_state_dict(sd)
-        if missing_keys:
-            logging.error(missing_keys)
-            raise RuntimeError()
-        if unexpected_keys:
-            logging.error(unexpected_keys)
-            raise RuntimeError()
-        logging.info("Loaded checkpoint sucessfully")
-        
 # def _load_checkpoint(model, ckpt_path):
 #     if ckpt_path is not None:
 #         sd = torch.load(ckpt_path, map_location="cpu", weights_only=True)["model"]
-        
-#         # Handle maskmem_tpos_enc size mismatch
-#         if "maskmem_tpos_enc" in sd and "maskmem_tpos_enc" in model.state_dict():
-#             checkpoint_shape = sd["maskmem_tpos_enc"].shape
-#             model_shape = model.state_dict()["maskmem_tpos_enc"].shape
-            
-#             if checkpoint_shape != model_shape:
-#                 print(f"Adjusting maskmem_tpos_enc from {checkpoint_shape} to {model_shape}")
-#                 if checkpoint_shape[0] > model_shape[0]:
-#                     # Truncate checkpoint to match model
-#                     sd["maskmem_tpos_enc"] = sd["maskmem_tpos_enc"][:model_shape[0]]
-#                 else:
-#                     # Pad model parameter to match checkpoint
-#                     padding = torch.zeros(model_shape[0] - checkpoint_shape[0], *checkpoint_shape[1:])
-#                     sd["maskmem_tpos_enc"] = torch.cat([sd["maskmem_tpos_enc"], padding], dim=0)
-        
-#         missing_keys, unexpected_keys = model.load_state_dict(sd, strict=False)
+#         missing_keys, unexpected_keys = model.load_state_dict(sd)
 #         if missing_keys:
-#             logging.warning(f"Missing keys: {missing_keys}")
+#             logging.error(missing_keys)
+#             raise RuntimeError()
 #         if unexpected_keys:
-#             logging.warning(f"Unexpected keys: {unexpected_keys}")
-#         logging.info("Loaded checkpoint successfully")
+#             logging.error(unexpected_keys)
+#             raise RuntimeError()
+#         logging.info("Loaded checkpoint sucessfully")
+        
+def _load_checkpoint(model, ckpt_path):
+    if ckpt_path is not None:
+        sd = torch.load(ckpt_path, map_location="cpu", weights_only=True)["model"]
+        
+        # Handle maskmem_tpos_enc size mismatch
+        if "maskmem_tpos_enc" in sd and "maskmem_tpos_enc" in model.state_dict():
+            checkpoint_shape = sd["maskmem_tpos_enc"].shape
+            model_shape = model.state_dict()["maskmem_tpos_enc"].shape
+            
+            if checkpoint_shape != model_shape:
+                print(f"Adjusting maskmem_tpos_enc from {checkpoint_shape} to {model_shape}")
+                if checkpoint_shape[0] > model_shape[0]:
+                    # Truncate checkpoint to match model
+                    sd["maskmem_tpos_enc"] = sd["maskmem_tpos_enc"][:model_shape[0]]
+                else:
+                    # Pad model parameter to match checkpoint
+                    padding = torch.zeros(model_shape[0] - checkpoint_shape[0], *checkpoint_shape[1:])
+                    sd["maskmem_tpos_enc"] = torch.cat([sd["maskmem_tpos_enc"], padding], dim=0)
+        
+        missing_keys, unexpected_keys = model.load_state_dict(sd, strict=False)
+        if missing_keys:
+            logging.warning(f"Missing keys: {missing_keys}")
+        if unexpected_keys:
+            logging.warning(f"Unexpected keys: {unexpected_keys}")
+        logging.info("Loaded checkpoint successfully")
