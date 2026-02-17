@@ -1895,24 +1895,24 @@ def main():
     best_epoch = 0
     
     ## ----------- Remove distance loss 
-    #distance_loss = []
-    # N=9
-    # for t in range(1, 10):  # Adjust based on the length of the video 
-    #     if args.distance_type == "exp":
-    #         distace_cost = args.distance_weight*(np.exp(-0.157 * (t - 1)))
-    #     elif args.distance_type == "quad":
-    #         distace_cost = args.distance_weight * ((N - t + 1) / N) ** 2  #find good values for distance factor and value inside exp term
-    #     distance_loss.append(distace_cost)
-    # distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
-    # distance_loss = distance_loss.to(device)
-    # logging.info(f"Distance loss: {distance_loss}")
-    ## ----------- Remove distance loss End
-    
-    
-    distance_loss = [0.0] * (args.num_classes)
+    distance_loss = []
+    N=9
+    for t in range(1, 10):  # Adjust based on the length of the video 
+        if args.distance_type == "exp":
+            distace_cost = args.distance_weight*(np.exp(-0.157 * (t - 1)))
+        elif args.distance_type == "quad":
+            distace_cost = args.distance_weight * ((N - t + 1) / N) ** 2  #find good values for distance factor and value inside exp term
+        distance_loss.append(distace_cost)
     distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
     distance_loss = distance_loss.to(device)
     logging.info(f"Distance loss: {distance_loss}")
+    ## ----------- Remove distance loss End
+    
+    
+    # distance_loss = [0.0] * (args.num_classes)
+    # distance_loss = torch.tensor(distance_loss, dtype=torch.float32)
+    # distance_loss = distance_loss.to(device)
+    # logging.info(f"Distance loss: {distance_loss}")
     
     for epoch in range(start_epoch, args.num_epochs+1):
         # Start epoch runtime tracking
