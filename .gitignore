@@ -19,7 +19,6 @@ hpc/*.out
 # Local project artifacts currently untracked
 .venv_fq/
 CMIG_clips/
-CMIG_data_processing/
 Ivos_w_data/
 _tmp_vtus_480p_build/
 analyse_data/

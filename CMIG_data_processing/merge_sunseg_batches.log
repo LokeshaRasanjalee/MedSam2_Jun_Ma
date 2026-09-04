@@ -1,0 +1,111 @@
+nohup: ignoring input
+Mode: COPY
+Root: /scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_npz_data/sunseg
+Combinations: 16
+
+10_10 -> sunseg_10_10
+  batch 00: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 01: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 02: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 03: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 04: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 05: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 06: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 07: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 08: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 09: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 10: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 11: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 12: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 13: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 14: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  totals: {'source': 151875, 'copied': 0, 'skipped': 151875, 'missing': 0}
+  destination: {'info_json': 1500, 'video_logs': 375, 'round_mask_dirs': 1500, 'mask_png': 150000}
+
+10_12 -> sunseg_10_12
+  batch 00: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 01: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 02: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 03: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 04: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 05: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 06: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 07: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 08: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 09: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 10: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 11: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 12: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 13: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 14: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  totals: {'source': 151875, 'copied': 0, 'skipped': 151875, 'missing': 0}
+  destination: {'info_json': 1500, 'video_logs': 375, 'round_mask_dirs': 1500, 'mask_png': 150000}
+
+10_14 -> sunseg_10_14
+  batch 00: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+Traceback (most recent call last):
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 261, in <module>
+    main()
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 208, in main
+    counts = merge_batch(
+             ^^^^^^^^^^^^
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 161, in merge_batch
+    result = copy_file_atomic(source, destination, overwrite)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 122, in copy_file_atomic
+    raise RuntimeError(
+RuntimeError: Conflicting destination file: /scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_npz_data/sunseg/sunseg_10_14/sam2_masks/case20_10_2_0181_round_1/0070.png
+Rerun with --overwrite-conflicts only if replacing it is intentional.
+Mode: COPY
+Root: /scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_npz_data/sunseg
+Combinations: 16
+
+10_10 -> sunseg_10_10
+Traceback (most recent call last):
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 261, in <module>
+    main()
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 208, in main
+    counts = merge_batch(
+             ^^^^^^^^^^^^
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 150, in merge_batch
+    for source in sorted(path for path in source_root.rglob("*") if path.is_file()):
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 150, in <genexpr>
+    for source in sorted(path for path in source_root.rglob("*") if path.is_file()):
+                                                                    ^^^^^^^^^^^^^^
+  File "/hpcfs/users/a1917962/.conda/envs/medsam2/lib/python3.12/pathlib.py", line 892, in is_file
+    return S_ISREG(self.stat().st_mode)
+                   ^^^^^^^^^^^
+  File "/hpcfs/users/a1917962/.conda/envs/medsam2/lib/python3.12/pathlib.py", line 840, in stat
+    return os.stat(self, follow_symlinks=follow_symlinks)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
+Mode: COPY
+Root: /scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_npz_data/sunseg
+Combinations: 16
+
+10_10 -> sunseg_10_10
+  batch 00: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 01: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 02: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 03: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+  batch 04: files=10125, copied=0, skipped=10125, missing_or_mismatch=0
+Traceback (most recent call last):
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 261, in <module>
+    main()
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 208, in main
+    counts = merge_batch(
+             ^^^^^^^^^^^^
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 150, in merge_batch
+    for source in sorted(path for path in source_root.rglob("*") if path.is_file()):
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratchdata1/users/a1917962/Medsam2_working/MedSam2_Jun_Ma/CMIG_data_processing/merge_sunseg_batch_outputs.py", line 150, in <genexpr>
+    for source in sorted(path for path in source_root.rglob("*") if path.is_file()):
+                                                                    ^^^^^^^^^^^^^^
+  File "/hpcfs/users/a1917962/.conda/envs/medsam2/lib/python3.12/pathlib.py", line 892, in is_file
+    return S_ISREG(self.stat().st_mode)
+                   ^^^^^^^^^^^
+  File "/hpcfs/users/a1917962/.conda/envs/medsam2/lib/python3.12/pathlib.py", line 840, in stat
+    return os.stat(self, follow_symlinks=follow_symlinks)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt
