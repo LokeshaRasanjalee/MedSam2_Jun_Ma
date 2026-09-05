@@ -67,7 +67,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", choices=sorted(DATASET_DEFAULTS), default="sunseg")
     parser.add_argument(
         "--architecture",
-        choices=("r2plus1d_18", "r3d_18", "resnet18_gru"),
+        choices=("r2plus1d_18", "r2plus1d_18_temporal", "r3d_18", "resnet18_gru"),
         default="r2plus1d_18",
     )
     parser.add_argument("--data-root", type=Path, help="Override the dataset's CMIG_l2d_data root.")
@@ -77,7 +77,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-root", type=Path, default=REPO_ROOT / "CMIG_l2d_training")
     parser.add_argument("--experiment-name", help="Default: <dataset>_<prompt-dataset>_<loss>.")
-    parser.add_argument("--loss", choices=("mae", "log", "exp"), default="mae")
+    parser.add_argument(
+        "--loss",
+        choices=("mae", "log", "exp", "mao_logistic"),
+        default="mae",
+        help=(
+            "Surrogate loss. mao_logistic uses Mao et al.'s two-stage regression-deferral "
+            "surrogate with 11 learned logits (stop plus ten frame actions)."
+        ),
+    )
     parser.add_argument("--beta", type=float, default=0.05, help="Cost added to every correction action.")
     parser.add_argument("--cost-tau", type=float, default=0.25)
     parser.add_argument("--epochs", type=int, default=100)
@@ -93,7 +101,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--head-learning-rate",
         type=float,
-        help="Optional ResNet-GRU learning rate for the randomly initialized score head; default uses --learning-rate.",
+        help="Optional learning rate for a randomly initialized shared score head; default uses --learning-rate.",
     )
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--gradient-clip", type=float, default=5.0)
@@ -137,10 +145,10 @@ def resolve_args(args: argparse.Namespace) -> argparse.Namespace:
         raise ValueError("--gru-learning-rate must be positive")
     if args.head_learning_rate is not None and args.head_learning_rate <= 0:
         raise ValueError("--head-learning-rate must be positive")
-    if args.architecture != "resnet18_gru" and (
-        args.gru_learning_rate is not None or args.head_learning_rate is not None
-    ):
-        raise ValueError("GRU/head-specific learning rates require --architecture resnet18_gru")
+    if args.architecture != "resnet18_gru" and args.gru_learning_rate is not None:
+        raise ValueError("--gru-learning-rate requires --architecture resnet18_gru")
+    if args.architecture not in {"resnet18_gru", "r2plus1d_18_temporal"} and args.head_learning_rate is not None:
+        raise ValueError("--head-learning-rate requires a shared-head architecture")
     if not 0 <= args.horizontal_flip_prob <= 1:
         raise ValueError("horizontal-flip-prob must be in [0,1]")
     return args
@@ -351,6 +359,7 @@ class ResNet18GRU(nn.Module):
         bidirectional: bool,
         pretrained_weights: Path | None,
         no_pretrained: bool,
+        learn_stop_logit: bool = False,
     ) -> None:
         super().__init__()
         if pretrained_weights:
@@ -386,6 +395,10 @@ class ResNet18GRU(nn.Module):
         self.score_head = nn.Linear(gru_features, 1)
         nn.init.normal_(self.score_head.weight, mean=0.0, std=0.01)
         nn.init.zeros_(self.score_head.bias)
+        self.stop_head = nn.Linear(gru_features, 1) if learn_stop_logit else None
+        if self.stop_head is not None:
+            nn.init.normal_(self.stop_head.weight, mean=0.0, std=0.01)
+            nn.init.zeros_(self.stop_head.bias)
 
     def forward(self, video: torch.Tensor) -> torch.Tensor:
         batch, channels, frames, height, width = video.shape
@@ -394,7 +407,64 @@ class ResNet18GRU(nn.Module):
         )
         features = self.backbone(frame_batch).reshape(batch, frames, 512)
         temporal_features, _ = self.gru(features)
-        return self.score_head(temporal_features).squeeze(-1)
+        frame_logits = self.score_head(temporal_features).squeeze(-1)
+        if self.stop_head is None:
+            return frame_logits
+        stop_logit = self.stop_head(temporal_features.mean(dim=1))
+        return torch.cat((stop_logit, frame_logits), dim=1)
+
+
+class TemporalR2Plus1D18(nn.Module):
+    """R(2+1)D-18 retaining ten aligned temporal features with a shared scorer."""
+
+    def __init__(
+        self,
+        backbone: nn.Module,
+        expected_frames: int = 10,
+        learn_stop_logit: bool = False,
+    ) -> None:
+        super().__init__()
+        self.backbone = backbone
+        self.expected_frames = expected_frames
+        # Torchvision downsamples time in the first block of layers 2-4.
+        # Preserve temporal length while retaining the original spatial stride.
+        for layer_name in ("layer2", "layer3", "layer4"):
+            first_block = getattr(self.backbone, layer_name)[0]
+            temporal_conv: nn.Conv3d = first_block.conv1[0][3]
+            temporal_conv.stride = (1, 1, 1)
+            downsample_conv: nn.Conv3d = first_block.downsample[0]
+            downsample_conv.stride = (1, 2, 2)
+        self.backbone.avgpool = nn.Identity()
+        self.backbone.fc = nn.Identity()
+        for module_name in ("stem", "layer1", "layer2", "layer3"):
+            for parameter in getattr(self.backbone, module_name).parameters():
+                parameter.requires_grad = False
+        self.score_head = nn.Linear(512, 1)
+        nn.init.normal_(self.score_head.weight, mean=0.0, std=0.01)
+        nn.init.zeros_(self.score_head.bias)
+        self.stop_head = nn.Linear(512, 1) if learn_stop_logit else None
+        if self.stop_head is not None:
+            nn.init.normal_(self.stop_head.weight, mean=0.0, std=0.01)
+            nn.init.zeros_(self.stop_head.bias)
+
+    def forward(self, video: torch.Tensor) -> torch.Tensor:
+        features = self.backbone.stem(video)
+        features = self.backbone.layer1(features)
+        features = self.backbone.layer2(features)
+        features = self.backbone.layer3(features)
+        features = self.backbone.layer4(features)
+        # Pool height/width only: [B,512,T,H,W] -> [B,T,512].
+        temporal_features = features.mean(dim=(-1, -2)).transpose(1, 2)
+        if temporal_features.shape[1] != self.expected_frames:
+            raise RuntimeError(
+                f"Temporal R(2+1)D produced {temporal_features.shape[1]} positions; "
+                f"expected {self.expected_frames}"
+            )
+        frame_logits = self.score_head(temporal_features).squeeze(-1)
+        if self.stop_head is None:
+            return frame_logits
+        stop_logit = self.stop_head(temporal_features.mean(dim=1))
+        return torch.cat((stop_logit, frame_logits), dim=1)
 
 
 def build_video_resnet(args: argparse.Namespace) -> nn.Module:
@@ -425,7 +495,8 @@ def build_video_resnet(args: argparse.Namespace) -> nn.Module:
             ) from error
         print(f"Loaded torchvision Kinetics-400 {display_name} weights")
     replace_video_input_stem(model, args.input_channels)
-    model.fc = nn.Linear(model.fc.in_features, 10)
+    output_actions = 11 if args.loss == "mao_logistic" else 10
+    model.fc = nn.Linear(model.fc.in_features, output_actions)
     nn.init.normal_(model.fc.weight, mean=0.0, std=0.01)
     nn.init.zeros_(model.fc.bias)
     # Match L2D_train.py: freeze the stem and residual stages 1-3, while
@@ -437,6 +508,18 @@ def build_video_resnet(args: argparse.Namespace) -> nn.Module:
 
 
 def build_model(args: argparse.Namespace) -> nn.Module:
+    if args.architecture == "r2plus1d_18_temporal":
+        # Build/load the ordinary pretrained R(2+1)D model first, then retain
+        # temporal resolution and replace its classifier with a shared scorer.
+        backbone_args = argparse.Namespace(**vars(args))
+        backbone_args.architecture = "r2plus1d_18"
+        backbone = build_video_resnet(backbone_args)
+        # build_video_resnet installed a temporary fc and froze stages 1-3;
+        # the wrapper replaces that fc and enforces the intended parameter set.
+        return TemporalR2Plus1D18(
+            backbone,
+            learn_stop_logit=args.loss == "mao_logistic",
+        )
     if args.architecture in {"r2plus1d_18", "r3d_18"}:
         return build_video_resnet(args)
     if args.architecture == "resnet18_gru":
@@ -446,11 +529,20 @@ def build_model(args: argparse.Namespace) -> nn.Module:
             bidirectional=not args.gru_unidirectional,
             pretrained_weights=args.pretrained_weights,
             no_pretrained=args.no_pretrained,
+            learn_stop_logit=args.loss == "mao_logistic",
         )
     raise ValueError(f"Unsupported architecture: {args.architecture}")
 
 
-def full_action_scores(frame_scores: torch.Tensor, valid: torch.Tensor) -> torch.Tensor:
+def full_action_scores(frame_scores: torch.Tensor, valid: torch.Tensor, loss_name: str) -> torch.Tensor:
+    if loss_name == "mao_logistic":
+        if frame_scores.shape[1] != 11:
+            raise ValueError(
+                f"Mao regression-deferral mode requires 11 learned logits, got {frame_scores.shape[1]}"
+            )
+        return frame_scores.masked_fill(~valid, -torch.inf)
+    if frame_scores.shape[1] != 10:
+        raise ValueError(f"Legacy loss mode requires ten learned frame scores, got {frame_scores.shape[1]}")
     stop = torch.zeros((frame_scores.shape[0], 1), dtype=frame_scores.dtype, device=frame_scores.device)
     scores = torch.cat((stop, frame_scores), dim=1)
     return scores.masked_fill(~valid, torch.inf)
@@ -468,6 +560,21 @@ def cost_target_weights(costs: torch.Tensor, valid: torch.Tensor, tau: float) ->
 
 
 def surrogate_loss(scores: torch.Tensor, costs: torch.Tensor, valid: torch.Tensor, loss_name: str, tau: float) -> torch.Tensor:
+    if loss_name == "mao_logistic":
+        # Mao et al. (2024), Regression with Multi-Expert Deferral, Eq. (3).
+        # Define C_0=L(h(x),y) for stop and C_j=c_j(x,y) for correction j.
+        # The coefficient of multiclass loss ell(r,x,k) is sum(C)-C_k.
+        # Invalid/already-prompted actions are omitted from the cost sum,
+        # log-softmax denominator, and loss terms. No per-sample normalization
+        # or cost-temperature transformation is applied.
+        finite_costs = costs.masked_fill(~valid, 0.0)
+        total_cost = finite_costs.sum(dim=1, keepdim=True)
+        mao_weights = (total_cost - finite_costs).masked_fill(~valid, 0.0).detach()
+        valid_logits = scores.masked_fill(~valid, -torch.inf)
+        # The paper defines multiclass logistic loss with log base 2.
+        negative_log_prob = -F.log_softmax(valid_logits, dim=1) / math.log(2.0)
+        negative_log_prob = negative_log_prob.masked_fill(~valid, 0.0)
+        return (mao_weights * negative_log_prob).sum(dim=1).mean()
     weights = cost_target_weights(costs, valid, tau)
     utilities = (-scores).masked_fill(~valid, -torch.inf)
     log_probs = F.log_softmax(utilities, dim=1)
@@ -518,9 +625,10 @@ def update_decision_metrics(
     ious: torch.Tensor,
     valid: torch.Tensor,
     locations: torch.Tensor,
+    higher_score_is_better: bool = False,
 ) -> None:
     batch = scores.shape[0]
-    chosen = scores.argmin(1)
+    chosen = scores.argmax(1) if higher_score_is_better else scores.argmin(1)
     oracle = costs.argmin(1)
     chosen_iou = ious.gather(1, chosen[:, None]).squeeze(1)
     oracle_iou = ious.gather(1, oracle[:, None]).squeeze(1)
@@ -539,7 +647,7 @@ def update_decision_metrics(
     meter.add(prefix + "oracle_deferral_rate", (oracle > 0).float())
     meter.add(prefix + "stop_defer_disagreement", ((chosen > 0) != (oracle > 0)).float())
 
-    order_by_score = scores.argsort(1)
+    order_by_score = scores.argsort(1, descending=higher_score_is_better)
     for k in (1, 3, 5):
         meter.add(prefix + f"top{k}_accuracy", (order_by_score[:, :k] == oracle[:, None]).any(1).float())
     order_by_cost = costs.argsort(1)
@@ -581,7 +689,7 @@ def run_epoch(
         with torch.set_grad_enabled(training):
             with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=amp_enabled):
                 frame_scores = model(inputs)
-                scores = full_action_scores(frame_scores, valid)
+                scores = full_action_scores(frame_scores, valid, args.loss)
                 costs = action_costs(ious, valid, args.beta)
                 loss = surrogate_loss(scores, costs, valid, args.loss, args.cost_tau)
             if training:
@@ -593,7 +701,16 @@ def run_epoch(
                 scaler.update()
         count = inputs.shape[0]
         meter.add_scalar("loss", loss.detach().item(), count)
-        update_decision_metrics(meter, "", scores.detach(), costs, ious, valid, locations)
+        update_decision_metrics(
+            meter,
+            "",
+            scores.detach(),
+            costs,
+            ious,
+            valid,
+            locations,
+            higher_score_is_better=args.loss == "mao_logistic",
+        )
         for round_number in range(1, 5):
             selected = rounds == round_number
             if selected.any():
@@ -605,6 +722,7 @@ def run_epoch(
                     ious[selected],
                     valid[selected],
                     locations[selected],
+                    higher_score_is_better=args.loss == "mao_logistic",
                 )
     return meter.result()
 
@@ -702,9 +820,13 @@ def main() -> None:
     trainable_names = [name for name, parameter in model.named_parameters() if parameter.requires_grad]
     frozen_names = [name for name, parameter in model.named_parameters() if not parameter.requires_grad]
     if args.architecture == "resnet18_gru":
-        expected_trainable_prefixes = ("backbone.layer4.", "gru.", "score_head.")
-        trainable_description = "ResNet layer4 + GRU + score head"
+        expected_trainable_prefixes = ("backbone.layer4.", "gru.", "score_head.", "stop_head.")
+        trainable_description = "ResNet layer4 + GRU + frame score head + optional stop head"
         frozen_description = "ResNet stem + layer1-layer3"
+    elif args.architecture == "r2plus1d_18_temporal":
+        expected_trainable_prefixes = ("backbone.layer4.", "score_head.", "stop_head.")
+        trainable_description = "R(2+1)D layer4 + shared temporal frame head + optional stop head"
+        frozen_description = "R(2+1)D stem + layer1-layer3"
     else:
         expected_trainable_prefixes = ("layer4.", "fc.")
         trainable_description = "layer4 + fc"
@@ -720,17 +842,35 @@ def main() -> None:
     ):
         gru_lr = args.gru_learning_rate or args.learning_rate
         head_lr = args.head_learning_rate or args.learning_rate
+        head_parameters = list(model.score_head.parameters())
+        if model.stop_head is not None:
+            head_parameters.extend(model.stop_head.parameters())
         optimizer = torch.optim.AdamW(
             [
                 {"params": model.backbone.layer4.parameters(), "lr": args.learning_rate, "group_name": "backbone_layer4"},
                 {"params": model.gru.parameters(), "lr": gru_lr, "group_name": "gru"},
-                {"params": model.score_head.parameters(), "lr": head_lr, "group_name": "score_head"},
+                {"params": head_parameters, "lr": head_lr, "group_name": "action_heads"},
             ],
             weight_decay=args.weight_decay,
         )
         print(
             "Optimizer learning rates: "
             f"backbone.layer4={args.learning_rate:g}, GRU={gru_lr:g}, score_head={head_lr:g}"
+        )
+    elif args.architecture == "r2plus1d_18_temporal" and args.head_learning_rate is not None:
+        head_parameters = list(model.score_head.parameters())
+        if model.stop_head is not None:
+            head_parameters.extend(model.stop_head.parameters())
+        optimizer = torch.optim.AdamW(
+            [
+                {"params": model.backbone.layer4.parameters(), "lr": args.learning_rate, "group_name": "backbone_layer4"},
+                {"params": head_parameters, "lr": args.head_learning_rate, "group_name": "action_heads"},
+            ],
+            weight_decay=args.weight_decay,
+        )
+        print(
+            "Optimizer learning rates: "
+            f"backbone.layer4={args.learning_rate:g}, score_head={args.head_learning_rate:g}"
         )
     else:
         optimizer = torch.optim.AdamW(
