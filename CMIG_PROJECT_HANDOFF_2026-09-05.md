@@ -84,7 +84,7 @@ All created video frames are 256x256.
 
 SUN-SEG details:
 
-- Training: 95 original videos, 276 clips.
+- Training: 95 assigned original video IDs, 92 producing clips, 278 clips. The earlier estimate of 276 was superseded by the raw-data dry run.
 - Validation: 17 video IDs; 16 produce clips; 24 clips.
 - Testing: 73 clips.
 - Total: 375 clips.
@@ -701,6 +701,110 @@ seed: 42
 Compare natural sampling against job `15936794` using validation-selected checkpoints. Do not
 conclude that Equation 3 is ineffective until this sampling-confound experiment has been run.
 
+### Completed balanced Mao-logistic results
+
+SLURM array job `15936794` completed all three tasks at epoch 2000. Lowest-test-cost results
+(debugging only because test selected the epoch):
+
+| Dataset | Best epoch | Chosen cost | Oracle cost | Regret | Chosen IoU | Model defer | Oracle defer |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| SUN-SEG | 1270 | 0.436522 | 0.389299 | 0.047223 | 0.607999 | 44.52% | 23.63% |
+| VTUS | 1880 | 0.337557 | 0.312145 | 0.025412 | 0.691110 | 28.67% | 23.00% |
+| MUP | 1260 | 0.174534 | 0.164831 | 0.009703 | 0.841466 | 16.00% | 16.00% |
+
+The learned stop logit removed the previous strong stopping bias but produced excessive deferral
+after round 1. Training longer did not resolve it. Frame-distribution plots and CSV files are in:
+
+```text
+CMIG_l2d_training/deferral_frame_distributions/mao_logistic_roundaware_v4/
+```
+
+### Natural-sampling Mao experiment
+
+SLURM job `15944205` uses ordinary natural shuffled batches:
+
+```text
+hpc/train_three_datasets_mao_regression_logistic_natural_gpu.slurm
+```
+
+At the approximately 40-minute inspection point, natural sampling had not solved the problem:
+
+| Dataset | Observed epoch | Best-test epoch | Chosen cost | Regret | Model defer | Oracle defer |
+|---|---:|---:|---:|---:|---:|---:|
+| SUN-SEG | 547 | 390 | 0.436089 | 0.046790 | 38.01% | 23.63% |
+| VTUS | 549 | 520 | 0.340634 | 0.028489 | 27.33% | 23.00% |
+| MUP | 671 | 640 | 0.178319 | 0.013487 | 22.00% | 16.00% |
+
+Natural sampling reduced SUN late-round deferral somewhat but did not fix early under-deferral or
+late over-deferral. Oracle-balanced sampling was a confound but is not the main cause.
+
+With 7-10 valid actions, Equation 3 weights `sum(costs)-cost_k` share a large common component and
+can be very similar. This creates nearly uniform optimal logistic probabilities and weak practical
+separation. Simple sum/global cost normalization does not change the relative weights and cannot
+fix this.
+
+### State-aware temporal model
+
+New architecture and files:
+
+```text
+r2plus1d_18_temporal_state
+CMIG_data_processing/train_l2d_round_stratified_state.py
+hpc/train_three_datasets_mao_state_round_stratified_gpu.slurm
+```
+
+The model sends `already_prompted_mask [10]` through a 10-to-32-to-32 state encoder. The state
+embedding conditions both the shared correction-frame head and learned stop head. It retains 11
+learned logits and the unnormalized Mao logistic loss.
+
+Every full batch contains two natural samples from each round. Every sample is used once per epoch;
+the sampler never reads the oracle action and does not balance stop/defer outcomes. Verified training
+pool sizes are SUN 278 per round, VTUS 285 per round and MUP 232 per round. State-aware array job
+`15945448` was submitted by the user.
+
+## Critical update: SUN clips cross acquisition boundaries
+
+The current SUN clip dataset is not valid for temporal modeling. The generator treats every file in
+a case folder as one continuous sequence, although many folders contain several acquisition segments
+identified by filename prefixes such as `a1`, `a2`, and `a10`. It allows 100-frame windows to cross
+between segments.
+
+Confirmed example:
+
+```text
+clip: case25_1_1_0001
+output frame 54 source: ..._a10_ayy_image0055
+output frame 55 source: ..._a9_ayy_image0001
+```
+
+The adjacent saved images show an abrupt viewpoint change. Plain filename sorting can also place
+`a10` before `a9`, but numeric sorting alone is insufficient: separate acquisition segments must
+not be joined.
+
+| Split | Current clips | Cross-acquisition clips |
+|---|---:|---:|
+| Train | 278 | 141 |
+| Validation | 24 | 14 |
+| Test | 73 | 43 |
+| Total | 375 | 198 |
+
+The downstream SUN data is internally consistent but faithfully represents the flawed clips: 1,500
+four-round samples, nonempty binary propagated masks, valid action IoUs, correct round chains, no
+exact duplicate shared tensors and no split leakage. The defect starts in `create_sun_clips.py`.
+
+Treating each filename prefix before `_imageNNNN` as an independent acquisition gives a provisional
+boundary-safe estimate of 143 training, 11 validation and 35 test clips (189 total) under the same
+clip length and strides. Review the corrected dry run before accepting these counts.
+
+Consequences:
+
+- Existing SUN propagation, intermediate data, training and evaluation are invalid as final evidence.
+- State-aware task `15945448_0` is also using affected SUN data and is not scientifically valid.
+- VTUS and MUP tasks can continue.
+- Generate corrected SUN data in a new folder; do not overwrite the current data before verification.
+- SUN must be rerun from clips through SAM2 propagation, intermediate conversion and training.
+- VTUS passed the audit: 390 unique clips, correct splits and round chains, nonempty masks, and no detected SUN-style boundary defect.
+
 ## Iterative evaluation
 
 Main script:
@@ -811,5 +915,5 @@ Before modifying or running anything:
 Give the new agent this repository and say:
 
 ```text
-Read CMIG_PROJECT_HANDOFF_2026-09-05.md completely. Inspect the current files and Git status without changing anything. Continue from the "Recommended immediate next step": implement or verify validation-only stop-threshold calibration for the temporal R(2+1)D Experiment A best-validation checkpoints. Do not submit any SLURM jobs. First report what you found and the exact proposed changes.
+Read CMIG_PROJECT_HANDOFF_2026-09-05.md completely, especially "Critical update: SUN clips cross acquisition boundaries." Inspect the current files and Git status without changing anything. First design a corrected SUN clip dry run that treats each acquisition prefix before `_imageNNNN` as a separate sequence and writes to a new folder. Do not overwrite existing data or submit SLURM jobs. Report the measured counts and exact proposed changes before implementation. VTUS and MUP state-aware job tasks may be analyzed independently.
 ```
