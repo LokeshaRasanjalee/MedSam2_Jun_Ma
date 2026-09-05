@@ -624,9 +624,82 @@ hpc/train_three_datasets_mao_regression_logistic_gpu.slurm
 ```
 
 It uses the corrected-mask data, temporal R(2+1)D, fixed round-aware batches, alpha 0.1,
-layer-4 LR `1e-7`, action-head LR `1e-5`, 2000 epochs, and seed 42. It has been syntax- and
-sample-tested but has not been submitted. The iterative evaluator still needs explicit support for
-the new 11-logit checkpoint format before these models are evaluated iteratively.
+layer-4 LR `1e-7`, action-head LR `1e-5`, 2000 epochs, and seed 42. The iterative evaluator still
+needs explicit support for the new 11-logit checkpoint format before these models are evaluated
+iteratively.
+
+### Preliminary running results from the best-test-cost checkpoints
+
+SLURM array job:
+
+```text
+15936794
+```
+
+These jobs were still running when inspected. The checkpoint selection below uses test cost and is
+therefore for debugging only, not final scientific reporting.
+
+| Dataset | Current epoch | Best-test epoch | Chosen cost | Oracle cost | Cost regret | Chosen IoU | Oracle IoU | Model defer | Oracle defer |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| SUN-SEG | 671/2000 | 590 | 0.437479 | 0.389299 | 0.048180 | 0.606699 | 0.634331 | 44.18% | 23.63% |
+| VTUS | 641/2000 | 550 | 0.339326 | 0.312145 | 0.027181 | 0.687674 | 0.710855 | 27.00% | 23.00% |
+| MUP | 805/2000 | 790 | 0.176748 | 0.164831 | 0.011917 | 0.841252 | 0.851169 | 18.00% | 16.00% |
+
+Round-wise model/oracle deferral rates:
+
+| Dataset | Round 1 | Round 2 | Round 3 | Round 4 |
+|---|---:|---:|---:|---:|
+| SUN-SEG model | 53.42% | 41.10% | 39.73% | 42.47% |
+| SUN-SEG oracle | 84.93% | 9.59% | 0% | 0% |
+| VTUS model | 61.33% | 25.33% | 12.00% | 9.33% |
+| VTUS oracle | 86.67% | 5.33% | 0% | 0% |
+| MUP model | 48.00% | 20.00% | 4.00% | 0% |
+| MUP oracle | 60.00% | 4.00% | 0% | 0% |
+
+Compared with temporal R(2+1)D Experiment A, current Mao-logistic chosen cost is worse by
+approximately `0.0171` for SUN, `0.0086` for VTUS, and `0.0081` for MUP. The learned stop logit
+has removed the old strong stopping bias and raised round-1 deferral, but it now over-defers after
+round 1. SUN is the clearest failure: it continues to defer on roughly 40% of rounds 2-4 even though
+the oracle almost always stops.
+
+Round-1 selected-action cost rank is also still weak:
+
+```text
+SUN-SEG: 4.41
+VTUS:    4.31
+MUP:     3.12
+```
+
+Rank zero is the lowest-cost action, so correction-frame ranking still needs work.
+
+### Revised diagnosis: sampler bias
+
+The Mao surrogate is derived for the natural data distribution, but job `15936794` reused the old
+artificial sampler:
+
+```text
+50% oracle-defer samples
+50% oracle-stop samples
+```
+
+It also draws most defer samples from round 1. With a learned stop logit, this changes the training
+action prior and can directly teach the stop head to defer too often on naturally distributed
+validation/test data. This effect was less direct when stop was a fixed zero score.
+
+The next controlled Mao experiment should therefore use ordinary shuffled samples from the natural
+training distribution, with no oracle stop/defer or round balancing. Keep everything else fixed:
+
+```text
+architecture: r2plus1d_18_temporal
+loss: mao_logistic
+alpha: 0.1
+layer-4 LR: 1e-7
+frame/stop head LR: 1e-5
+seed: 42
+```
+
+Compare natural sampling against job `15936794` using validation-selected checkpoints. Do not
+conclude that Equation 3 is ineffective until this sampling-confound experiment has been run.
 
 ## Iterative evaluation
 
